@@ -1,5 +1,5 @@
 #include <SDL3/SDL.h>
-// #include <SDL3/SDL_TTF.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -278,12 +278,18 @@ class GravityEngine_Core
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, 0, &window, &renderer);
 
+            // Init SDL ttf
+            TTF_Init();
+
             // Call init custom user code
             if (init_game != nullptr)
                 init_game();
 
             // Call game loop
             GameLoop(pre_loop_code, post_loop_code);
+
+            // TTF Quit
+            TTF_Quit();
 
             // Kill SDL
             SDL_Quit();
@@ -452,12 +458,26 @@ class GravityEngine_Core
             }
         }
 
+        // Draw the console buffer
+        void DrawConsoleBuffer()
+        {
+            for (int i = 0; i < canvas_h; i++)
+            {
+                for (int q = 0; q < canvas_w; q++)
+                {
+                    char thisChar = buf_screen[i * canvas_w + q].Char.UnicodeChar;
+                    
+                }
+            }
+        }
+
         // Post-game code
         void SystemPostGameLoop()
         {
             // Frame count
             elapsed_frames++;
-            // WriteConsoleOutput(console, buf_screen, { (short)canvas_w, (short)canvas_h }, { 0,0 }, &rect_window);
+
+            // Draw to the window
 
             // Clear the Dynamic Collision, Entity, and Debug layers
             for (int i = 0; i < canvas_h; i++)
