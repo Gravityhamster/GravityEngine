@@ -14,6 +14,9 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
+    SDL_SetRenderDrawColor((*geptr).renderer, rand()%255, rand()%255, rand()%255, 255);
+    SDL_RenderClear((*geptr).renderer);
+
     std::cout << (*geptr).fps_now() << "                   ";
     std::cout << "\r";
     //int c = 0;
