@@ -68,7 +68,7 @@ int main()
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = true; // Shwo all infor
     geptr = &ge_inst; // Set the pointer to the console engine class
-    
+
     // Start game loop
     ge_inst.Start(&GameInit, &PreGameLoop, &PostGameLoop);
 
