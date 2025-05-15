@@ -6,9 +6,6 @@
 #include <windows.h>
 #include <math.h>
 #include <string>
-        
-static SDL_Window *window = NULL;
-static SDL_Renderer *renderer = NULL;
 
 class GravityEngine_Core
 {
@@ -64,6 +61,8 @@ class GravityEngine_Core
     public: 
         bool debug_mode = false; // Show debug overlay
         bool debug_complex = false; // Show complex debug overlay
+        SDL_Window* window = NULL;
+        SDL_Renderer* renderer = NULL;
 
     // Gravity Engine Public Methods
     public:
@@ -274,7 +273,11 @@ class GravityEngine_Core
             // Initialize SDL app meta data
             SDL_SetAppMetadata(game_title, game_version, game_id);
             // Initialize SDL library
-            SDL_Init(SDL_INIT_VIDEO);
+            if (SDL_Init(SDL_INIT_VIDEO) < 0)
+            {
+                std::cout << SDL_GetError() << std::endl;
+                std::system("pause");
+            }
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, 0, &window, &renderer);
 
@@ -477,7 +480,11 @@ class GravityEngine_Core
             // Frame count
             elapsed_frames++;
 
-            // Draw to the window
+            // Draw to the window'
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderPresent(renderer);
+            SDL_Delay(0);
 
             // Clear the Dynamic Collision, Entity, and Debug layers
             for (int i = 0; i < canvas_h; i++)
