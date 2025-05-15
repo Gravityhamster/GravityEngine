@@ -1,5 +1,5 @@
 #include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
+// #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -22,9 +22,9 @@ class GravityEngine_Core
         };
 
     // Gravity Engine Private Attributes
-    private: 
+    private:
         bool game_running = false; // Is the game running or now?
-        int canvas_w; // Game canvas width 
+        int canvas_w; // Game canvas width
         int canvas_h; // Game canvas height
         char** canvas_debug; // Game canvas UI layer
         char** canvas_ui; // Game canvas UI layer
@@ -60,7 +60,7 @@ class GravityEngine_Core
         int scr_h = 1080;
 
     // Gravity Engine Public Attributes
-    public: 
+    public:
         bool debug_mode = false; // Show debug overlay
         bool debug_complex = false; // Show complex debug overlay
         SDL_Window* window = NULL;
@@ -188,13 +188,13 @@ class GravityEngine_Core
             // Set the desired frame length to 1 second divided be the desired frame rate
             frame_length = 1000000000 / f;
         }
-        
+
         // Gravity Engine Constructor
         // int cw : window width
         // int ch : window height
         // int f : frame rate cap in frames per second
         GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f) {}
-        
+
         // canvas x
         int GetCanvasW()
         {
@@ -206,7 +206,7 @@ class GravityEngine_Core
         {
             return canvas_h;
         }
-        
+
         // get collision value
         int GetCollisionValue(int x, int y, col_layer cl)
         {
@@ -214,7 +214,7 @@ class GravityEngine_Core
                 return collision_static[y][x];
             else if (cl == dyn)
                 return collision_dynamic[y][x];
-        } 
+        }
 
         // set collision value
         void SetCollisionValue(int x, int y, col_layer cl, int v)
@@ -223,7 +223,7 @@ class GravityEngine_Core
                 collision_static[y][x] = v;
             else if (cl == dyn)
                 collision_dynamic[y][x] = v;
-        } 
+        }
 
         // Gravity Engine Destructor
         ~GravityEngine_Core()
@@ -265,6 +265,8 @@ class GravityEngine_Core
             for (int i = 0; i < canvas_h; i++)
                 delete[] collision_dynamic[i];
             delete[] collision_dynamic;
+            delete[] buf_col_screen;
+            delete[] buf_char_screen;
         }
 
         // Start the video game
@@ -284,8 +286,8 @@ class GravityEngine_Core
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, 0, &window, &renderer);
 
-            // Init SDL ttf
-            TTF_Init();
+            // // Init SDL ttf
+            // TTF_Init();
 
             // Call init custom user code
             if (init_game != nullptr)
@@ -294,8 +296,8 @@ class GravityEngine_Core
             // Call game loop
             GameLoop(pre_loop_code, post_loop_code);
 
-            // TTF Quit
-            TTF_Quit();
+            // // TTF Quit
+            // TTF_Quit();
 
             // Kill SDL
             SDL_Quit();
@@ -474,7 +476,7 @@ class GravityEngine_Core
                 {
                     char this_char = buf_char_screen[i * canvas_w + q];
                     char this_color = buf_col_screen[i * canvas_w + q];
-                    
+
                 }
             }
         }
@@ -530,7 +532,7 @@ class GravityEngine_Core
         // Log timing
         void LogFrameTimingData(long* frame_check, long* second_check, long* frames_per_second)
         {
-            // Log timing  
+            // Log timing
             (*frame_check)++;
             double seconds = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now() - gobal_start_time).count() / 1000;
             if (seconds > (*second_check))
@@ -539,7 +541,7 @@ class GravityEngine_Core
                 (*frame_check) = 0;
                 (*second_check) += 1;
             }
-            
+
             // Draw the debug overlay
             if (debug_complex)
             {
@@ -570,7 +572,7 @@ class GravityEngine_Core
 
         // Game loop
         void GameLoop(void (*pre_loop_code)(), void (*post_loop_code)())
-        {            
+        {
             // Init timing stuff
             gobal_start_time = std::chrono::system_clock::now();
             long second_check = 1;
@@ -595,7 +597,7 @@ class GravityEngine_Core
                 // Call post custom user code
                 if (post_loop_code != nullptr)
                     post_loop_code();
-                    
+
                 // Run post-loop engine code
                 SystemPostGameLoop();
 
