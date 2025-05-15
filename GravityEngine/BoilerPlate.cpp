@@ -44,14 +44,14 @@ void PreGameLoop()
     //        c++;
     //    }
     //}
-    if ((*geptr).GetKey(VK_LEFT))
+    /*if ((*geptr).GetKey(VK_LEFT))
         x-=spd;
     if ((*geptr).GetKey(VK_RIGHT))
         x+=spd;
     if ((*geptr).GetKey(VK_UP))
         y-=spd;
     if ((*geptr).GetKey(VK_DOWN))
-        y+=spd;
+        y+=spd;*/
     (*geptr).DrawChar((int)x, (int)y, (*geptr).entity, '@');
     (*geptr).DrawSetColor((int)x, (int)y, (*geptr).background, (*geptr).GetElapsedFrames());
 }

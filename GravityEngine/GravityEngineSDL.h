@@ -3,7 +3,6 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-#include <windows.h>
 #include <math.h>
 #include <string>
 
@@ -39,7 +38,8 @@ class GravityEngine_Core
         short** color_ent; // Game color entity layer*/
         int** collision_static; // Game static collision layer
         int** collision_dynamic; // Game dynamic collision layer
-        CHAR_INFO* buf_screen; // The final game canvas
+        char* buf_char_screen; // The final game canvas
+        int* buf_col_screen; // The final color canvas
         int elapsed_frames = 0; // Frames since game was started
         int frame_step_precision = 10000000; // Precision of sleep time to ensure the game stays in sync
         char def_char = ' '; // Default character to clean the garphics arrays
@@ -56,6 +56,8 @@ class GravityEngine_Core
         const char* game_title;
         const char* game_id;
         const char* game_version;
+        int scr_w = 1920;
+        int scr_h = 1080;
 
     // Gravity Engine Public Attributes
     public: 
@@ -84,9 +86,9 @@ class GravityEngine_Core
 
             // Set the dims of the font
             if (fw == -1)
-                fw = (int)(floor(GetSystemMetrics(SM_CXSCREEN) / cw)/1.5);
+                fw = (int)(floor(scr_w / cw)/1.5);
             if (fh == -1)
-                fh = (int)(floor(GetSystemMetrics(SM_CYSCREEN) / ch)/1.5);
+                fh = (int)(floor(scr_h / ch)/1.5);
             font_w = fw;
             font_h = fh;
 
@@ -176,11 +178,12 @@ class GravityEngine_Core
                     collision_dynamic[i][q] = def_col;
 
             // Instantiate screen buffer
-            buf_screen = new CHAR_INFO[canvas_w * canvas_h];
+            buf_char_screen = new char[canvas_w * canvas_h];
+            buf_col_screen = new int[canvas_w * canvas_h];
             for (int i = 0; i < canvas_w * canvas_h; i++)
             {
-                buf_screen[i].Char.UnicodeChar = ' ';
-                buf_screen[i].Attributes = 7;
+                buf_char_screen[i] = ' ';
+                buf_col_screen[i] = 7;
             }
             // Set the desired frame length to 1 second divided be the desired frame rate
             frame_length = 1000000000 / f;
@@ -420,10 +423,10 @@ class GravityEngine_Core
         {
             if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
             {
-                if (buf_screen[y * canvas_w + x].Char.UnicodeChar != c)
-                    buf_screen[y * canvas_w + x].Char.UnicodeChar = c;
-                if (buf_screen[y * canvas_w + x].Attributes != col)
-                    buf_screen[y * canvas_w + x].Attributes = col;
+                if (buf_char_screen[y * canvas_w + x] != c)
+                    buf_char_screen[y * canvas_w + x] = c;
+                if (buf_col_screen[y * canvas_w + x] != col)
+                    buf_col_screen[y * canvas_w + x] = col;
             }
         }
 
@@ -434,9 +437,10 @@ class GravityEngine_Core
         }
 
         // Get Key State
+        // TODO: Implement SDL input
         bool GetKey(int key_code)
         {
-            return (GetKeyState(key_code) & 0x8000);
+            return false; // (GetKeyState(key_code) & 0x8000);
         }
 
     private:
@@ -468,7 +472,8 @@ class GravityEngine_Core
             {
                 for (int q = 0; q < canvas_w; q++)
                 {
-                    char thisChar = buf_screen[i * canvas_w + q].Char.UnicodeChar;
+                    char this_char = buf_char_screen[i * canvas_w + q];
+                    char this_color = buf_col_screen[i * canvas_w + q];
                     
                 }
             }
@@ -496,13 +501,6 @@ class GravityEngine_Core
                     SetCollisionValue(q, i, dyn, 0);
                 }
             }
-        }
-
-        // Set console color
-        void SetColor(int color)
-        {
-            HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);   
-            SetConsoleTextAttribute(output, color);
         }
 
         // Draw all the layers onto the console buffer. Do not write if it is blank or the layer above is obfuscating this coord
@@ -533,7 +531,6 @@ class GravityEngine_Core
         void LogFrameTimingData(long* frame_check, long* second_check, long* frames_per_second)
         {
             // Log timing  
-            SetColor(7);
             (*frame_check)++;
             double seconds = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now() - gobal_start_time).count() / 1000;
             if (seconds > (*second_check))
