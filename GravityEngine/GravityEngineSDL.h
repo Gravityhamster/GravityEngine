@@ -487,9 +487,7 @@ class GravityEngine_Core
             // Frame count
             elapsed_frames++;
 
-            // Draw to the window'
-            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-            SDL_RenderClear(renderer);
+            // Draw to the window
             SDL_RenderPresent(renderer);
             SDL_Delay(0);
 
