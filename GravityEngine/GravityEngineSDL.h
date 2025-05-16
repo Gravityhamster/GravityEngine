@@ -58,6 +58,7 @@ class GravityEngine_Core
         const char* game_version;
         int scr_w = 1920;
         int scr_h = 1080;
+        int SDL_window_props = 0;
 
     // Gravity Engine Public Attributes
     public:
@@ -65,6 +66,10 @@ class GravityEngine_Core
         bool debug_complex = false; // Show complex debug overlay
         SDL_Window* window = NULL;
         SDL_Renderer* renderer = NULL;
+        TTF_TextEngine* engine = NULL;
+        TTF_Font* sans = NULL;
+        SDL_Color white = {255,255,255};
+        TTF_Text *text = NULL;
 
     // Gravity Engine Public Methods
     public:
@@ -284,10 +289,31 @@ class GravityEngine_Core
                 std::system("pause");
             }
             // Create the SDL window
-            SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, 0, &window, &renderer);
+            SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
+            engine = TTF_CreateRendererTextEngine(renderer);
 
             // Init SDL ttf
             TTF_Init();
+
+            // Create font
+            sans = TTF_OpenFont("/home/zeek/Downloads/PixelPerfect.ttf", font_h);
+            TTF_SetFontKerning(sans, true);
+            TTF_SetFontLineSkip(sans, font_h);
+            TTF_SetFontWrapAlignment(sans, TTF_HORIZONTAL_ALIGN_LEFT);
+
+            std::string s = "";
+            for (int q = 0; q < canvas_h; q++)
+			{
+				for (int i = 0; i < canvas_w; i++)
+					s += "c";
+				if (q != canvas_h)
+					s += "\n";
+			}
+            int n = s.length();
+            char txt[n+1];
+            strcpy(txt, s.c_str());
+
+            text = TTF_CreateText(engine, sans, txt, 0u);
 
             // Call init custom user code
             if (init_game != nullptr)
@@ -297,6 +323,7 @@ class GravityEngine_Core
             GameLoop(pre_loop_code, post_loop_code);
 
             // TTF Quit
+			TTF_DestroyText(text);
             TTF_Quit();
 
             // Kill SDL
@@ -458,20 +485,11 @@ class GravityEngine_Core
             // Draw the background layer
             DrawLayers();
 
-            // Draw test text
-            TTF_Font* sans = TTF_OpenFont("Sans.ttf", font_h);
-            SDL_Color white = {255,255,255};
-            const char* txt = "Urmom";
-            unsigned long int len = ((std::string)(txt)).length();
-            SDL_Surface* surface_message = TTF_RenderText_Solid(sans, txt, len, white);
-            SDL_Texture* message = SDL_CreateTextureFromSurface(renderer, surface_message);
-            SDL_FRect message_rect;
-            message_rect.x = 0;
-            message_rect.y = 0;
-            message_rect.w = 100;
-            message_rect.x = 100;
-            if (SDL_RenderTexture(renderer, message, NULL, &message_rect) == false)
-            	SDL_Log(SDL_GetError());
+            // Draw text
+            for (int i = 0; i < strlen(text->text); i++)
+            	if (text->text[i] == 'c')
+            		text->text[i]= 'b';
+			TTF_DrawRendererText(text, 0, 0);
 
             // Poll SDL
             SDL_Event event;
