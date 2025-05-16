@@ -14,8 +14,8 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
-    SDL_SetRenderDrawColor((*geptr).renderer, rand()%255, rand()%255, rand()%255, 255);
-    SDL_RenderClear((*geptr).renderer);
+    // SDL_SetRenderDrawColor((*geptr).renderer, rand()%255, rand()%255, rand()%255, 255);
+    // SDL_RenderClear((*geptr).renderer);
 
     std::cout << (*geptr).fps_now() << "                   ";
     std::cout << "\r";
@@ -67,7 +67,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine
-    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 192, 108, 60);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 60, 30, 6000);
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = true; // Shwo all infor
     geptr = &ge_inst; // Set the pointer to the console engine class
