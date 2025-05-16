@@ -1,5 +1,5 @@
 #include <SDL3/SDL.h>
-// #include <SDL3_ttf/SDL_ttf.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -286,8 +286,8 @@ class GravityEngine_Core
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, 0, &window, &renderer);
 
-            // // Init SDL ttf
-            // TTF_Init();
+            // Init SDL ttf
+            TTF_Init();
 
             // Call init custom user code
             if (init_game != nullptr)
@@ -296,8 +296,8 @@ class GravityEngine_Core
             // Call game loop
             GameLoop(pre_loop_code, post_loop_code);
 
-            // // TTF Quit
-            // TTF_Quit();
+            // TTF Quit
+            TTF_Quit();
 
             // Kill SDL
             SDL_Quit();
@@ -457,6 +457,21 @@ class GravityEngine_Core
         {
             // Draw the background layer
             DrawLayers();
+
+            // Draw test text
+            TTF_Font* sans = TTF_OpenFont("Sans.ttf", font_h);
+            SDL_Color white = {255,255,255};
+            const char* txt = "Urmom";
+            unsigned long int len = ((std::string)(txt)).length();
+            SDL_Surface* surface_message = TTF_RenderText_Solid(sans, txt, len, white);
+            SDL_Texture* message = SDL_CreateTextureFromSurface(renderer, surface_message);
+            SDL_FRect message_rect;
+            message_rect.x = 0;
+            message_rect.y = 0;
+            message_rect.w = 100;
+            message_rect.x = 100;
+            if (SDL_RenderTexture(renderer, message, NULL, &message_rect) == false)
+            	SDL_Log(SDL_GetError());
 
             // Poll SDL
             SDL_Event event;
