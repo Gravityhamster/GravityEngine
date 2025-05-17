@@ -20,6 +20,13 @@ class GravityEngine_Core
         {
             stat, dyn
         };
+        // Color struct (foreground and background)
+        struct color
+        {
+        	SDL_Color f;
+        	SDL_Color b;
+        };
+
 
     // Gravity Engine Private Attributes
     private:
@@ -30,20 +37,20 @@ class GravityEngine_Core
         char** canvas_ui; // Game canvas UI layer
         char** canvas_fg; // Game canvas foreground layer
         char** canvas_bg; // Game canvas background layer
-        char** canvas_ent; // Game canvas entity layerd
-        short** color_debug; // Game color UI layer
-        short** color_ui; // Game color UI layer
-        short** color_fg; // Game color foreground layer
-        short** color_bg; // Game color background layer
-        short** color_ent; // Game color entity layer*/
-        int** collision_static; // Game static collision layer
-        int** collision_dynamic; // Game dynamic collision layer
+        char** canvas_ent; // Game canvas entity layers
+        color** color_debug; // Game color UI layer
+        color** color_ui; // Game color UI layer
+        color** color_fg; // Game color foreground layer
+        color** color_bg; // Game color background layer
+        color** color_ent; // Game color entity layer*/
+        char** collision_static; // Game static collision layer
+        char** collision_dynamic; // Game dynamic collision layer
         char* buf_char_screen; // The final game canvas
-        int* buf_col_screen; // The final color canvas
+        color* buf_col_screen; // The final color canvas
         int elapsed_frames = 0; // Frames since game was started
         int frame_step_precision = 10000000; // Precision of sleep time to ensure the game stays in sync
-        char def_char = ' '; // Default character to clean the garphics arrays
-        short def_color = 7; // Default color to clean the color arrays
+        char def_char = ' '; // Default character to clean the graphics arrays
+        color def_color = {{255,255,255}, {0,0,0}}; // Default color to clean the color arrays
         int def_col = 0; // Default collision value to clean the collision arrays with
         int font_w; // Width of the font
         int font_h; // Height of the font
@@ -58,7 +65,8 @@ class GravityEngine_Core
         const char* game_version;
         int scr_w = 1920;
         int scr_h = 1080;
-        int SDL_window_props = 0;
+        int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
+        std::string font_path = "/home/zeek/Downloads/Ubuntu-B-1.ttf";
 
     // Gravity Engine Public Attributes
     public:
@@ -69,7 +77,7 @@ class GravityEngine_Core
         TTF_TextEngine* engine = NULL;
         TTF_Font* sans = NULL;
         SDL_Color white = {255,255,255};
-        TTF_Text *text = NULL;
+        TTF_Text **draw_chars = NULL;
 
     // Gravity Engine Public Methods
     public:
@@ -91,9 +99,9 @@ class GravityEngine_Core
 
             // Set the dims of the font
             if (fw == -1)
-                fw = (int)(floor(scr_w / cw)/1.5);
+                fw = (int)(floor(scr_w / cw));
             if (fh == -1)
-                fh = (int)(floor(scr_h / ch)/1.5);
+                fh = (int)(floor(scr_h / ch));
             font_w = fw;
             font_h = fh;
 
@@ -133,62 +141,62 @@ class GravityEngine_Core
                 for (int q = 0; q < canvas_w; q++)
                     canvas_ent[i][q] = def_char;
             // Instantiate color debug
-            color_debug = new short*[canvas_h];
+            color_debug = new color*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                color_debug[i] = new short[canvas_w];
+                color_debug[i] = new color[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     color_debug[i][q] = def_color;
             // Instantiate color ui
-            color_ui = new short*[canvas_h];
+            color_ui = new color*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                color_ui[i] = new short[canvas_w];
+                color_ui[i] = new color[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     color_ui[i][q] = def_color;
             // Instantiate color fg
-            color_fg = new short*[canvas_h];
+            color_fg = new color*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                color_fg[i] = new short[canvas_w];
+                color_fg[i] = new color[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     color_fg[i][q] = def_color;
             // Instantiate color bg
-            color_bg = new short*[canvas_h];
+            color_bg = new color*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                color_bg[i] = new short[canvas_w];
+                color_bg[i] = new color[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     color_bg[i][q] = def_color;
             // Instantiate color ent
-            color_ent = new short*[canvas_h];
+            color_ent = new color*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                color_ent[i] = new short[canvas_w];
+                color_ent[i] = new color[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     color_ent[i][q] = def_color;
             // Instantiate collision static
-            collision_static = new int*[canvas_h];
+            collision_static = new char*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                collision_static[i] = new int[canvas_w];
+                collision_static[i] = new char[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     collision_static[i][q] = def_col;
             // Instantiate collision dynamic
-            collision_dynamic = new int*[canvas_h];
+            collision_dynamic = new char*[canvas_h];
             for (int i = 0; i < canvas_h; i++)
-                collision_dynamic[i] = new int[canvas_w];
+                collision_dynamic[i] = new char[canvas_w];
             for (int i = 0; i < canvas_h; i++)
                 for (int q = 0; q < canvas_w; q++)
                     collision_dynamic[i][q] = def_col;
 
             // Instantiate screen buffer
             buf_char_screen = new char[canvas_w * canvas_h];
-            buf_col_screen = new int[canvas_w * canvas_h];
+            buf_col_screen = new color[canvas_w * canvas_h];
             for (int i = 0; i < canvas_w * canvas_h; i++)
             {
                 buf_char_screen[i] = ' ';
-                buf_col_screen[i] = 7;
+                buf_col_screen[i] = {{255,255,255},{0,0,0}};
             }
             // Set the desired frame length to 1 second divided be the desired frame rate
             frame_length = 1000000000 / f;
@@ -283,7 +291,7 @@ class GravityEngine_Core
             // Initialize SDL app meta data
             SDL_SetAppMetadata(game_title, game_version, game_id);
             // Initialize SDL library
-            if (SDL_Init(SDL_INIT_VIDEO) < 0)
+            if (SDL_Init(SDL_INIT_VIDEO) == false)
             {
                 std::cout << SDL_GetError() << std::endl;
                 std::system("pause");
@@ -296,24 +304,15 @@ class GravityEngine_Core
             TTF_Init();
 
             // Create font
-            sans = TTF_OpenFont("/home/zeek/Downloads/PixelPerfect.ttf", font_h);
+            const char * fp = font_path.c_str();
+            sans = TTF_OpenFont(fp, font_h);
             TTF_SetFontKerning(sans, true);
             TTF_SetFontLineSkip(sans, font_h);
             TTF_SetFontWrapAlignment(sans, TTF_HORIZONTAL_ALIGN_LEFT);
 
-            std::string s = "";
-            for (int q = 0; q < canvas_h; q++)
-			{
-				for (int i = 0; i < canvas_w; i++)
-					s += "c";
-				if (q != canvas_h)
-					s += "\n";
-			}
-            int n = s.length();
-            char txt[n+1];
-            strcpy(txt, s.c_str());
-
-            text = TTF_CreateText(engine, sans, txt, 0u);
+            draw_chars = new TTF_Text*[canvas_w * canvas_h];
+            for (int i = 0; i < canvas_w * canvas_h; i++)
+            	draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
 
             // Call init custom user code
             if (init_game != nullptr)
@@ -323,7 +322,10 @@ class GravityEngine_Core
             GameLoop(pre_loop_code, post_loop_code);
 
             // TTF Quit
-			TTF_DestroyText(text);
+            // for (int i = 0; i < canvas_w * canvas_h; i++)
+            	// TTF_DestroyText(draw_chars[i]);
+            delete[] draw_chars;
+			TTF_DestroyRendererTextEngine(engine);
             TTF_Quit();
 
             // Kill SDL
@@ -357,17 +359,17 @@ class GravityEngine_Core
         // int x : x position to place color
         // int y : y position to place color
         // int color : color value 0 - 137
-        void DrawSetColor(int x, int y, layer l, int color)
+        void DrawSetColor(int x, int y, layer l, color col)
         {
             // If the requested x and y is within the window...
             if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
             {
                 // Set the color of the layer at these coordinates.
-                if (l == debug) color_debug[y][x] = color;
-                if (l == ui) color_ui[y][x] = color;
-                if (l == background) color_bg[y][x] = color;
-                if (l == foreground) color_fg[y][x] = color;
-                if (l == entity) color_ent[y][x] = color;
+                if (l == debug) color_debug[y][x] = col;
+                if (l == ui) color_ui[y][x] = col;
+                if (l == background) color_bg[y][x] = col;
+                if (l == foreground) color_fg[y][x] = col;
+                if (l == entity) color_ent[y][x] = col;
             }
         }
 
@@ -387,7 +389,7 @@ class GravityEngine_Core
         }
 
         // Draw text onto layer
-        void DrawTextString(int x, int y, layer l, std::string s, short col)
+        void DrawTextString(int x, int y, layer l, std::string s, color col)
         {
             if (l == background)
             {
@@ -448,14 +450,19 @@ class GravityEngine_Core
         }
 
         // Credit to OLC Console Game Engine for this function
-        void Draw(int x, int y, short c = 0x2588, short col = 0x000F)
+        void Draw(int x, int y, char c = 0x2588, color col = {{255, 255, 255}, {0, 0, 0}})
         {
             if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
             {
                 if (buf_char_screen[y * canvas_w + x] != c)
                     buf_char_screen[y * canvas_w + x] = c;
-                if (buf_col_screen[y * canvas_w + x] != col)
-                    buf_col_screen[y * canvas_w + x] = col;
+                /*if (buf_col_screen[y * canvas_w + x].f.r != col.f.r ||
+                	buf_col_screen[y * canvas_w + x].f.g != col.f.g ||
+                	buf_col_screen[y * canvas_w + x].f.b != col.f.b ||
+					buf_col_screen[y * canvas_w + x].b.r != col.b.r ||
+					buf_col_screen[y * canvas_w + x].b.g != col.b.g ||
+					buf_col_screen[y * canvas_w + x].b.b != col.b.b)*/
+                buf_col_screen[y * canvas_w + x] = col;
             }
         }
 
@@ -474,6 +481,39 @@ class GravityEngine_Core
 
     private:
 
+        // Insert buf_char_screen into the screen text and then draw it to the screen
+        void DrawScreenText()
+        {
+        	// Init the iterator for the character buffer
+        	int buf_index = 0;
+        	// Init the x and y coords for the output
+        	int x = 0;
+        	int y = 0;
+        	// Loop through all of the characters in the
+            for (int i = 0; i < canvas_w * canvas_h; i++)
+            {
+            	if (i % canvas_w == 0 && i != 0)
+            	{
+            		y++;
+            		x = 0;
+            	}
+
+            	if (draw_chars[buf_index] != NULL)
+            		TTF_DestroyText(draw_chars[buf_index]);
+            	draw_chars[buf_index] = TTF_CreateText(engine, sans, "0", 0u);
+                TTF_SetTextColor(draw_chars[buf_index],
+                		(int)(buf_col_screen[buf_index].f.r),
+						(int)(buf_col_screen[buf_index].f.g),
+						(int)(buf_col_screen[buf_index].f.b),
+						255);
+            	draw_chars[buf_index]->text[0] = buf_char_screen[buf_index];
+                TTF_DrawRendererText(draw_chars[buf_index], x*font_w, y*font_h);
+
+            	x++;
+            	buf_index++;
+            }
+        }
+
         // Pre-game code
         void SystemPreGameLoop()
         {
@@ -482,14 +522,15 @@ class GravityEngine_Core
         // Mid-game code
         void SystemGameLoop()
         {
+        	// Clear surface
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+
             // Draw the background layer
             DrawLayers();
 
             // Draw text
-            for (int i = 0; i < strlen(text->text); i++)
-            	if (text->text[i] == 'c')
-            		text->text[i]= 'b';
-			TTF_DrawRendererText(text, 0, 0);
+            DrawScreenText();
 
             // Poll SDL
             SDL_Event event;
@@ -497,20 +538,6 @@ class GravityEngine_Core
                 // Get close event
                 if (event.type == SDL_EVENT_QUIT)
                     game_running = false;
-            }
-        }
-
-        // Draw the console buffer
-        void DrawConsoleBuffer()
-        {
-            for (int i = 0; i < canvas_h; i++)
-            {
-                for (int q = 0; q < canvas_w; q++)
-                {
-                    char this_char = buf_char_screen[i * canvas_w + q];
-                    char this_color = buf_col_screen[i * canvas_w + q];
-
-                }
             }
         }
 
@@ -527,12 +554,15 @@ class GravityEngine_Core
             // Clear the Dynamic Collision, Entity, and Debug layers
             for (int i = 0; i < canvas_h; i++)
             {
-                for (int q = 0; q < canvas_w; q++)
-                {
-                    DrawChar(q, i, entity, ' ');
-                    DrawChar(q, i, debug, ' ');
-                    SetCollisionValue(q, i, dyn, 0);
-                }
+            	std::fill(canvas_ent[i], canvas_ent[i] + strlen(canvas_ent[i]), ' ');
+            	std::fill(canvas_debug[i], canvas_debug[i] + strlen(canvas_debug[i]), ' ');
+            	std::fill(collision_dynamic[i], collision_dynamic[i] + strlen(collision_dynamic[i]), ' ');
+                //for (int q = 0; q < canvas_w; q++)
+                //{
+                    //DrawChar(q, i, entity, ' ');
+                    //DrawChar(q, i, debug, ' ');
+                    //SetCollisionValue(q, i, dyn, 0);
+                //}
             }
         }
 
@@ -543,19 +573,35 @@ class GravityEngine_Core
             {
                 for (int q = 0; q < canvas_w; q++)
                 {
-                    if (canvas_fg[i][q]==' ' && canvas_debug[i][q]==' ' && canvas_ent[i][q]==' ' && canvas_ui[i][q]==' ')
-                        Draw(q,i,canvas_bg[i][q],color_bg[i][q]);
-                    if (canvas_ent[i][q] != ' ')
-                        if (canvas_fg[i][q]==' ' && canvas_debug[i][q]==' ' && canvas_ui[i][q]==' ')
-                            Draw(q,i,canvas_ent[i][q],color_ent[i][q]);
-                    if (canvas_fg[i][q] != ' ')
-                        if (canvas_debug[i][q]==' ' && canvas_ui[i][q]==' ')
-                            Draw(q,i,canvas_fg[i][q],color_fg[i][q]);
-                    if (canvas_ui[i][q] != ' ')
-                        if (canvas_debug[i][q]==' ')
-                            Draw(q,i,canvas_ui[i][q],color_ui[i][q]);
-                    if (canvas_debug[i][q] != ' ')
-                        Draw(q,i,canvas_debug[i][q],color_debug[i][q]);
+                    if (debug_mode)
+                    {
+						if (canvas_fg[i][q]==' ' && canvas_debug[i][q]==' ' && canvas_ent[i][q]==' ' && canvas_ui[i][q]==' ')
+							Draw(q,i,canvas_bg[i][q],color_bg[i][q]);
+						if (canvas_ent[i][q] != ' ')
+							if (canvas_fg[i][q]==' ' && canvas_debug[i][q]==' ' && canvas_ui[i][q]==' ')
+								Draw(q,i,canvas_ent[i][q],color_ent[i][q]);
+						if (canvas_fg[i][q] != ' ')
+							if (canvas_debug[i][q]==' ' && canvas_ui[i][q]==' ')
+								Draw(q,i,canvas_fg[i][q],color_fg[i][q]);
+						if (canvas_ui[i][q] != ' ')
+							if (canvas_debug[i][q]==' ')
+								Draw(q,i,canvas_ui[i][q],color_ui[i][q]);
+						if (canvas_debug[i][q] != ' ')
+							Draw(q,i,canvas_debug[i][q],color_debug[i][q]);
+                    }
+                    else
+                    {
+						if (canvas_fg[i][q]==' ' && canvas_ent[i][q]==' ' && canvas_ui[i][q]==' ')
+							Draw(q,i,canvas_bg[i][q],color_bg[i][q]);
+						if (canvas_ent[i][q] != ' ')
+							if (canvas_fg[i][q]==' ' && canvas_ui[i][q]==' ')
+								Draw(q,i,canvas_ent[i][q],color_ent[i][q]);
+						if (canvas_fg[i][q] != ' ')
+							if (canvas_ui[i][q]==' ')
+								Draw(q,i,canvas_fg[i][q],color_fg[i][q]);
+						if (canvas_ui[i][q] != ' ')
+								Draw(q,i,canvas_ui[i][q],color_ui[i][q]);
+                    }
                 }
             }
         }
@@ -576,15 +622,15 @@ class GravityEngine_Core
             // Draw the debug overlay
             if (debug_complex)
             {
-                DrawTextString(0,0,debug,"Delta Time: " + std::to_string(DeltaTime()) + " Elapsed Seconds: " + std::to_string(seconds),7);
-                DrawTextString(0,1,debug,"Frame Time: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second),7);
+                DrawTextString(0,0,debug,"Delta Time: " + std::to_string(DeltaTime()) + " Elapsed Seconds: " + std::to_string(seconds),{{255,255,255},{0,0,0}});
+                DrawTextString(0,1,debug,"Frame Time: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second),{{255,255,255},{0,0,0}});
             }
             else
             {
-                DrawTextString(0,0,debug,"FPS: " + std::to_string(*frames_per_second),7);
+                DrawTextString(0,0,debug,"FPS: " + std::to_string(*frames_per_second),{{255,255,255},{0,0,0}});
             }
 
-            // Set the fpd variable
+            // Set the fps variable
             current_fps = *frames_per_second;
         }
 
