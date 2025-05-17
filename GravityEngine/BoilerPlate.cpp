@@ -1,62 +1,65 @@
 #include "GravityEngineSDL.h"
 GravityEngine_Core* geptr;
 
-double x = 0;
-double y = 1;
+double xd = 30;
+double yd = 30;
+int di = 0;
 double spd = 0.5;
 
 // Master pre code
 void GameInit()
 {
-
+	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
+	{
+		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
+		{
+				(*geptr).DrawChar(i, q, (*geptr).background, 'A');
+				(*geptr).DrawSetColor(i, q, (*geptr).background, {{0,0,255}, {0,0,0}});
+		}
+	}
+	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
+	{
+		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
+		{
+				(*geptr).DrawChar(i, q, (*geptr).foreground, rand()%5 == 0 ? 'B' : ' ');
+				(*geptr).DrawSetColor(i, q, (*geptr).foreground, {{0,255,0}, {0,0,0}});
+		}
+	}
+	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
+	{
+		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
+		{
+				(*geptr).DrawChar(i, q, (*geptr).ui, rand()%10 == 0 ? 'C' : ' ');
+				(*geptr).DrawSetColor(i, q, (*geptr).ui, {{0,255,255}, {0,0,0}});
+		}
+	}
 }
 
 // Master pre code
 void PreGameLoop()
 {
-    // SDL_SetRenderDrawColor((*geptr).renderer, rand()%255, rand()%255, rand()%255, 255);
-    // SDL_RenderClear((*geptr).renderer);
-
     std::cout << (*geptr).fps_now() << "                   ";
     std::cout << "\r";
-    //int c = 0;
-    //for (int i = 0; i < (*geptr).GetCanvasW(); i++)
-    //{
-    //    for (int q = 0; q < (*geptr).GetCanvasH(); q++)
-    //    {
-    //        if (i < (*geptr).GetCanvasW()/2 && q < (*geptr).GetCanvasH()/2)
-    //        {
-    //            (*geptr).DrawChar(i,q,(*geptr).ui,(*geptr).GetElapsedFrames());
-    //            (*geptr).DrawSetColor(i,q,(*geptr).ui,c);
-    //        }
-    //        else if (i >= (*geptr).GetCanvasW()/2 && q < (*geptr).GetCanvasH()/2)
-    //        {
-    //            (*geptr).DrawChar(i,q,(*geptr).foreground,(*geptr).GetElapsedFrames());
-    //            (*geptr).DrawSetColor(i,q,(*geptr).foreground,c);
-    //        }
-    //        else if (i < (*geptr).GetCanvasW()/2 && q >= (*geptr).GetCanvasH()/2)
-    //        {
-    //            (*geptr).DrawChar(i,q,(*geptr).background,(*geptr).GetElapsedFrames());
-    //            (*geptr).DrawSetColor(i,q,(*geptr).background,c);
-    //        }
-    //        else if (i >= (*geptr).GetCanvasW()/2 && q >= (*geptr).GetCanvasH()/2)
-    //        {
-    //            (*geptr).DrawChar(i,q,(*geptr).entity,(*geptr).GetElapsedFrames());
-    //            (*geptr).DrawSetColor(i,q,(*geptr).entity,c);
-    //        }
-    //        c++;
-    //    }
-    //}
-    /*if ((*geptr).GetKey(VK_LEFT))
-        x-=spd;
-    if ((*geptr).GetKey(VK_RIGHT))
-        x+=spd;
-    if ((*geptr).GetKey(VK_UP))
-        y-=spd;
-    if ((*geptr).GetKey(VK_DOWN))
-        y+=spd;*/
-    (*geptr).DrawChar((int)x, (int)y, (*geptr).entity, '@');
-    (*geptr).DrawSetColor((int)x, (int)y, (*geptr).background, (*geptr).GetElapsedFrames());
+    (*geptr).DrawChar((int)xd, (int)yd, (*geptr).entity, '@');
+    (*geptr).DrawSetColor((int)xd, (int)yd, (*geptr).entity, {{255,0,0}, {0,0,0}});
+
+    if (di == 0)
+    	xd += spd;
+    if (di == 1)
+    	yd -= spd;
+    if (di == 2)
+    	xd -= spd;
+    if (di == 3)
+    	yd += spd;
+
+    if (di == 0 && xd >= 50)
+    	di = 1;
+    if (di == 1 && yd <= 20)
+    	di = 2;
+    if (di == 2 && xd <= 20)
+    	di = 3;
+    if (di == 3 && yd >= 50)
+    	di = 0;
 }
 
 // Master post code
@@ -66,8 +69,8 @@ void PostGameLoop()
 
 int main()
 {
-    // Init engine
-    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 60, 30, 6000);
+    // Init engine - 128x72 is generally the largest you can get and still maintain good performance
+    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 6000);
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = true; // Shwo all infor
     geptr = &ge_inst; // Set the pointer to the console engine class
