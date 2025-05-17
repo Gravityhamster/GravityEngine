@@ -66,7 +66,7 @@ class GravityEngine_Core
         int scr_w = 1920;
         int scr_h = 1080;
         int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
-        std::string font_path = "/home/zeek/Downloads/Ubuntu-B-1.ttf";
+        std::string font_path = "./Ubuntu-B-1.ttf";
 
     // Gravity Engine Public Attributes
     public:
@@ -225,7 +225,7 @@ class GravityEngine_Core
         {
             if (cl == stat)
                 return collision_static[y][x];
-            else if (cl == dyn)
+            else
                 return collision_dynamic[y][x];
         }
 
@@ -450,7 +450,7 @@ class GravityEngine_Core
         }
 
         // Credit to OLC Console Game Engine for this function
-        void Draw(int x, int y, char c = 0x2588, color col = {{255, 255, 255}, {0, 0, 0}})
+        void Draw(int x, int y, char c = '0', color col = {{255, 255, 255}, {0, 0, 0}})
         {
             if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
             {
