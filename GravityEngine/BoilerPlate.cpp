@@ -21,16 +21,16 @@ void GameInit()
 	{
 		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
 		{
-				(*geptr).DrawChar(i, q, (*geptr).foreground, rand()%5 == 0 ? 'B' : ' ');
-				(*geptr).DrawSetColor(i, q, (*geptr).foreground, {{0,255,0}, {0,0,0}});
+				(*geptr).DrawChar(i, q, (*geptr).ui, rand()%10 == 0 ? 'B' : ' ');
+				(*geptr).DrawSetColor(i, q, (*geptr).ui, {{0,255,0}, {0,0,0}});
 		}
 	}
 	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
 	{
 		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
 		{
-				(*geptr).DrawChar(i, q, (*geptr).ui, rand()%10 == 0 ? 'C' : ' ');
-				(*geptr).DrawSetColor(i, q, (*geptr).ui, {{0,255,255}, {0,0,0}});
+				(*geptr).DrawChar(i, q, (*geptr).foreground, rand()%5 == 0 ? 'C' : ' ');
+				(*geptr).DrawSetColor(i, q, (*geptr).foreground, {{0,255,255}, {0,0,0}});
 		}
 	}
 }
@@ -38,6 +38,7 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
+
     std::cout << (*geptr).fps_now() << "                   ";
     std::cout << "\r";
     (*geptr).DrawChar((int)xd, (int)yd, (*geptr).entity, '@');
@@ -72,7 +73,7 @@ int main()
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
     GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 6000);
     ge_inst.debug_mode = true; // Show debug overlay
-    ge_inst.debug_complex = true; // Shwo all infor
+    ge_inst.debug_complex = true; // Show all information
     geptr = &ge_inst; // Set the pointer to the console engine class
 
     // Start game loop
