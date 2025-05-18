@@ -71,7 +71,21 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 6000);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 6000, true, 1920, 1080);
+
+    // You must include a list of the characters you are going to use if you use quality mode
+    std::vector<GravityEngine_Core::glyph> g = {
+    		{{255,0,0},'@'},
+    		{{0,0,255},'A'},
+    		{{0,255,0},'B'},
+    		{{0,255,255},'C'}
+    };
+    std::string to_add = "DeltaTime:1234567890.EpsdconFrPSChxu";
+    for (auto c : to_add)
+    	g.push_back({{255,255,255},c});
+    // Copy to the glyph buffer
+    ge_inst.SetAllGlyphs(g);
+
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = true; // Show all information
     geptr = &ge_inst; // Set the pointer to the console engine class
