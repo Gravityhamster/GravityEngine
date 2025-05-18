@@ -4,8 +4,9 @@
 #include <chrono>
 #include <thread>
 #include <math.h>
+#include <vector>
 #include <string>
-// #include <map>
+#include <unordered_map>
 
 class GravityEngine_Core
 {
@@ -26,6 +27,12 @@ class GravityEngine_Core
         {
         	SDL_Color f;
         	SDL_Color b;
+        };
+        // Glyph
+        struct glyph
+        {
+        	SDL_Color col;
+			char chr;
         };
 
 
@@ -65,17 +72,30 @@ class GravityEngine_Core
         const char* game_title;
         const char* game_id;
         const char* game_version;
-        int scr_w = 1920;
-        int scr_h = 1080;
+        int scr_w; // W of screen
+        int scr_h; // H of screen
         int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
         std::string font_path = "./Ubuntu-B-1.ttf";
-        SDL_Window* window = NULL;
-        SDL_Renderer* renderer = NULL;
-        TTF_TextEngine* engine = NULL;
-        TTF_Font* sans = NULL;
-        TTF_Text **draw_chars = NULL;
-        // std::map<std::string, SDL_Texture*> character_textures = {};
-        // std::map<std::string, int> character_widths = {};
+        SDL_Window* window = NULL; // Pointer to the SDL window object
+        SDL_Renderer* renderer = NULL; // Pointer to the SDL renderer object
+        TTF_TextEngine* engine = NULL; // Point to the SDL_ttf text engine (only used if glyph_precaching is off)
+        TTF_Font* sans = NULL; // SDL_ttf font to use
+        TTF_Text **draw_chars = NULL; // List of character objects that are drawn in a grid (only used if glyph_precaching is off)
+        std::unordered_map<std::string, SDL_Texture*> character_textures = {}; // Texture cache (only used if glyph_precaching is on)
+        std::unordered_map<std::string, int> character_widths = {}; // Texture width cache (only used if glyph_precaching is on)
+        std::vector<glyph> glyph_buffer = {}; // Glyphs to be loaded (only used if glyph_precaching is on)
+        // Glyph pre-caching changes how the drawing pipeline works.
+        // If this setting is off, the engine will render text on the
+        // fly using the TTF text engine. However this does struggle at higher
+        // quantities of characters on screen.
+        // Glyph pre-caching allows you to tell the game engine ahead of time what
+        // character textures you intend to use ahead of time and then writes the
+        // resulting textures to a map. This method of drawing is better at drawing
+        // a lot of characters at once, but may slow down with a larger variety of
+        // character textures. Additionally, initially loading characters into the buffer
+        // is process intensive. As such, it is best to only modify the glyph buffer
+        // at the start of the game or during loading screens or room transitions.
+        bool glyph_prechaching;
 
     // Gravity Engine Public Attributes
     public:
@@ -91,14 +111,21 @@ class GravityEngine_Core
         // int fw : font width
         // int fh : font height
         // int f : frame rate cap in frames per second
-        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f)
+        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, bool q, int sw, int sh)
         {
+        	// Set screen resolution
+        	scr_w = sw;
+        	scr_h = sh;
+
             // Set the dims of the game canvas
             canvas_w = cw;
             canvas_h = ch;
             game_title = gt;
             game_id = gi;
             game_version = gv;
+
+            // Set glyph_prechaching or not
+            glyph_prechaching = q;
 
             // Set the dims of the font
             if (fw == -1)
@@ -210,7 +237,7 @@ class GravityEngine_Core
         // int cw : window width
         // int ch : window height
         // int f : frame rate cap in frames per second
-        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f) {}
+        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, bool q, int w, int h) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, q, w, h) {}
 
         // canvas x
         int GetCanvasW()
@@ -288,9 +315,17 @@ class GravityEngine_Core
             sans = TTF_OpenFont(fp, font_h);
 
             // Create texts
-            draw_chars = new TTF_Text*[canvas_w * canvas_h];
-            for (int i = 0; i < canvas_w * canvas_h; i++)
-            	draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
+            if (!glyph_prechaching)
+            {
+                draw_chars = new TTF_Text*[canvas_w * canvas_h];
+                for (int i = 0; i < canvas_w * canvas_h; i++)
+                	draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
+            }
+            else
+            {
+				// Cache all of the glyph textures
+				CacheGlyphTextures();
+            }
 
             // Call init custom user code
             if (init_game != nullptr)
@@ -300,9 +335,19 @@ class GravityEngine_Core
             GameLoop(pre_loop_code, post_loop_code);
 
             // TTF Quit
-            for (int i = 0; i < canvas_w * canvas_h; i++)
-            	TTF_DestroyText(draw_chars[i]);
-            delete[] draw_chars;
+            if (!glyph_prechaching)
+            {
+				for (int i = 0; i < canvas_w * canvas_h; i++)
+					TTF_DestroyText(draw_chars[i]);
+				delete[] draw_chars;
+            }
+            else
+            {
+            	for (auto t : character_textures)
+            	{
+            		SDL_DestroyTexture(t.second);
+            	}
+            }
 			TTF_DestroyRendererTextEngine(engine);
             TTF_Quit();
 
@@ -369,67 +414,87 @@ class GravityEngine_Core
         // Draw text onto layer
         void DrawTextString(int x, int y, layer l, std::string s, color col)
         {
+        	// Draw text to the background layer
             if (l == background)
             {
-                for (int q = 0; q < s.length(); q++)
+            	// Loop through the string and drop the characters into the canvas
+            	int q = 0;
+                for (auto c : s)
                 {
                     if (q+x < canvas_w)
                     {
-                        canvas_bg[y][q+x] = s.at(q);
+                        canvas_bg[y][q+x] = c;
                         color_bg[y][q+x] = col;
                     }
+                    q++;
                 }
             }
-            if (l == foreground)
+        	// Draw text to the foreground layer
+            else if (l == foreground)
             {
-                for (int q = 0; q < s.length(); q++)
+            	// Loop through the string and drop the characters into the canvas
+            	int q = 0;
+                for (auto c : s)
                 {
                     if (q+x < canvas_w)
                     {
-                        canvas_fg[y][q+x] = s.at(q);
+                        canvas_fg[y][q+x] = c;
                         color_fg[y][q+x] = col;
                     }
+                    q++;
                 }
             }
-            if (l == ui)
+        	// Draw text to the ui layer
+            else if (l == ui)
             {
-                for (int q = 0; q < s.length(); q++)
+            	// Loop through the string and drop the characters into the canvas
+            	int q = 0;
+                for (auto c : s)
                 {
                     if (q+x < canvas_w)
                     {
-                        char c = s.at(q);
                         canvas_ui[y][q+x] = c;
                         color_ui[y][q+x] = col;
                     }
+                    q++;
                 }
             }
-            if (l == entity)
+        	// Draw text to the entity layer
+            else if (l == entity)
             {
-                for (int q = 0; q < s.length(); q++)
+            	// Loop through the string and drop the characters into the canvas
+            	int q = 0;
+                for (auto c : s)
                 {
                     if (q+x < canvas_w)
                     {
-                        canvas_ent[y][q+x] = s.at(q);
+                        canvas_ent[y][q+x] = c;
                         color_ent[y][q+x] = col;
                     }
+                    q++;
                 }
             }
-            if (l == debug)
+        	// Draw text to the debug layer
+            else if (l == debug)
             {
-                for (int q = 0; q < s.length(); q++)
+            	// Loop through the string and drop the characters into the canvas
+            	int q = 0;
+                for (auto c : s)
                 {
                     if (q+x < canvas_w)
                     {
-                        canvas_debug[y][q+x] = s.at(q);
+                        canvas_debug[y][q+x] = c;
                         color_debug[y][q+x] = col;
                     }
+                    q++;
                 }
             }
         }
 
-        // Credit to OLC Console Game Engine for this function
+        // Draw character into the screen buffer with char c and color col
         void Draw(int x, int y, char c = '0', color col = {{255, 255, 255}, {0, 0, 0}})
         {
+        	// Only write if the character is in the bounds of the screen buffer
             if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
             {
                 buf_char_screen[y * canvas_w + x] = c;
@@ -450,9 +515,55 @@ class GravityEngine_Core
             return false; // (GetKeyState(key_code) & 0x8000);
         }
 
+        // Add a glyph to the glyph buffer to be loaded into the texture cache
+        void AddGlyph(glyph g, bool apply_immediatly = false)
+		{
+        	glyph_buffer.push_back(g);
+        	if (apply_immediatly) CacheGlyph(g.chr, g.col);
+		}
+
+        // Add a glyph to the glyph buffer to be loaded into the texture cache
+        void SetAllGlyphs(std::vector<glyph> g, bool apply_immediatly = false)
+		{
+        	glyph_buffer.clear();
+        	for (auto gly : g) { glyph_buffer.push_back(gly); }
+        	if (apply_immediatly) CacheGlyphTextures();
+		}
+
+        // Loop through
+        void CacheGlyphTextures()
+        {
+        	// Delete all existing character textures
+        	for (auto t : character_textures)
+        	{
+        		SDL_DestroyTexture(t.second);
+        	}
+        	// Clear the text caches
+        	character_textures.clear();
+        	character_widths.clear();
+        	// Render and cache characters present in the glyph buffer
+        	for (auto g : glyph_buffer)
+            	CacheGlyph(g.chr, g.col);
+        }
+
     private:
 
-        // Insert buf_char_screen into the screen text and then draw it to the screen
+        // Render the texture for the given character with the given color into texture cache
+        void CacheGlyph(char i, SDL_Color c)
+        {
+			std::string str_key = (char)i
+								  + std::to_string(c.r)
+								  + std::to_string(c.g)
+								  + std::to_string(c.b);
+			// Create texture
+			SDL_Surface* surf_message = TTF_RenderGlyph_Blended(sans, (char)i,
+					{c.r,c.g,c.b});
+			character_textures[str_key] = SDL_CreateTextureFromSurface(renderer, surf_message);
+			character_widths[str_key] = surf_message->w;
+			SDL_DestroySurface(surf_message);
+        }
+
+        // Draw screen buffer to the SDL window
         void DrawScreenText()
         {
         	// Init the iterator for the character buffer
@@ -463,52 +574,48 @@ class GravityEngine_Core
         	// Loop through all of the characters in the
             for (int i = 0; i < canvas_w * canvas_h; i++)
             {
+            	// Newline
             	if (i % canvas_w == 0 && i != 0)
             	{
             		y++;
             		x = 0;
             	}
 
-            	// Destroy the text object if it exists
-            	if (draw_chars[buf_index] != NULL)
-            		TTF_DestroyText(draw_chars[buf_index]);
-            	// Create the text object for the character we are going to draw
-            	draw_chars[buf_index] = TTF_CreateText(engine, sans, "0", 0u);
-            	// Set the character's color
-                TTF_SetTextColor(draw_chars[buf_index],
-                		(int)(buf_col_screen[buf_index].f.r),
-						(int)(buf_col_screen[buf_index].f.g),
-						(int)(buf_col_screen[buf_index].f.b),
-						255);
-                // Set the text's first character to the buffer's character at this location
-            	draw_chars[buf_index]->text[0] = buf_char_screen[buf_index];
-            	// Render the text
-                TTF_DrawRendererText(draw_chars[buf_index], x*font_w, y*font_h);
-
-            	/*// Create key string
-            	std::string str_key = buf_char_screen[buf_index]
-						              + std::to_string(buf_col_screen[buf_index].f.r)
-	              	  	  	  	  	  + std::to_string(buf_col_screen[buf_index].f.g)
-	              	  	  	  	  	  + std::to_string(buf_col_screen[buf_index].f.b);
-
-            	// search and create texture
-            	if (!character_textures.count(str_key))
+            	// Check drawing mode
+            	if (!glyph_prechaching)
             	{
-            		// Create texture
-					SDL_Surface* surf_message = TTF_RenderGlyph_Blended(sans, buf_char_screen[buf_index],
-							buf_col_screen[buf_index].f);
-					character_textures[str_key] = SDL_CreateTextureFromSurface(renderer, surf_message);
-					character_widths[str_key] = surf_message->w;
-					SDL_DestroySurface(surf_message);
+					// Destroy the text object if it exists
+					if (draw_chars[buf_index] != NULL)
+						TTF_DestroyText(draw_chars[buf_index]);
+					// Create the text object for the character we are going to draw
+					draw_chars[buf_index] = TTF_CreateText(engine, sans, "0", 0u);
+					// Set the character's color
+					TTF_SetTextColor(draw_chars[buf_index],
+							(int)(buf_col_screen[buf_index].f.r),
+							(int)(buf_col_screen[buf_index].f.g),
+							(int)(buf_col_screen[buf_index].f.b),
+							255);
+					// Set the text's first character to the buffer's character at this location
+					draw_chars[buf_index]->text[0] = buf_char_screen[buf_index];
+					// Render the text
+					TTF_DrawRendererText(draw_chars[buf_index], x*font_w, y*font_h);
             	}
+            	else
+            	{
+					// Create key string
+					std::string str_key = buf_char_screen[buf_index]
+										  + std::to_string(buf_col_screen[buf_index].f.r)
+										  + std::to_string(buf_col_screen[buf_index].f.g)
+										  + std::to_string(buf_col_screen[buf_index].f.b);
 
-            	// Draw glyph
-            	SDL_FRect message_rect;
-            	message_rect.x = x*font_disp_x;
-            	message_rect.y = y*font_h;
-            	message_rect.w = character_widths[str_key];
-            	message_rect.h = font_h;
-            	SDL_RenderTexture(renderer, character_textures[str_key], NULL, &message_rect);*/
+					// Draw glyph
+					SDL_FRect message_rect;
+					message_rect.x = x*font_disp_x;
+					message_rect.y = y*font_h;
+					message_rect.w = character_widths[str_key];
+					message_rect.h = font_h;
+					SDL_RenderTexture(renderer, (SDL_Texture*)character_textures[str_key], NULL, &message_rect);
+            	}
 
                 // Inc vars
             	x++;
@@ -572,6 +679,7 @@ class GravityEngine_Core
             {
                 for (int q = 0; q < canvas_w; q++)
                 {
+                	// Draw the debug layer only if debug mode is on
                     if (debug_mode)
                     {
 						if (canvas_fg[i][q]==' ' && canvas_debug[i][q]==' ' && canvas_ent[i][q]==' ' && canvas_ui[i][q]==' ')
@@ -617,13 +725,13 @@ class GravityEngine_Core
                 (*frame_check) = 0;
                 (*second_check) += 1;
             }
-
             // Draw the debug overlay
             if (debug_complex)
             {
                 DrawTextString(0,0,debug,"Delta Time: " + std::to_string(DeltaTime()) + " Elapsed Seconds: " + std::to_string(seconds),{{255,255,255},{0,0,0}});
                 DrawTextString(0,1,debug,"Frame Time: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second),{{255,255,255},{0,0,0}});
-                // DrawTextString(0,2,debug,"Cached Textures: " + std::to_string(character_widths.size()),{{255,255,255},{0,0,0}});
+                if (glyph_prechaching)
+                	DrawTextString(0,2,debug,"Cached Textures: " + std::to_string(character_widths.size()),{{255,255,255},{0,0,0}});
             }
             else
             {
