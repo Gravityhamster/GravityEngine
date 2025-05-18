@@ -53,6 +53,7 @@ class GravityEngine_Core
         color def_color = {{255,255,255}, {0,0,0}}; // Default color to clean the color arrays
         int def_col = 0; // Default collision value to clean the collision arrays with
         int font_w; // Width of the font
+        int font_disp_x = 0;
         int font_h; // Height of the font
         int64_t frame_time = 0; // The current time the last frame took
         int64_t frame_length; // The desired frame length
@@ -67,17 +68,17 @@ class GravityEngine_Core
         int scr_h = 1080;
         int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
         std::string font_path = "./Ubuntu-B-1.ttf";
+        SDL_Window* window = NULL;
+        SDL_Renderer* renderer = NULL;
+        TTF_TextEngine* engine = NULL;
+        TTF_Font* sans = NULL;
+        TTF_Text **draw_chars = NULL;
+        //SDL_Texture* message = NULL;
 
     // Gravity Engine Public Attributes
     public:
         bool debug_mode = false; // Show debug overlay
         bool debug_complex = false; // Show complex debug overlay
-        SDL_Window* window = NULL;
-        SDL_Renderer* renderer = NULL;
-        TTF_TextEngine* engine = NULL;
-        TTF_Font* sans = NULL;
-        SDL_Color white = {255,255,255};
-        TTF_Text **draw_chars = NULL;
 
     // Gravity Engine Public Methods
     public:
@@ -283,6 +284,13 @@ class GravityEngine_Core
             const char * fp = font_path.c_str();
             sans = TTF_OpenFont(fp, font_h);
 
+            /*// Create texture
+        	SDL_Surface* surf_message = TTF_RenderGlyph_Shaded(sans, 'S', {255, 255, 255}, {0, 0, 0});
+        	message = SDL_CreateTextureFromSurface(renderer, surf_message);
+        	font_disp_x = font_w;
+        	font_w = surf_message->w;
+        	SDL_DestroySurface(surf_message);*/
+
             draw_chars = new TTF_Text*[canvas_w * canvas_h];
             for (int i = 0; i < canvas_w * canvas_h; i++)
             	draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
@@ -464,17 +472,30 @@ class GravityEngine_Core
             		x = 0;
             	}
 
+            	// Destroy the text object if it exists
             	if (draw_chars[buf_index] != NULL)
             		TTF_DestroyText(draw_chars[buf_index]);
+            	// Create the text object for the character we are going to draw
             	draw_chars[buf_index] = TTF_CreateText(engine, sans, "0", 0u);
+            	// Set the character's color
                 TTF_SetTextColor(draw_chars[buf_index],
                 		(int)(buf_col_screen[buf_index].f.r),
 						(int)(buf_col_screen[buf_index].f.g),
 						(int)(buf_col_screen[buf_index].f.b),
 						255);
+                // Set the text's first character to the buffer's character at this location
             	draw_chars[buf_index]->text[0] = buf_char_screen[buf_index];
+            	// Render the text
                 TTF_DrawRendererText(draw_chars[buf_index], x*font_w, y*font_h);
 
+            	/*SDL_FRect message_rect;
+            	message_rect.x = x*font_disp_x;
+            	message_rect.y = y*font_h;
+            	message_rect.w = font_w;
+            	message_rect.h = font_h;
+            	SDL_RenderTexture(renderer, message, NULL, &message_rect);*/
+
+                // Inc vars
             	x++;
             	buf_index++;
             }
