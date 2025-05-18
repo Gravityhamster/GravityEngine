@@ -242,41 +242,17 @@ class GravityEngine_Core
         ~GravityEngine_Core()
         {
             // Delete all of the layers
-            for (int i = 0; i < canvas_h; i++)
-                delete[] canvas_debug[i];
             delete[] canvas_debug;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] canvas_ui[i];
             delete[] canvas_ui;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] canvas_fg[i];
             delete[] canvas_fg;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] canvas_bg[i];
             delete[] canvas_bg;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] canvas_ent[i];
             delete[] canvas_ent;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] color_ui[i];
             delete[] color_ui;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] color_fg[i];
             delete[] color_fg;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] color_bg[i];
             delete[] color_bg;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] color_ent[i];
             delete[] color_ent;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] color_debug[i];
             delete[] color_debug;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] collision_static[i];
             delete[] collision_static;
-            for (int i = 0; i < canvas_h; i++)
-                delete[] collision_dynamic[i];
             delete[] collision_dynamic;
             delete[] buf_col_screen;
             delete[] buf_char_screen;
@@ -306,9 +282,6 @@ class GravityEngine_Core
             // Create font
             const char * fp = font_path.c_str();
             sans = TTF_OpenFont(fp, font_h);
-            TTF_SetFontKerning(sans, true);
-            TTF_SetFontLineSkip(sans, font_h);
-            TTF_SetFontWrapAlignment(sans, TTF_HORIZONTAL_ALIGN_LEFT);
 
             draw_chars = new TTF_Text*[canvas_w * canvas_h];
             for (int i = 0; i < canvas_w * canvas_h; i++)
@@ -322,8 +295,8 @@ class GravityEngine_Core
             GameLoop(pre_loop_code, post_loop_code);
 
             // TTF Quit
-            // for (int i = 0; i < canvas_w * canvas_h; i++)
-            	// TTF_DestroyText(draw_chars[i]);
+            for (int i = 0; i < canvas_w * canvas_h; i++)
+            	TTF_DestroyText(draw_chars[i]);
             delete[] draw_chars;
 			TTF_DestroyRendererTextEngine(engine);
             TTF_Quit();
@@ -454,14 +427,7 @@ class GravityEngine_Core
         {
             if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
             {
-                if (buf_char_screen[y * canvas_w + x] != c)
-                    buf_char_screen[y * canvas_w + x] = c;
-                /*if (buf_col_screen[y * canvas_w + x].f.r != col.f.r ||
-                	buf_col_screen[y * canvas_w + x].f.g != col.f.g ||
-                	buf_col_screen[y * canvas_w + x].f.b != col.f.b ||
-					buf_col_screen[y * canvas_w + x].b.r != col.b.r ||
-					buf_col_screen[y * canvas_w + x].b.g != col.b.g ||
-					buf_col_screen[y * canvas_w + x].b.b != col.b.b)*/
+                buf_char_screen[y * canvas_w + x] = c;
                 buf_col_screen[y * canvas_w + x] = col;
             }
         }
@@ -554,15 +520,12 @@ class GravityEngine_Core
             // Clear the Dynamic Collision, Entity, and Debug layers
             for (int i = 0; i < canvas_h; i++)
             {
-            	std::fill(canvas_ent[i], canvas_ent[i] + strlen(canvas_ent[i]), ' ');
-            	std::fill(canvas_debug[i], canvas_debug[i] + strlen(canvas_debug[i]), ' ');
-            	std::fill(collision_dynamic[i], collision_dynamic[i] + strlen(collision_dynamic[i]), ' ');
-                //for (int q = 0; q < canvas_w; q++)
-                //{
-                    //DrawChar(q, i, entity, ' ');
-                    //DrawChar(q, i, debug, ' ');
-                    //SetCollisionValue(q, i, dyn, 0);
-                //}
+                for (int q = 0; q < canvas_w; q++)
+                {
+                    DrawChar(q, i, entity, ' ');
+                    DrawChar(q, i, debug, ' ');
+                    SetCollisionValue(q, i, dyn, 0);
+                }
             }
         }
 
@@ -640,7 +603,6 @@ class GravityEngine_Core
             // Sync timing
             std::chrono::duration<int64_t, std::nano> delta(frame_length);
             auto next_frame = start_time + delta;
-            std::chrono::duration<int64_t, std::nano> frame_delay(next_frame - std::chrono::system_clock::now());
             while (std::chrono::system_clock::now() < next_frame) { /* Spin in place until the clock hits the next frame */ }
             // Get the end of the frame time
             end_time = std::chrono::system_clock::now();
