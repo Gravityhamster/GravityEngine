@@ -5,6 +5,7 @@
 #include <thread>
 #include <math.h>
 #include <string>
+// #include <map>
 
 class GravityEngine_Core
 {
@@ -73,7 +74,8 @@ class GravityEngine_Core
         TTF_TextEngine* engine = NULL;
         TTF_Font* sans = NULL;
         TTF_Text **draw_chars = NULL;
-        //SDL_Texture* message = NULL;
+        // std::map<std::string, SDL_Texture*> character_textures = {};
+        // std::map<std::string, int> character_widths = {};
 
     // Gravity Engine Public Attributes
     public:
@@ -105,6 +107,7 @@ class GravityEngine_Core
                 fh = (int)(floor(scr_h / ch));
             font_w = fw;
             font_h = fh;
+            font_disp_x = font_w;
 
             // Instantiate canvas debug
             canvas_debug = new char*[canvas_h];
@@ -284,13 +287,7 @@ class GravityEngine_Core
             const char * fp = font_path.c_str();
             sans = TTF_OpenFont(fp, font_h);
 
-            /*// Create texture
-        	SDL_Surface* surf_message = TTF_RenderGlyph_Shaded(sans, 'S', {255, 255, 255}, {0, 0, 0});
-        	message = SDL_CreateTextureFromSurface(renderer, surf_message);
-        	font_disp_x = font_w;
-        	font_w = surf_message->w;
-        	SDL_DestroySurface(surf_message);*/
-
+            // Create texts
             draw_chars = new TTF_Text*[canvas_w * canvas_h];
             for (int i = 0; i < canvas_w * canvas_h; i++)
             	draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
@@ -488,12 +485,30 @@ class GravityEngine_Core
             	// Render the text
                 TTF_DrawRendererText(draw_chars[buf_index], x*font_w, y*font_h);
 
-            	/*SDL_FRect message_rect;
+            	/*// Create key string
+            	std::string str_key = buf_char_screen[buf_index]
+						              + std::to_string(buf_col_screen[buf_index].f.r)
+	              	  	  	  	  	  + std::to_string(buf_col_screen[buf_index].f.g)
+	              	  	  	  	  	  + std::to_string(buf_col_screen[buf_index].f.b);
+
+            	// search and create texture
+            	if (!character_textures.count(str_key))
+            	{
+            		// Create texture
+					SDL_Surface* surf_message = TTF_RenderGlyph_Blended(sans, buf_char_screen[buf_index],
+							buf_col_screen[buf_index].f);
+					character_textures[str_key] = SDL_CreateTextureFromSurface(renderer, surf_message);
+					character_widths[str_key] = surf_message->w;
+					SDL_DestroySurface(surf_message);
+            	}
+
+            	// Draw glyph
+            	SDL_FRect message_rect;
             	message_rect.x = x*font_disp_x;
             	message_rect.y = y*font_h;
-            	message_rect.w = font_w;
+            	message_rect.w = character_widths[str_key];
             	message_rect.h = font_h;
-            	SDL_RenderTexture(renderer, message, NULL, &message_rect);*/
+            	SDL_RenderTexture(renderer, character_textures[str_key], NULL, &message_rect);*/
 
                 // Inc vars
             	x++;
@@ -608,6 +623,7 @@ class GravityEngine_Core
             {
                 DrawTextString(0,0,debug,"Delta Time: " + std::to_string(DeltaTime()) + " Elapsed Seconds: " + std::to_string(seconds),{{255,255,255},{0,0,0}});
                 DrawTextString(0,1,debug,"Frame Time: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second),{{255,255,255},{0,0,0}});
+                // DrawTextString(0,2,debug,"Cached Textures: " + std::to_string(character_widths.size()),{{255,255,255},{0,0,0}});
             }
             else
             {
