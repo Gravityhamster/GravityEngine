@@ -642,13 +642,25 @@ class GravityEngine_Core
             	else
             	{
 					// Create key string
-					std::string str_key = buf_char_screen[buf_index]
-										  + std::to_string(buf_col_screen[buf_index].f.r)
-										  + std::to_string(buf_col_screen[buf_index].f.g)
-										  + std::to_string(buf_col_screen[buf_index].f.b)
-										  + std::to_string(buf_col_screen[buf_index].b.r)
-										  + std::to_string(buf_col_screen[buf_index].b.g)
-										  + std::to_string(buf_col_screen[buf_index].b.b);
+            		/*
+            		std::ostringstream str_key;
+            		str_key << buf_char_screen[buf_index]
+						    << (int)(buf_col_screen[buf_index].f.r)
+						    << (int)(buf_col_screen[buf_index].f.g)
+						    << (int)(buf_col_screen[buf_index].f.b)
+						    << (int)(buf_col_screen[buf_index].b.r)
+						    << (int)(buf_col_screen[buf_index].b.g)
+						    << (int)(buf_col_screen[buf_index].b.b);
+					*/
+            		// A255255255255255255
+            		std::string str_key;
+            		str_key += buf_char_screen[buf_index];
+					str_key += std::to_string((int)(buf_col_screen[buf_index].f.r));
+					str_key += std::to_string((int)(buf_col_screen[buf_index].f.g));
+					str_key += std::to_string((int)(buf_col_screen[buf_index].f.b));
+					str_key += std::to_string((int)(buf_col_screen[buf_index].b.r));
+					str_key += std::to_string((int)(buf_col_screen[buf_index].b.g));
+					str_key += std::to_string((int)(buf_col_screen[buf_index].b.b));
 
 					// Draw glyph
 					SDL_FRect message_rect;
