@@ -6,9 +6,25 @@ double yd = 30;
 int di = 0;
 double spd = 0.5;
 
+class snake : public virtual GravityEngine_Object
+{
+	public:
+		snake() {};
+		~snake() {};
+		void begin_step() {};
+		void step()
+		{
+			(*geptr).DrawChar(15,15,(*geptr).entity,'@');
+			(*geptr).DrawSetColor(15,15,(*geptr).entity, {{255,0,0}, {0,0,125}});
+		};
+		void end_step() {};
+};
+
 // Master pre code
 void GameInit()
 {
+	(*geptr).AddObject(new snake());
+
 	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
 	{
 		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
