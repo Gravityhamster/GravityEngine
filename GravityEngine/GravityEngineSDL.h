@@ -8,6 +8,18 @@
 #include <string>
 #include <unordered_map>
 
+// Template for game objects
+class GravityEngine_Object
+{
+    public:
+		GravityEngine_Object() {}
+		virtual ~GravityEngine_Object() {};
+		virtual void begin_step() {};
+		virtual void step() {};
+		virtual void end_step() {};
+};
+
+// Core engine class
 class GravityEngine_Core
 {
     // Gravity Engine Types
@@ -38,6 +50,7 @@ class GravityEngine_Core
 
     // Gravity Engine Private Attributes
     private:
+    	std::vector<GravityEngine_Object*> entity_list;
         bool game_running = false; // Is the game running or now?
         int canvas_w; // Game canvas width
         int canvas_h; // Game canvas height
@@ -301,7 +314,7 @@ class GravityEngine_Core
             // Initialize SDL app meta data
             SDL_SetAppMetadata(game_title, game_version, game_id);
             // Initialize SDL library
-            if (SDL_Init(SDL_INIT_VIDEO) == false)
+            if (SDL_Init(SDL_INIT_VIDEO ) == false)
             {
                 std::cout << SDL_GetError() << std::endl;
                 std::system("pause");
@@ -356,6 +369,10 @@ class GravityEngine_Core
 
             // Kill SDL
             SDL_Quit();
+
+            // Free all objects
+        	for (auto o : entity_list)
+        		delete o;
 
             // Success!
             return SDL_APP_SUCCESS;
@@ -505,17 +522,6 @@ class GravityEngine_Core
             }
         }
 
-        // Draw character into the screen buffer with char c and color col
-        void Draw(int x, int y, char c = '0', color col = {{255, 255, 255}, {0, 0, 0}})
-        {
-        	// Only write if the character is in the bounds of the screen buffer
-            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
-            {
-                buf_char_screen[y * canvas_w + x] = c;
-                buf_col_screen[y * canvas_w + x] = col;
-            }
-        }
-
         // Get elapsed_frames
         long GetElapsedFrames()
         {
@@ -544,7 +550,7 @@ class GravityEngine_Core
         	if (apply_immediatly) CacheGlyphTextures();
 		}
 
-        // Loop through
+        // Store all glyphs to be used in the future
         void CacheGlyphTextures()
         {
         	// Delete all existing character textures
@@ -560,7 +566,24 @@ class GravityEngine_Core
             	CacheGlyph(g.chr, g.col);
         }
 
+        // Add the object to the entity list
+        void AddObject(GravityEngine_Object* object)
+        {
+        	entity_list.push_back(object);
+        }
+
     private:
+
+        // Draw character into the screen buffer with char c and color col
+        void Draw(int x, int y, char c = '0', color col = {{255, 255, 255}, {0, 0, 0}})
+        {
+        	// Only write if the character is in the bounds of the screen buffer
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                buf_char_screen[y * canvas_w + x] = c;
+                buf_col_screen[y * canvas_w + x] = col;
+            }
+        }
 
         // Render the texture for the given character with the given color into texture cache
         void CacheGlyph(char i, color c)
@@ -680,11 +703,26 @@ class GravityEngine_Core
         // Pre-game code
         void SystemPreGameLoop()
         {
+        	// Call all begin_step functions
+        	for (auto o : entity_list)
+        		(*o).begin_step();
+
+            // Poll SDL
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                // Get close event
+                if (event.type == SDL_EVENT_QUIT)
+                    game_running = false;
+            }
         }
 
         // Mid-game code
         void SystemGameLoop()
         {
+        	// Call all step functions
+        	for (auto o : entity_list)
+        		(*o).step();
+
         	// Clear surface
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
@@ -694,14 +732,6 @@ class GravityEngine_Core
 
             // Draw text
             DrawScreenText();
-
-            // Poll SDL
-            SDL_Event event;
-            while (SDL_PollEvent(&event)) {
-                // Get close event
-                if (event.type == SDL_EVENT_QUIT)
-                    game_running = false;
-            }
         }
 
         // Post-game code
@@ -724,6 +754,10 @@ class GravityEngine_Core
                     SetCollisionValue(q, i, dyn, 0);
                 }
             }
+
+        	// Call all step functions
+        	for (auto o : entity_list)
+        		(*o).end_step();
         }
 
         // Draw all the layers onto the console buffer. Do not write if it is blank or the layer above is obfuscating this coord
