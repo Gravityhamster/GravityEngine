@@ -97,6 +97,7 @@ class GravityEngine_Core
         std::unordered_map<std::string, SDL_Texture*> character_textures = {}; // Texture cache (only used if glyph_precaching is on)
         std::unordered_map<std::string, int> character_widths = {}; // Texture width cache (only used if glyph_precaching is on)
         std::vector<glyph> glyph_buffer = {}; // Glyphs to be loaded (only used if glyph_precaching is on)
+        const bool* keyboard_keys = SDL_GetKeyboardState(NULL); // Initialize keystate list
         // Glyph pre-caching changes how the drawing pipeline works.
         // If this setting is off, the engine will render text on the
         // fly using the TTF text engine. However this does struggle at higher
@@ -528,11 +529,14 @@ class GravityEngine_Core
             return elapsed_frames;
         }
 
-        // Get Key State
-        // TODO: Implement SDL input
-        bool GetKey(int key_code)
+        // Handle input
+        bool GetKeyState(SDL_Keymod sdlKey)
         {
-            return false; // (GetKeyState(key_code) & 0x8000);
+            SDL_PumpEvents();
+            if (keyboard_keys[sdlKey])
+                return true;
+            else
+                return false;
         }
 
         // Add a glyph to the glyph buffer to be loaded into the texture cache
@@ -699,7 +703,7 @@ class GravityEngine_Core
             	buf_index++;
             }
         }
-
+        
         // Pre-game code
         void SystemPreGameLoop()
         {

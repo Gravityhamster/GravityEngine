@@ -9,13 +9,20 @@ double spd = 0.5;
 class snake : public virtual GravityEngine_Object
 {
 	public:
+        double x = 15;
+        double y = 15;
 		snake() {};
 		~snake() {};
 		void begin_step() {};
 		void step()
 		{
-			(*geptr).DrawChar(15,15,(*geptr).entity,'@');
-			(*geptr).DrawSetColor(15,15,(*geptr).entity, {{255,0,0}, {0,0,125}});
+			(*geptr).DrawChar(x,y,(*geptr).entity,'@');
+			(*geptr).DrawSetColor(x,y,(*geptr).entity, {{255,0,0}, {0,0,125}});
+            
+            if ((*geptr).GetKeyState(SDLK_RIGHT)) x += .5;
+            if ((*geptr).GetKeyState(SDLK_LEFT)) x -= .5;
+            if ((*geptr).GetKeyState(SDLK_UP)) y -= .5;
+            if ((*geptr).GetKeyState(SDLK_DOWN)) y += .5;
 		};
 		void end_step() {};
 };
@@ -23,9 +30,9 @@ class snake : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
-	(*geptr).AddObject(new snake());
+    (*geptr).AddObject(new snake);
 
-	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
+	/*for (int q = 0; q < (*geptr).GetCanvasH(); q++)
 	{
 		for (int i = 0; i < (*geptr).GetCanvasW(); i++)
 		{
@@ -48,13 +55,14 @@ void GameInit()
 				(*geptr).DrawChar(i, q, (*geptr).foreground, rand()%5 == 0 ? 'C' : ' ');
 				(*geptr).DrawSetColor(i, q, (*geptr).foreground, {{0,255,255}, {125,125,125}});
 		}
-	}
+	}*/
 }
 
 // Master pre code
 void PreGameLoop()
 {
-    std::cout << (*geptr).fps_now() << "                   ";
+
+    /*std::cout << (*geptr).fps_now() << "                   ";
     std::cout << "\r";
     (*geptr).DrawChar((int)xd, (int)yd, (*geptr).entity, '@');
     (*geptr).DrawSetColor((int)xd, (int)yd, (*geptr).entity, {{255,0,0}, {0,0,125}});
@@ -80,7 +88,7 @@ void PreGameLoop()
     if (di == 2 && xd <= 20)
     	di = 3;
     if (di == 3 && yd >= 50)
-    	di = 0;
+    	di = 0;*/
 }
 
 // Master post code
@@ -91,7 +99,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 6000, false, 1920, 1080, "./Ubuntu-B-1.ttf");
+    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 60, false, 1920, 1080, "./Ubuntu-B-1.ttf");
 
     /*// You must include a list of the characters you are going to use if you use quality mode
     std::vector<GravityEngine_Core::glyph> g = {
