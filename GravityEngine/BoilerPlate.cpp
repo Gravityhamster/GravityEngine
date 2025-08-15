@@ -16,7 +16,7 @@ class snake : public virtual GravityEngine_Object
 		void begin_step() {};
 		void step()
 		{
-			(*geptr).DrawChar(x,y,(*geptr).entity,rand() % 100);
+            (*geptr).DrawChar(x, y, (*geptr).entity, '@');
 			(*geptr).DrawSetColor(x,y,(*geptr).entity, {{255,0,0}, {0,0,125}});
             
             if ((*geptr).GetKeyState(SDLK_RIGHT)) x += .5;

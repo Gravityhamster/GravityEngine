@@ -69,26 +69,26 @@ class GravityEngine_Core
         color def_color = {{255,255,255}, {0,0,0}}; // Default color to clean the color arrays
         int def_col = 0; // Default collision value to clean the collision arrays with
         int font_w; // Width of the font
-        int font_disp_x = 0;
+        int font_disp_x = 0; // Horizontal font displacement
         int font_h; // Height of the font
         int64_t frame_time = 0; // The current time the last frame took
         int64_t frame_length; // The desired frame length
         std::chrono::system_clock::time_point gobal_start_time; // When the game started
         std::chrono::system_clock::time_point start_time = std::chrono::system_clock::now(); // Beginning of the frame
         std::chrono::system_clock::time_point end_time = std::chrono::system_clock::now(); // End of the frame
-        int current_fps = 0;
-        const char* game_title;
-        const char* game_id;
-        const char* game_version;
+        int current_fps = 0; // The games current frame rate
+        const char* game_title; // The name of the game
+        const char* game_id; // The game's id
+        const char* game_version; // The version of the game
         int scr_w; // W of screen
         int scr_h; // H of screen
         int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
-        bool screen_updated = false;
-        std::string font_path;
+        bool screen_updated = false; // The flag that tells the game if it should update the screen or not
+        std::string font_path; // Location of the font to use for the text on screen
         SDL_Window* window = NULL; // Pointer to the SDL window object
         SDL_Renderer* renderer = NULL; // Pointer to the SDL renderer object
-        SDL_Texture* render_texture = NULL;
-        SDL_Texture* char_texture = NULL;
+        SDL_Texture* render_texture = NULL; // The texture for the entire screen
+        SDL_Texture* char_texture = NULL; // The texture for the current character to draw
         TTF_TextEngine* engine = NULL; // Point to the SDL_ttf text engine (only used if glyph_precaching is off)
         TTF_Font* sans = NULL; // SDL_ttf font to use
         TTF_Text **draw_chars = NULL; // List of character objects that are drawn in a grid (only used if glyph_precaching is off)
@@ -652,12 +652,16 @@ class GravityEngine_Core
             // Frame count
             elapsed_frames++;
 
-            // Draw to the window
+            // Draw to the window - Do not draw if the draw flag is off
             if (screen_updated)
             {
+                // Draw the screen texture to the renderer
                 SDL_RenderTexture(renderer, render_texture, NULL, NULL);
+                // Present everything rendered to the renderer to the screen
                 SDL_RenderPresent(renderer);
+                // I dunno why I have this delay here
                 SDL_Delay(0);
+                // Reset the draw flag
                 screen_updated = false;
             }
 
