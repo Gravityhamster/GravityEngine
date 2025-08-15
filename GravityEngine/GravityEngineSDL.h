@@ -40,13 +40,6 @@ class GravityEngine_Core
         	SDL_Color f;
         	SDL_Color b;
         };
-        // Glyph
-        struct glyph
-        {
-        	color col;
-			char chr;
-        };
-
 
     // Gravity Engine Private Attributes
     private:
@@ -68,6 +61,8 @@ class GravityEngine_Core
         char** collision_dynamic; // Game dynamic collision layer
         char* buf_char_screen; // The final game canvas
         color* buf_col_screen; // The final color canvas
+        char* last_buf_char_screen; // The final game canvas
+        color* last_buf_col_screen; // The final color canvas
         int elapsed_frames = 0; // Frames since game was started
         int frame_step_precision = 10000000; // Precision of sleep time to ensure the game stays in sync
         char def_char = ' '; // Default character to clean the graphics arrays
@@ -88,28 +83,18 @@ class GravityEngine_Core
         int scr_w; // W of screen
         int scr_h; // H of screen
         int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
+        bool screen_updated = false;
         std::string font_path;
         SDL_Window* window = NULL; // Pointer to the SDL window object
         SDL_Renderer* renderer = NULL; // Pointer to the SDL renderer object
+        SDL_Texture* render_texture = NULL;
+        SDL_Texture* char_texture = NULL;
         TTF_TextEngine* engine = NULL; // Point to the SDL_ttf text engine (only used if glyph_precaching is off)
         TTF_Font* sans = NULL; // SDL_ttf font to use
         TTF_Text **draw_chars = NULL; // List of character objects that are drawn in a grid (only used if glyph_precaching is off)
         std::unordered_map<std::string, SDL_Texture*> character_textures = {}; // Texture cache (only used if glyph_precaching is on)
         std::unordered_map<std::string, int> character_widths = {}; // Texture width cache (only used if glyph_precaching is on)
-        std::vector<glyph> glyph_buffer = {}; // Glyphs to be loaded (only used if glyph_precaching is on)
         const bool* keyboard_keys = SDL_GetKeyboardState(NULL); // Initialize keystate list
-        // Glyph pre-caching changes how the drawing pipeline works.
-        // If this setting is off, the engine will render text on the
-        // fly using the TTF text engine. However this does struggle at higher
-        // quantities of characters on screen.
-        // Glyph pre-caching allows you to tell the game engine ahead of time what
-        // character textures you intend to use ahead of time and then writes the
-        // resulting textures to a map. This method of drawing is better at drawing
-        // a lot of characters at once, but may slow down with a larger variety of
-        // character textures. Additionally, initially loading characters into the buffer
-        // is process intensive. As such, it is best to only modify the glyph buffer
-        // at the start of the game or during loading screens or room transitions.
-        bool glyph_prechaching;
 
     // Gravity Engine Public Attributes
     public:
@@ -125,7 +110,7 @@ class GravityEngine_Core
         // int fw : font width
         // int fh : font height
         // int f : frame rate cap in frames per second
-        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, bool q, int sw, int sh, std::string fp)
+        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, int sw, int sh, std::string fp)
         {
         	// Set game font
         	font_path = fp;
@@ -140,9 +125,6 @@ class GravityEngine_Core
             game_title = gt;
             game_id = gi;
             game_version = gv;
-
-            // Set glyph_prechaching or not
-            glyph_prechaching = q;
 
             // Set the dims of the font
             if (fw == -1)
@@ -241,10 +223,14 @@ class GravityEngine_Core
             // Instantiate screen buffer
             buf_char_screen = new char[canvas_w * canvas_h];
             buf_col_screen = new color[canvas_w * canvas_h];
+            last_buf_char_screen = new char[canvas_w * canvas_h];
+            last_buf_col_screen = new color[canvas_w * canvas_h];
             for (int i = 0; i < canvas_w * canvas_h; i++)
             {
                 buf_char_screen[i] = ' ';
                 buf_col_screen[i] = {{255,255,255},{0,0,0}};
+                last_buf_char_screen[i] = '1';
+                last_buf_col_screen[i] = { {0,0,0},{0,0,0} };
             }
             // Set the desired frame length to 1 second divided be the desired frame rate
             frame_length = 1000000000 / f;
@@ -254,7 +240,7 @@ class GravityEngine_Core
         // int cw : window width
         // int ch : window height
         // int f : frame rate cap in frames per second
-        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, bool q, int w, int h, std::string fp) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, q, w, h, fp) {}
+        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, int w, int h, std::string fp) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, w, h, fp) {}
 
         // canvas x
         int GetCanvasW()
@@ -322,6 +308,12 @@ class GravityEngine_Core
             }
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
+
+            // Create the render texture
+            render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, canvas_w * font_w, canvas_h * font_h);
+            char_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, font_w, font_h);
+
+            // Create the engine used to write text
             engine = TTF_CreateRendererTextEngine(renderer);
 
             // Init SDL ttf
@@ -332,17 +324,9 @@ class GravityEngine_Core
             sans = TTF_OpenFont(fp, font_h);
 
             // Create texts
-            if (!glyph_prechaching)
-            {
-                draw_chars = new TTF_Text*[canvas_w * canvas_h];
-                for (int i = 0; i < canvas_w * canvas_h; i++)
-                	draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
-            }
-            else
-            {
-				// Cache all of the glyph textures
-				CacheGlyphTextures();
-            }
+            draw_chars = new TTF_Text*[canvas_w * canvas_h];
+            for (int i = 0; i < canvas_w * canvas_h; i++)
+                draw_chars[i] = TTF_CreateText(engine, sans, "0", 0u);
 
             // Call init custom user code
             if (init_game != nullptr)
@@ -352,19 +336,9 @@ class GravityEngine_Core
             GameLoop(pre_loop_code, post_loop_code);
 
             // TTF Quit
-            if (!glyph_prechaching)
-            {
-				for (int i = 0; i < canvas_w * canvas_h; i++)
-					TTF_DestroyText(draw_chars[i]);
-				delete[] draw_chars;
-            }
-            else
-            {
-            	for (auto t : character_textures)
-            	{
-            		SDL_DestroyTexture(t.second);
-            	}
-            }
+			for (int i = 0; i < canvas_w * canvas_h; i++)
+				TTF_DestroyText(draw_chars[i]);
+			delete[] draw_chars;
 			TTF_DestroyRendererTextEngine(engine);
             TTF_Quit();
 
@@ -435,12 +409,15 @@ class GravityEngine_Core
         // Change Font
         void ChangeFont(std::string fpth)
         {
+            // Reset the last buffer so the entire frame gets drawn
+            for (int i = 0; i < canvas_w * canvas_h; i++)
+            {
+                last_buf_char_screen[i] = NULL;
+                last_buf_col_screen[i] = { {NULL,NULL,NULL},{NULL,NULL,NULL} };
+            }
             // Create font
             const char * fp = fpth.c_str();
             sans = TTF_OpenFont(fp, font_h);
-            // Re-render glyphs
-            if (glyph_prechaching)
-            	CacheGlyphTextures();
         }
 
         // Draw text onto layer
@@ -539,37 +516,6 @@ class GravityEngine_Core
                 return false;
         }
 
-        // Add a glyph to the glyph buffer to be loaded into the texture cache
-        void AddGlyph(glyph g, bool apply_immediatly = false)
-		{
-        	glyph_buffer.push_back(g);
-        	if (apply_immediatly) CacheGlyph(g.chr, g.col);
-		}
-
-        // Add a glyph to the glyph buffer to be loaded into the texture cache
-        void SetAllGlyphs(std::vector<glyph> g, bool apply_immediatly = false)
-		{
-        	glyph_buffer.clear();
-        	for (auto gly : g) { glyph_buffer.push_back(gly); }
-        	if (apply_immediatly) CacheGlyphTextures();
-		}
-
-        // Store all glyphs to be used in the future
-        void CacheGlyphTextures()
-        {
-        	// Delete all existing character textures
-        	for (auto t : character_textures)
-        	{
-        		SDL_DestroyTexture(t.second);
-        	}
-        	// Clear the text caches
-        	character_textures.clear();
-        	character_widths.clear();
-        	// Render and cache characters present in the glyph buffer
-        	for (auto g : glyph_buffer)
-            	CacheGlyph(g.chr, g.col);
-        }
-
         // Add the object to the entity list
         void AddObject(GravityEngine_Object* object)
         {
@@ -588,35 +534,7 @@ class GravityEngine_Core
                 buf_col_screen[y * canvas_w + x] = col;
             }
         }
-
-        // Render the texture for the given character with the given color into texture cache
-        void CacheGlyph(char i, color c)
-        {
-			std::string str_key = (char)i
-								  + std::to_string(c.f.r)
-								  + std::to_string(c.f.g)
-								  + std::to_string(c.f.b)
-								  + std::to_string(c.b.r)
-								  + std::to_string(c.b.g)
-								  + std::to_string(c.b.b);
-
-			// Create texture
-			SDL_Surface* surf_message = TTF_RenderGlyph_Blended(sans, (char)i,
-					{c.f.r,c.f.g,c.f.b});
-			// Create color background
-			SDL_Surface* surf_color = SDL_CreateSurface(font_w, font_h, surf_message->format);
-			SDL_ClearSurface(surf_color, ((double)c.b.r)/255.0, ((double)c.b.g)/255.0, ((double)c.b.b)/255.0, 255);
-
-			// Merge
-			SDL_BlitSurface(surf_message, NULL, surf_color, NULL);
-
-			character_textures[str_key] = SDL_CreateTextureFromSurface(renderer, surf_color);
-			character_widths[str_key] = surf_color->w;
-
-			SDL_DestroySurface(surf_message);
-			SDL_DestroySurface(surf_color);
-        }
-
+        
         // Draw screen buffer to the SDL window
         void DrawScreenText()
         {
@@ -625,6 +543,8 @@ class GravityEngine_Core
         	// Init the x and y coords for the output
         	int x = 0;
         	int y = 0;
+            // Render to texture instead of directly to the screen
+            SDL_SetRenderTarget(renderer, render_texture);
         	// Loop through all of the characters in the
             for (int i = 0; i < canvas_w * canvas_h; i++)
             {
@@ -636,72 +556,61 @@ class GravityEngine_Core
             	}
 
             	// Check drawing mode
-            	if (!glyph_prechaching)
-            	{
-					// Destroy the text object if it exists
-					if (draw_chars[buf_index] != NULL)
-						TTF_DestroyText(draw_chars[buf_index]);
-					// Create the text object for the character we are going to draw
-					draw_chars[buf_index] = TTF_CreateText(engine, sans, "0", 0u);
-					// Set the character's color
-					TTF_SetTextColor(draw_chars[buf_index],
-							(int)(buf_col_screen[buf_index].f.r),
-							(int)(buf_col_screen[buf_index].f.g),
-							(int)(buf_col_screen[buf_index].f.b),
-							255);
-					// Set the text's first character to the buffer's character at this location
-					draw_chars[buf_index]->text[0] = buf_char_screen[buf_index];
-					// Draw glyph
-					SDL_FRect rect;
-					rect.x = x*font_disp_x;
-					rect.y = y*font_h;
-					rect.w = font_w;
-					rect.h = font_h;
-					SDL_SetRenderDrawColor(renderer,
-							buf_col_screen[buf_index].b.r,
-							buf_col_screen[buf_index].b.g,
-							buf_col_screen[buf_index].b.b,
-							255);
-				    SDL_RenderFillRect(renderer, &rect);
-					// Render the text
-					TTF_DrawRendererText(draw_chars[buf_index], x*font_w, y*font_h);
-            	}
-            	else
-            	{
-					// Create key string
-            		/*
-            		std::ostringstream str_key;
-            		str_key << buf_char_screen[buf_index]
-						    << (int)(buf_col_screen[buf_index].f.r)
-						    << (int)(buf_col_screen[buf_index].f.g)
-						    << (int)(buf_col_screen[buf_index].f.b)
-						    << (int)(buf_col_screen[buf_index].b.r)
-						    << (int)(buf_col_screen[buf_index].b.g)
-						    << (int)(buf_col_screen[buf_index].b.b);
-					*/
-            		// A255255255255255255
-            		std::string str_key;
-            		str_key += buf_char_screen[buf_index];
-					str_key += std::to_string((int)(buf_col_screen[buf_index].f.r));
-					str_key += std::to_string((int)(buf_col_screen[buf_index].f.g));
-					str_key += std::to_string((int)(buf_col_screen[buf_index].f.b));
-					str_key += std::to_string((int)(buf_col_screen[buf_index].b.r));
-					str_key += std::to_string((int)(buf_col_screen[buf_index].b.g));
-					str_key += std::to_string((int)(buf_col_screen[buf_index].b.b));
-
-					// Draw glyph
-					SDL_FRect message_rect;
-					message_rect.x = x*font_disp_x;
-					message_rect.y = y*font_h;
-					message_rect.w = character_widths[str_key];
-					message_rect.h = font_h;
-					SDL_RenderTexture(renderer, (SDL_Texture*)character_textures[str_key], NULL, &message_rect);
-            	}
+                if (buf_char_screen[buf_index] != last_buf_char_screen[buf_index] or
+                    buf_col_screen[buf_index].b.r != last_buf_col_screen[buf_index].b.r or
+                    buf_col_screen[buf_index].b.g != last_buf_col_screen[buf_index].b.g or
+                    buf_col_screen[buf_index].b.b != last_buf_col_screen[buf_index].b.b or
+                    buf_col_screen[buf_index].f.r != last_buf_col_screen[buf_index].f.r or
+                    buf_col_screen[buf_index].f.g != last_buf_col_screen[buf_index].f.g or
+                    buf_col_screen[buf_index].f.b != last_buf_col_screen[buf_index].f.b)
+                {                    
+                    // Please post the render at the end of the frame
+                    screen_updated = true;
+                    // Destroy the text object if it exists
+                    if (draw_chars[buf_index] != NULL)
+                        TTF_DestroyText(draw_chars[buf_index]);
+                    // Create the text object for the character we are going to draw
+                    draw_chars[buf_index] = TTF_CreateText(engine, sans, "0", 0u);
+                    // Set the character's color
+                    TTF_SetTextColor(draw_chars[buf_index],
+                        (int)(buf_col_screen[buf_index].f.r),
+                        (int)(buf_col_screen[buf_index].f.g),
+                        (int)(buf_col_screen[buf_index].f.b),
+                        255);
+                    // Set the text's first character to the buffer's character at this location
+                    draw_chars[buf_index]->text[0] = buf_char_screen[buf_index];
+                    // Point to the texture for drawing a char
+                    SDL_SetRenderTarget(renderer, char_texture);
+                    // Draw glyph - Fill background with back color
+                    SDL_SetRenderDrawColor(renderer,
+                        buf_col_screen[buf_index].b.r,
+                        buf_col_screen[buf_index].b.g,
+                        buf_col_screen[buf_index].b.b,
+                        255);
+                    SDL_RenderFillRect(renderer, NULL);
+                    // Render the text
+                    TTF_DrawRendererText(draw_chars[buf_index], 0, 0);
+                    // Go back to the previous and then draw the char texture
+                    SDL_SetRenderTarget(renderer, render_texture);
+                    // Define where the char will go in a rect
+                    SDL_FRect c_rect;
+                    c_rect.x = x * font_disp_x;
+                    c_rect.y = y * font_h;
+                    c_rect.w = font_w;
+                    c_rect.h = font_h;
+                    // Actually render the char texture to that rect
+                    SDL_RenderTexture(renderer, char_texture, NULL, new SDL_FRect(c_rect));
+                    // Clear the char texture
+                    SDL_SetRenderTarget(renderer, char_texture);
+                    SDL_RenderClear(renderer);
+                }
 
                 // Inc vars
             	x++;
             	buf_index++;
             }
+            // Reset render back to screen
+            SDL_SetRenderTarget(renderer, NULL);
         }
         
         // Pre-game code
@@ -729,7 +638,6 @@ class GravityEngine_Core
 
         	// Clear surface
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
 
             // Draw the background layer
             DrawLayers();
@@ -745,8 +653,20 @@ class GravityEngine_Core
             elapsed_frames++;
 
             // Draw to the window
-            SDL_RenderPresent(renderer);
-            SDL_Delay(0);
+            if (screen_updated)
+            {
+                SDL_RenderTexture(renderer, render_texture, NULL, NULL);
+                SDL_RenderPresent(renderer);
+                SDL_Delay(0);
+                screen_updated = false;
+            }
+
+            // Copy current screen state into last screen state
+            for (int i = 0; i < canvas_w * canvas_h; i++)
+            {
+                last_buf_char_screen[i] = buf_char_screen[i];
+                last_buf_col_screen[i] = buf_col_screen[i];
+            }
 
             // Clear the Dynamic Collision, Entity, and Debug layers
             for (int i = 0; i < canvas_h; i++)
@@ -820,10 +740,8 @@ class GravityEngine_Core
             // Draw the debug overlay
             if (debug_complex)
             {
-                DrawTextString(0,0,debug,"Delta Time: " + std::to_string(DeltaTime()) + " Elapsed Seconds: " + std::to_string(seconds),{{255,255,255},{0,0,0}});
+                DrawTextString(0,0,debug,"Delta Time: " + std::to_string(DeltaTime()) + " Elapsed Seconds: " + std::to_string(seconds) + " Elapsed Frames: " + std::to_string(elapsed_frames),{{255,255,255},{0,0,0}});
                 DrawTextString(0,1,debug,"Frame Time: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second),{{255,255,255},{0,0,0}});
-                if (glyph_prechaching)
-                	DrawTextString(0,2,debug,"Cached Textures: " + std::to_string(character_widths.size()),{{255,255,255},{0,0,0}});
             }
             else
             {
