@@ -301,7 +301,7 @@ class GravityEngine_Core
             // Initialize SDL app meta data
             SDL_SetAppMetadata(game_title, game_version, game_id);
             // Initialize SDL library
-            if (SDL_Init(SDL_INIT_VIDEO ) == false)
+            if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == false)
             {
                 std::cout << SDL_GetError() << std::endl;
                 std::system("pause");
@@ -556,12 +556,12 @@ class GravityEngine_Core
             	}
 
             	// Check drawing mode
-                if (buf_char_screen[buf_index] != last_buf_char_screen[buf_index] or
-                    buf_col_screen[buf_index].b.r != last_buf_col_screen[buf_index].b.r or
-                    buf_col_screen[buf_index].b.g != last_buf_col_screen[buf_index].b.g or
-                    buf_col_screen[buf_index].b.b != last_buf_col_screen[buf_index].b.b or
-                    buf_col_screen[buf_index].f.r != last_buf_col_screen[buf_index].f.r or
-                    buf_col_screen[buf_index].f.g != last_buf_col_screen[buf_index].f.g or
+                if (buf_char_screen[buf_index] != last_buf_char_screen[buf_index] ||
+                    buf_col_screen[buf_index].b.r != last_buf_col_screen[buf_index].b.r ||
+                    buf_col_screen[buf_index].b.g != last_buf_col_screen[buf_index].b.g ||
+                    buf_col_screen[buf_index].b.b != last_buf_col_screen[buf_index].b.b ||
+                    buf_col_screen[buf_index].f.r != last_buf_col_screen[buf_index].f.r ||
+                    buf_col_screen[buf_index].f.g != last_buf_col_screen[buf_index].f.g ||
                     buf_col_screen[buf_index].f.b != last_buf_col_screen[buf_index].f.b)
                 {                    
                     // Please post the render at the end of the frame
