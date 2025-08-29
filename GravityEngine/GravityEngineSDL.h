@@ -295,6 +295,9 @@ class GravityEngine_Core
         // Start the video game
         SDL_AppResult Start(void (*init_game)() = nullptr, void (*pre_loop_code)() = nullptr, void (*post_loop_code)() = nullptr)
         {
+
+
+
             // Game is running now
             game_running = true;
 
@@ -308,6 +311,34 @@ class GravityEngine_Core
             }
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
+
+
+
+
+
+
+            // Play a start sound
+            const char* file_path = "./DrumBeat.wav";
+            Uint8* audio_buf;
+            Uint32 audio_len;
+            SDL_AudioSpec audio_spec;
+            SDL_LoadWAV(file_path, &audio_spec, &audio_buf, &audio_len);
+            auto sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
+
+            SDL_PutAudioStreamData(sdl_audio_stream, audio_buf, audio_len);
+            auto id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
+            SDL_BindAudioStream(id, sdl_audio_stream);
+            bool e = SDL_ResumeAudioDevice(id);
+            auto ea = SDL_GetError();
+
+            //auto sdl_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, NULL, NULL);
+            //SDL_ResumeAudioStreamDevice(sdl_audio_stream);
+
+
+
+
+
+
 
             // Create the render texture
             render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, canvas_w * font_w, canvas_h * font_h);
