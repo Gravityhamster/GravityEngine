@@ -325,11 +325,21 @@ class GravityEngine_Core
             SDL_LoadWAV(file_path, &audio_spec, &audio_buf, &audio_len);
             auto sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
 
+            const char* file_path2 = "./AlexBallDingy.wav";
+            Uint8* audio_buf2;
+            Uint32 audio_len2;
+            SDL_AudioSpec audio_spec2;
+            SDL_LoadWAV(file_path2, &audio_spec2, &audio_buf2, &audio_len2);
+            auto sdl_audio_stream2 = SDL_CreateAudioStream(&audio_spec2, &audio_spec2);
+
             SDL_PutAudioStreamData(sdl_audio_stream, audio_buf, audio_len);
+            SDL_PutAudioStreamData(sdl_audio_stream2, audio_buf2, audio_len2);
             auto id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
+            auto id2 = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
             SDL_BindAudioStream(id, sdl_audio_stream);
-            bool e = SDL_ResumeAudioDevice(id);
-            auto ea = SDL_GetError();
+            SDL_BindAudioStream(id2, sdl_audio_stream2);
+            SDL_ResumeAudioDevice(id);
+            SDL_ResumeAudioDevice(id2);
 
             //auto sdl_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, NULL, NULL);
             //SDL_ResumeAudioStreamDevice(sdl_audio_stream);
