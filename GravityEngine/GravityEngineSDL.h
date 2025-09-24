@@ -295,9 +295,6 @@ class GravityEngine_Core
         // Start the video game
         SDL_AppResult Start(void (*init_game)() = nullptr, void (*pre_loop_code)() = nullptr, void (*post_loop_code)() = nullptr)
         {
-
-
-
             // Game is running now
             game_running = true;
 
@@ -317,32 +314,32 @@ class GravityEngine_Core
 
 
 
-            // Play a start sound
+            // Load sound
             const char* file_path = "./DrumBeat.wav";
             Uint8* audio_buf;
             Uint32 audio_len;
-            SDL_AudioSpec audio_spec;
-            SDL_LoadWAV(file_path, &audio_spec, &audio_buf, &audio_len);
+            SDL_AudioSpec wav_audio_spec;
+            SDL_LoadWAV(file_path, &wav_audio_spec, &audio_buf, &audio_len);
+
+            // Manual spec
+            SDL_AudioSpec audio_spec = { };
+            audio_spec.freq = 48000;
+            audio_spec.format = SDL_AUDIO_S32LE;
+            audio_spec.channels = 2;
+
+            // Convert audio
+            auto converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
+
+            // Create the audio stream
             auto sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
-
-            const char* file_path2 = "./AlexBallDingy.wav";
-            Uint8* audio_buf2;
-            Uint32 audio_len2;
-            SDL_AudioSpec audio_spec2;
-            SDL_LoadWAV(file_path2, &audio_spec2, &audio_buf2, &audio_len2);
-            auto sdl_audio_stream2 = SDL_CreateAudioStream(&audio_spec2, &audio_spec2);
-
-            SDL_PutAudioStreamData(sdl_audio_stream, audio_buf, audio_len);
-            SDL_PutAudioStreamData(sdl_audio_stream2, audio_buf2, audio_len2);
+            SDL_PutAudioStreamData(sdl_audio_stream, converted_audio.data(), converted_audio.size());
             auto id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
-            auto id2 = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
             SDL_BindAudioStream(id, sdl_audio_stream);
-            SDL_BindAudioStream(id2, sdl_audio_stream2);
             SDL_ResumeAudioDevice(id);
-            SDL_ResumeAudioDevice(id2);
 
-            //auto sdl_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec, NULL, NULL);
-            //SDL_ResumeAudioStreamDevice(sdl_audio_stream);
+
+
+
 
 
 
@@ -539,6 +536,23 @@ class GravityEngine_Core
                     q++;
                 }
             }
+        }
+
+        // Copilot help on this one
+        std::vector<Uint8> ConvertAudio(Uint8 *audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
+        {
+            // Convert audio to spec
+            auto sdl_audio_stream_conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
+            SDL_PutAudioStreamData(sdl_audio_stream_conv, audio_buf, audio_len);
+            SDL_FlushAudioStream(sdl_audio_stream_conv);
+            std::vector<Uint8> converted_data;
+            Uint8 temp[4096];
+            int bytesRead;
+            while ((bytesRead = SDL_GetAudioStreamData(sdl_audio_stream_conv, temp, sizeof(temp))) > 0) {
+                converted_data.insert(converted_data.end(), temp, temp + bytesRead);
+            }
+            SDL_DestroyAudioStream(sdl_audio_stream_conv);
+            return converted_data;
         }
 
         // Get elapsed_frames
