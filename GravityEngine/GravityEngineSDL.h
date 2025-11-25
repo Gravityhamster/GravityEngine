@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <random>
 
 // Copilot help on this one
 std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
@@ -24,6 +25,13 @@ std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpe
     SDL_DestroyAudioStream(sdl_audio_stream_conv);
     return converted_data;
 }
+
+// Color struct (foreground and background)
+struct color
+{
+    SDL_Color f;
+    SDL_Color b;
+};
 
 // Template for game objects
 class GravityEngine_Object
@@ -153,12 +161,6 @@ class GravityEngine_Core
         enum col_layer
         {
             stat, dyn
-        };
-        // Color struct (foreground and background)
-        struct color
-        {
-        	SDL_Color f;
-        	SDL_Color b;
         };
 
     // Gravity Engine Private Attributes
@@ -596,6 +598,9 @@ class GravityEngine_Core
         // Draw text onto layer
         void DrawTextString(int x, int y, layer l, std::string s, color col)
         {
+            if (y >= canvas_h || y < 0)
+                return;
+
         	// Draw text to the background layer
             if (l == background)
             {
@@ -680,7 +685,7 @@ class GravityEngine_Core
         }
 
         // Handle input
-        bool GetKeyState(SDL_Keymod sdlKey)
+        bool GetKeyState(SDL_Scancode sdlKey)
         {
             SDL_PumpEvents();
             if (keyboard_keys[sdlKey])
@@ -689,10 +694,28 @@ class GravityEngine_Core
                 return false;
         }
 
-        // Add the object to the entity list
-        void AddObject(GravityEngine_Object* object)
+        // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/
+        int RandRange(int min, int max)
         {
-        	entity_list.push_back(object);
+            // Initialize a random number generator
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> distrib(min, max);
+            // Return value
+            return distrib(gen);
+        }
+
+        // Add the object to the entity list
+        int AddObject(GravityEngine_Object* object)
+        {
+        	entity_list.insert(entity_list.end(), object);
+            return entity_list.size()-1;
+        }
+
+        // Remove the object from the entity list
+        void RemoveObject(GravityEngine_Object* object)
+        {
+            std::erase(entity_list, object);
         }
 
         // Add sounds to the sound list

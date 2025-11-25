@@ -22,7 +22,7 @@
     <ClInclude Include="GravityEngineSDL.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="BoilerPlate.cpp" />
+    <ClCompile Include="Example_Snake.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
