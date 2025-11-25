@@ -541,6 +541,44 @@ class GravityEngine_Core
             }
         }
 
+        // Get character on layer
+        char GetChar(int x, int y, layer l)
+        {
+            char c = NULL;
+
+            // If the requested x and y is within the window...
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                // Set the character at these coordinates on the layer.
+                if (l == debug) c = canvas_debug[y][x];
+                if (l == ui) c = canvas_ui[y][x];
+                if (l == background) c = canvas_bg[y][x];
+                if (l == foreground) c = canvas_fg[y][x];
+                if (l == entity) c = canvas_ent[y][x];
+            }
+
+            return c;
+        }
+
+        // Get character on layer
+        color GetColor(int x, int y, layer l)
+        {
+            color c = {};
+
+            // If the requested x and y is within the window...
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                // Set the character at these coordinates on the layer.
+                if (l == debug) c = color_debug[y][x];
+                if (l == ui) c = color_ui[y][x];
+                if (l == background) c = color_bg[y][x];
+                if (l == foreground) c = color_fg[y][x];
+                if (l == entity) c = color_ent[y][x];
+            }
+
+            return c;
+        }
+
         // Change Font
         void ChangeFont(std::string fpth)
         {
