@@ -8,11 +8,28 @@
 #include <string>
 #include <unordered_map>
 
+// Copilot help on this one
+std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
+{
+    // Convert audio to spec
+    auto sdl_audio_stream_conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
+    SDL_PutAudioStreamData(sdl_audio_stream_conv, audio_buf, audio_len);
+    SDL_FlushAudioStream(sdl_audio_stream_conv);
+    std::vector<Uint8> converted_data;
+    Uint8 temp[4096];
+    int bytesRead;
+    while ((bytesRead = SDL_GetAudioStreamData(sdl_audio_stream_conv, temp, sizeof(temp))) > 0) {
+        converted_data.insert(converted_data.end(), temp, temp + bytesRead);
+    }
+    SDL_DestroyAudioStream(sdl_audio_stream_conv);
+    return converted_data;
+}
+
 // Template for game objects
 class GravityEngine_Object
 {
     public:
-		GravityEngine_Object() {}
+        GravityEngine_Object() {};
 		virtual ~GravityEngine_Object() {};
 		virtual void begin_step() {};
 		virtual void step() {};
@@ -22,8 +39,111 @@ class GravityEngine_Object
 // Core engine class
 class GravityEngine_Core
 {
+    // Gravity Engine classes
+    private:
+        // Gravity Engine channel state
+        enum ChannelStates
+        {
+            uninit,
+            init,
+            playing,
+            paused,
+            stopped
+        };
+
+        // Gravity Engine sound class
+        class GravityEngine_Sound
+        {
+        public:
+            // -= Attributes =-
+            Uint8* audio_buf;
+            Uint32 audio_len;
+            SDL_AudioSpec wav_audio_spec;
+            std::vector<Uint8> converted_audio;
+
+            // -= Methods =-
+
+            // Construct audio
+            GravityEngine_Sound(const char* path, SDL_AudioSpec audio_spec)
+            {
+                // Load the wav file
+                SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
+                // Convert the audio
+                converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
+            };
+
+            // Destruct audio
+            ~GravityEngine_Sound() {};
+        };
+
+        // GravityEngine audio channel class
+        class GravityEngine_AudioChannel
+        {
+        private:
+            // -= Attributes =-
+            SDL_AudioStream* sdl_audio_stream = nullptr;
+            SDL_AudioDeviceID audio_device_id;
+            ChannelStates state = uninit;
+
+        public:
+            // -= Methods =-
+
+            // Construct audio
+            GravityEngine_AudioChannel(SDL_AudioSpec audio_spec)
+            {
+                // Create the audio stream
+                sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
+                audio_device_id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
+                state = init;
+            };
+
+            // Play a sound on this channel
+            void PlaySound(SDL_AudioSpec audio_spec, GravityEngine_Sound* gravity_engine_sound_ref)
+            {
+                StopPlayback();
+                SDL_PutAudioStreamData(sdl_audio_stream, gravity_engine_sound_ref->converted_audio.data(), gravity_engine_sound_ref->converted_audio.size());
+                SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
+                SDL_ResumeAudioDevice(audio_device_id);
+                state = playing;
+            }
+
+            // Stop audio
+            void StopPlayback()
+            {
+                SDL_ClearAudioStream(sdl_audio_stream);
+                state = stopped;
+            }
+
+            // Pause audio
+            void PausePlayback()
+            {
+                SDL_PauseAudioDevice(audio_device_id);
+                state = paused;
+            }
+
+            // Continue audio
+            void ResumePlayback()
+            {
+                SDL_ResumeAudioDevice(audio_device_id);
+                state = playing;
+            }
+
+            // Get state of channel
+            ChannelStates GetState()
+            {
+                return state;
+            }
+
+            // Destruct audio
+            ~GravityEngine_AudioChannel()
+            {
+                SDL_CloseAudioDevice(audio_device_id);
+            };
+        };
+
     // Gravity Engine Types
     public:
+        const struct SDL_AudioSpec global_audio_spec = { SDL_AUDIO_S32LE,2,48000 }; // Manual spec
         // Enum to define which graphical layer to work in
         enum layer
         {
@@ -95,6 +215,9 @@ class GravityEngine_Core
         std::unordered_map<std::string, SDL_Texture*> character_textures = {}; // Texture cache (only used if glyph_precaching is on)
         std::unordered_map<std::string, int> character_widths = {}; // Texture width cache (only used if glyph_precaching is on)
         const bool* keyboard_keys = SDL_GetKeyboardState(NULL); // Initialize keystate list
+        std::vector<GravityEngine_AudioChannel*> audio_channels;
+        std::vector<GravityEngine_Sound*> sounds;
+        int channels;
 
     // Gravity Engine Public Attributes
     public:
@@ -110,7 +233,7 @@ class GravityEngine_Core
         // int fw : font width
         // int fh : font height
         // int f : frame rate cap in frames per second
-        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, int sw, int sh, std::string fp)
+        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, int sw, int sh, std::string fp, int c)
         {
         	// Set game font
         	font_path = fp;
@@ -234,13 +357,15 @@ class GravityEngine_Core
             }
             // Set the desired frame length to 1 second divided be the desired frame rate
             frame_length = 1000000000 / f;
+            // Set channel count
+            channels = c;
         }
 
         // Gravity Engine Constructor
         // int cw : window width
         // int ch : window height
         // int f : frame rate cap in frames per second
-        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, int w, int h, std::string fp) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, w, h, fp) {}
+        GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, int w, int h, std::string fp, int c) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, w, h, fp, c) {}
 
         // canvas x
         int GetCanvasW()
@@ -309,43 +434,9 @@ class GravityEngine_Core
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
 
-
-
-
-
-
-            // Load sound
-            const char* file_path = "./DrumBeat.wav";
-            Uint8* audio_buf;
-            Uint32 audio_len;
-            SDL_AudioSpec wav_audio_spec;
-            SDL_LoadWAV(file_path, &wav_audio_spec, &audio_buf, &audio_len);
-
-            // Manual spec
-            SDL_AudioSpec audio_spec = { };
-            audio_spec.freq = 48000;
-            audio_spec.format = SDL_AUDIO_S32LE;
-            audio_spec.channels = 2;
-
-            // Convert audio
-            auto converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
-
-            // Create the audio stream
-            auto sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
-            SDL_PutAudioStreamData(sdl_audio_stream, converted_audio.data(), converted_audio.size());
-            auto id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
-            SDL_BindAudioStream(id, sdl_audio_stream);
-            SDL_ResumeAudioDevice(id);
-
-
-
-
-
-
-
-
-
-
+            // Initialize all audio channels
+            for (int i = 0; i < channels; i++)
+                audio_channels.insert(audio_channels.end(), new GravityEngine_AudioChannel(global_audio_spec));
 
             // Create the render texture
             render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, canvas_w * font_w, canvas_h * font_h);
@@ -382,6 +473,12 @@ class GravityEngine_Core
 
             // Kill SDL
             SDL_Quit();
+
+            // Free audio channels
+            for (auto ac : audio_channels)
+                delete ac;
+            for (auto s : sounds)
+                delete s;
 
             // Free all objects
         	for (auto o : entity_list)
@@ -538,23 +635,6 @@ class GravityEngine_Core
             }
         }
 
-        // Copilot help on this one
-        std::vector<Uint8> ConvertAudio(Uint8 *audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
-        {
-            // Convert audio to spec
-            auto sdl_audio_stream_conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
-            SDL_PutAudioStreamData(sdl_audio_stream_conv, audio_buf, audio_len);
-            SDL_FlushAudioStream(sdl_audio_stream_conv);
-            std::vector<Uint8> converted_data;
-            Uint8 temp[4096];
-            int bytesRead;
-            while ((bytesRead = SDL_GetAudioStreamData(sdl_audio_stream_conv, temp, sizeof(temp))) > 0) {
-                converted_data.insert(converted_data.end(), temp, temp + bytesRead);
-            }
-            SDL_DestroyAudioStream(sdl_audio_stream_conv);
-            return converted_data;
-        }
-
         // Get elapsed_frames
         long GetElapsedFrames()
         {
@@ -575,6 +655,48 @@ class GravityEngine_Core
         void AddObject(GravityEngine_Object* object)
         {
         	entity_list.push_back(object);
+        }
+
+        // Add sounds to the sound list
+        int AddSound(const char* path)
+        {
+            // Initialize all audio channels
+            sounds.insert(sounds.end(), new GravityEngine_Sound(path, global_audio_spec));
+            return sounds.size() - 1;
+        }
+
+        // Delete sound from the sound list
+        void DeleteSound(int index)
+        {
+            // Delete the sound objects
+            delete[] sounds[index];
+            // Set this index to a nullptr
+            sounds[index] = nullptr;
+        }
+
+        // Play a sound on a channel
+        void PlaySoundOnChannel(int audio_index, int channel)
+        {
+            channel = channel % audio_channels.size();
+            audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index]);
+        }
+
+        // Pause channel
+        void PauseChannel(int channel)
+        {
+            audio_channels[channel]->PausePlayback();
+        }
+
+        // Resume channel
+        void ResumeChannel(int channel)
+        {
+            audio_channels[channel]->ResumePlayback();
+        }
+
+        // Stop channel
+        void StopChannel(int channel)
+        {
+            audio_channels[channel]->StopPlayback();
         }
 
     private:

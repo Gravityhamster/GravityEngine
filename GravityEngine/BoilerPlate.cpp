@@ -5,6 +5,7 @@ double xd = 30;
 double yd = 30;
 int di = 0;
 double spd = 0.5;
+int snd_id;
 
 class snake : public virtual GravityEngine_Object
 {
@@ -30,6 +31,10 @@ class snake : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
+    // Create a sound
+    snd_id = (*geptr).AddSound(".\\DrumBeat.wav");
+    (*geptr).PlaySoundOnChannel(snd_id, 0);
+
     (*geptr).AddObject(new snake);
 
 	for (int q = 0; q < (*geptr).GetCanvasH(); q++)
@@ -61,7 +66,6 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
-
     std::cout << (*geptr).fps_now() << "                   ";
     std::cout << "\r";
     (*geptr).DrawChar((int)xd, (int)yd, (*geptr).entity, '@');
@@ -99,7 +103,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 60, 1920, 1080, "./Ubuntu-B-1.ttf");
+    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.gravity", "1.0", 96, 54, 60, 1920, 1080, "./Ubuntu-B-1.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = true; // Show all information
