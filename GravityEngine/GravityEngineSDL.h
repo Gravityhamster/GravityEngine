@@ -10,6 +10,11 @@
 #include <random>
 
 // Copilot help on this one
+// Convert the audio in the audio buffer to a different audio spec
+// Uint8* audio_buf : The buffer for the audio data
+// Uint32 audio_len : The length of the audio in the audio buffer
+// SDL_AudioSpec wav_audio_spec : Audio specifications of the audio to be converted
+// SDL_AudioSpec audio_spec : Audio specifications to convert the audio to
 std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
 {
     // Convert audio to spec
@@ -27,6 +32,8 @@ std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpe
 }
 
 // Color struct (foreground and background)
+// SDL_Color f : Letter color
+// SDL_Color b : Background color
 struct color
 {
     SDL_Color f;
@@ -37,19 +44,32 @@ struct color
 class GravityEngine_Object
 {
     public:
-        GravityEngine_Object() {};
-		virtual ~GravityEngine_Object() {};
-		virtual void begin_step() {};
-		virtual void step() {};
-		virtual void end_step() {};
+        GravityEngine_Object() {}; // Constructor
+		virtual ~GravityEngine_Object() {}; // Destructor
+		virtual void begin_step() {}; // Code to run at the start of the frame
+		virtual void step() {}; // Code to run during the frame
+		virtual void end_step() {}; // Code to run at the end of the frame
 };
 
 // Core engine class
 class GravityEngine_Core
 {
-    // Gravity Engine classes
+    // Gravity Engine public types
+    public:
+        // Enum to define which graphical layer to work in
+        enum layer
+        {
+            ui, foreground, background, entity, debug
+        };
+        // Enum to define which collision layer to work in
+        enum col_layer
+        {
+            stat, dyn
+        };
+
+    // Gravity Engine private types
     private:
-        // Gravity Engine channel state
+        // Enum to define the current playback state of a sound channel
         enum ChannelStates
         {
             uninit,
@@ -59,21 +79,26 @@ class GravityEngine_Core
             stopped
         };
 
+    // Gravity Engine private classes
+    private:
+
         // Gravity Engine sound class
         class GravityEngine_Sound
         {
         public:
             // -= Attributes =-
-            Uint8* audio_buf;
-            Uint32 audio_len;
-            SDL_AudioSpec wav_audio_spec;
-            std::vector<Uint8> converted_audio;
+            std::vector<Uint8> converted_audio; // Buffer for the final converted audio data
 
             // -= Methods =-
 
             // Construct audio
+            // const char* path : File path of the audio
+            // SDL_AudioSpec audio_spec : Audio specification to convert the audio to (this should be the global audio spec in the engine)
             GravityEngine_Sound(const char* path, SDL_AudioSpec audio_spec)
             {
+                Uint8* audio_buf;
+                Uint32 audio_len;
+                SDL_AudioSpec wav_audio_spec;
                 // Load the wav file
                 SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
                 // Convert the audio
@@ -89,9 +114,9 @@ class GravityEngine_Core
         {
         private:
             // -= Attributes =-
-            SDL_AudioStream* sdl_audio_stream = nullptr;
-            SDL_AudioDeviceID audio_device_id;
-            ChannelStates state = uninit;
+            SDL_AudioStream* sdl_audio_stream = nullptr; // SDL audio streaming object
+            SDL_AudioDeviceID audio_device_id; // SDL audio playback device object
+            ChannelStates state = uninit; // Playback state of this audio channel
 
         public:
             // -= Methods =-
@@ -101,38 +126,55 @@ class GravityEngine_Core
             {
                 // Create the audio stream
                 sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
+                // Open the audio device for playback
                 audio_device_id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
+                // Flag the the audio channel is ready for playback
                 state = init;
             };
 
             // Play a sound on this channel
+            // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
+            // GravityEngine_Sound* gravity_engine_sound_ref : Audio sound file data container
             void PlaySound(SDL_AudioSpec audio_spec, GravityEngine_Sound* gravity_engine_sound_ref)
             {
+                // If any audio is currently playing, stop it
                 StopPlayback();
+                // Place the audio into the audio stream to be played on the channel
                 SDL_PutAudioStreamData(sdl_audio_stream, gravity_engine_sound_ref->converted_audio.data(), gravity_engine_sound_ref->converted_audio.size());
+                // Attach the audio stream to the channel's audio device
                 SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
+                // Start playback
                 SDL_ResumeAudioDevice(audio_device_id);
+                // Flag that this sound channel is busy playing
                 state = playing;
             }
 
             // Stop audio
             void StopPlayback()
             {
+                // Empty the audio stream data
                 SDL_ClearAudioStream(sdl_audio_stream);
+                // Stop the playback
+                SDL_PauseAudioDevice(audio_device_id);
+                // Flag that this sound channel has been stopped and cleared
                 state = stopped;
             }
 
             // Pause audio
             void PausePlayback()
             {
+                // Pause the playback, but do not forget the position
                 SDL_PauseAudioDevice(audio_device_id);
+                // Flag that this sound channel has been paused
                 state = paused;
             }
 
             // Continue audio
             void ResumePlayback()
             {
+                // Continue audio playback
                 SDL_ResumeAudioDevice(audio_device_id);
+                // Flag that this sound channel is busy playing
                 state = playing;
             }
 
@@ -149,24 +191,11 @@ class GravityEngine_Core
             };
         };
 
-    // Gravity Engine Types
-    public:
-        const struct SDL_AudioSpec global_audio_spec = { SDL_AUDIO_S32LE,2,48000 }; // Manual spec
-        // Enum to define which graphical layer to work in
-        enum layer
-        {
-            ui, foreground, background, entity, debug
-        };
-        // Enum to define which collision layer to work in
-        enum col_layer
-        {
-            stat, dyn
-        };
-
     // Gravity Engine Private Attributes
     private:
-    	std::vector<GravityEngine_Object*> entity_list;
-        bool game_running = false; // Is the game running or now?
+        const struct SDL_AudioSpec global_audio_spec = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
+    	std::vector<GravityEngine_Object*> entity_list; // This is the list of GravityEngine objects that the engine will track and execute
+        bool game_running = false; // Is the game running or no?
         int canvas_w; // Game canvas width
         int canvas_h; // Game canvas height
         char** canvas_debug; // Game canvas UI layer
@@ -186,7 +215,6 @@ class GravityEngine_Core
         char* last_buf_char_screen; // The final game canvas
         color* last_buf_col_screen; // The final color canvas
         int elapsed_frames = 0; // Frames since game was started
-        int frame_step_precision = 10000000; // Precision of sleep time to ensure the game stays in sync
         char def_char = ' '; // Default character to clean the graphics arrays
         color def_color = {{255,255,255}, {0,0,0}}; // Default color to clean the color arrays
         int def_col = 0; // Default collision value to clean the collision arrays with
@@ -217,9 +245,9 @@ class GravityEngine_Core
         std::unordered_map<std::string, SDL_Texture*> character_textures = {}; // Texture cache (only used if glyph_precaching is on)
         std::unordered_map<std::string, int> character_widths = {}; // Texture width cache (only used if glyph_precaching is on)
         const bool* keyboard_keys = SDL_GetKeyboardState(NULL); // Initialize keystate list
-        std::vector<GravityEngine_AudioChannel*> audio_channels;
-        std::vector<GravityEngine_Sound*> sounds;
-        int channels;
+        std::vector<GravityEngine_AudioChannel*> audio_channels; // List of all audio channels
+        std::vector<GravityEngine_Sound*> sounds; // List of all saved sounds
+        int channels; // Channel count
 
     // Gravity Engine Public Attributes
     public:
@@ -230,11 +258,18 @@ class GravityEngine_Core
     public:
 
         // Gravity Engine Constructor
-        // int cw : window width
-        // int ch : window height
-        // int fw : font width
-        // int fh : font height
-        // int f : frame rate cap in frames per second
+        // const char* gt : Game title
+        // const char* gi : Game id
+        // const char* gv : Game version
+        // int cw : Canvas width (chars wide)
+        // int ch : Canvas height (chars tall)
+        // int fw : Font width (-1 for auto-detect)
+        // int fh : Font height (-1 for auto-detect)
+        // int f : Frame rate cap in frames per second
+        // int sw : Screen width
+        // int sh : Screen height
+        // string fp : Path to the display font
+        // int c : Number of audio channels
         GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, int sw, int sh, std::string fp, int c)
         {
         	// Set game font
@@ -364,24 +399,32 @@ class GravityEngine_Core
         }
 
         // Gravity Engine Constructor
-        // int cw : window width
-        // int ch : window height
-        // int f : frame rate cap in frames per second
+        // const char* gt : Game title
+        // const char* gi : Game id
+        // const char* gv : Game version
+        // int f : Frame rate cap in frames per second
+        // int w : Screen width
+        // int h : Screen height
+        // string fp : Path to the display font
+        // int c : Number of audio channels
         GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, int w, int h, std::string fp, int c) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, w, h, fp, c) {}
 
-        // canvas x
+        // Get the canvas width
         int GetCanvasW()
         {
             return canvas_w;
         }
 
-        // canvas y
+        // Get the canvas height
         int GetCanvasH()
         {
             return canvas_h;
         }
 
-        // get collision value
+        // Get the collision type at the given location
+        // int x : Horizontal coordinate
+        // int y : Vertical coordinate
+        // col_layer cl : Layer to get collision from
         int GetCollisionValue(int x, int y, col_layer cl)
         {
             if (cl == stat)
@@ -390,7 +433,11 @@ class GravityEngine_Core
                 return collision_dynamic[y][x];
         }
 
-        // set collision value
+        // Set the collision type at the given location
+        // int x : Horizontal coordinate
+        // int y : Vertical coordinate
+        // col_layer cl : Layer to set collision on
+        // int v : Collision type value
         void SetCollisionValue(int x, int y, col_layer cl, int v)
         {
             if (cl == stat)
@@ -420,6 +467,9 @@ class GravityEngine_Core
         }
 
         // Start the video game
+        // void (*init_game)() : Custom game initialization function
+        // void (*pre_loop_code)() : Custom global begin-step function
+        // void (*post_loop_code)() : Custom global end-step function
         SDL_AppResult Start(void (*init_game)() = nullptr, void (*pre_loop_code)() = nullptr, void (*post_loop_code)() = nullptr)
         {
             // Game is running now
@@ -466,6 +516,9 @@ class GravityEngine_Core
             // Call game loop
             GameLoop(pre_loop_code, post_loop_code);
 
+            // -= GAME END =-
+            // Clenup goes here
+
             // TTF Quit
 			for (int i = 0; i < canvas_w * canvas_h; i++)
 				TTF_DestroyText(draw_chars[i]);
@@ -511,9 +564,10 @@ class GravityEngine_Core
         }
 
         // Set the color of a layer pixel
-        // int x : x position to place color
-        // int y : y position to place color
-        // int color : color value 0 - 137
+        // int x : Horizontal position to place color
+        // int y : Vertical position to place color
+        // layer l : Layer to set color on
+        // color col : Color struct instance
         void DrawSetColor(int x, int y, layer l, color col)
         {
             // If the requested x and y is within the window...
@@ -529,6 +583,10 @@ class GravityEngine_Core
         }
 
         // Draw character onto layer
+        // int x : Horizontal position to place character
+        // int y : Vertical position to place character
+        // layer l : Layer to place the character on
+        // char c : Character to draw
         void DrawChar(int x, int y, layer l, char c)
         {
             // If the requested x and y is within the window...
@@ -544,6 +602,9 @@ class GravityEngine_Core
         }
 
         // Get character on layer
+        // int x : Horizontal position to read character
+        // int y : Vertical position to read character
+        // layer l : Layer to read from
         char GetChar(int x, int y, layer l)
         {
             char c = NULL;
@@ -562,7 +623,10 @@ class GravityEngine_Core
             return c;
         }
 
-        // Get character on layer
+        // Get color on layer
+        // int x : Horizontal position to read color
+        // int y : Vertical position to read color
+        // layer l : Layer to read from
         color GetColor(int x, int y, layer l)
         {
             color c = {};
@@ -582,6 +646,7 @@ class GravityEngine_Core
         }
 
         // Change Font
+        // string fpth : Path to the font file
         void ChangeFont(std::string fpth)
         {
             // Reset the last buffer so the entire frame gets drawn
@@ -596,6 +661,11 @@ class GravityEngine_Core
         }
 
         // Draw text onto layer
+        // int x : Horizontal position to read color
+        // int y : Vertical position to read color
+        // layer l : Layer to read from
+        // string s : Text to draw to the screen
+        // color col : Color struct instance
         void DrawTextString(int x, int y, layer l, std::string s, color col)
         {
             if (y >= canvas_h || y < 0)
@@ -685,6 +755,7 @@ class GravityEngine_Core
         }
 
         // Handle input
+        // SDL_Scancode sdlKey : Keycode to check state
         bool GetKeyState(SDL_Scancode sdlKey)
         {
             SDL_PumpEvents();
@@ -695,6 +766,8 @@ class GravityEngine_Core
         }
 
         // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/
+        // int min : Minimum number to get random value in 
+        // int max : Maximum number to get random value in 
         int RandRange(int min, int max)
         {
             // Initialize a random number generator
@@ -706,6 +779,7 @@ class GravityEngine_Core
         }
 
         // Add the object to the entity list
+        // GravityEngine_Object* object : Gravity engine managed object reference
         int AddObject(GravityEngine_Object* object)
         {
         	entity_list.insert(entity_list.end(), object);
@@ -713,12 +787,14 @@ class GravityEngine_Core
         }
 
         // Remove the object from the entity list
+        // GravityEngine_Object* object : Gravity engine managed object reference
         void RemoveObject(GravityEngine_Object* object)
         {
             std::erase(entity_list, object);
         }
 
         // Add sounds to the sound list
+        // const char* path : Path to sound file
         int AddSound(const char* path)
         {
             // Initialize all audio channels
@@ -727,6 +803,7 @@ class GravityEngine_Core
         }
 
         // Delete sound from the sound list
+        // int index : Integer index to where the sound is stored
         void DeleteSound(int index)
         {
             // Delete the sound objects
@@ -736,6 +813,8 @@ class GravityEngine_Core
         }
 
         // Play a sound on a channel
+        // int audio_index : Integer index to where the sound is stored
+        // int channel : Integer channel index to play the sound at the index on
         void PlaySoundOnChannel(int audio_index, int channel)
         {
             channel = channel % audio_channels.size();
@@ -743,18 +822,21 @@ class GravityEngine_Core
         }
 
         // Pause channel
+        // int channel : Integer channel index
         void PauseChannel(int channel)
         {
             audio_channels[channel]->PausePlayback();
         }
 
         // Resume channel
+        // int channel : Integer channel index
         void ResumeChannel(int channel)
         {
             audio_channels[channel]->ResumePlayback();
         }
 
         // Stop channel
+        // int channel : Integer channel index
         void StopChannel(int channel)
         {
             audio_channels[channel]->StopPlayback();
@@ -763,6 +845,10 @@ class GravityEngine_Core
     private:
 
         // Draw character into the screen buffer with char c and color col
+        // int x : Horizontal position to read color
+        // int y : Vertical position to read color
+        // char c : Character to insert into the screen buffer
+        // color col : Color struct instance
         void Draw(int x, int y, char c = '0', color col = {{255, 255, 255}, {0, 0, 0}})
         {
         	// Only write if the character is in the bounds of the screen buffer
@@ -968,12 +1054,19 @@ class GravityEngine_Core
         }
 
         // Log timing
+        // long* frame_check : Elapsed frames since the last second 
+        //                     (Basically, this counts up, then when a second passes, 
+        //                     it sets this to zero and counts up again, 
+        //                     thus giving you the frames per second 
+        //                     [frames drawn per second])
+        // long* second_check : Tracker variable for determining if we should update the FPS number or not
+        // long* frames_per_second : FPS tracker variable
         void LogFrameTimingData(long* frame_check, long* second_check, long* frames_per_second)
         {
             // Log timing
             (*frame_check)++;
             double seconds = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now() - gobal_start_time).count() / 1000;
-            if (seconds > (*second_check))
+            while (seconds > (*second_check))
             {
                 (*frames_per_second) = (*frame_check);
                 (*frame_check) = 0;
@@ -995,7 +1088,7 @@ class GravityEngine_Core
         }
 
         // Sync frame step
-        void SyncFrameStep(int frame_step_precision)
+        void SyncFrameStep()
         {
             // Sync timing
             std::chrono::duration<int64_t, std::nano> delta(frame_length);
@@ -1007,6 +1100,8 @@ class GravityEngine_Core
         }
 
         // Game loop
+        // void (*pre_loop_code)() : Custom global begin-step function
+        // void (*post_loop_code)() : Custom global end-step function
         void GameLoop(void (*pre_loop_code)(), void (*post_loop_code)())
         {
             // Init timing stuff
@@ -1042,7 +1137,7 @@ class GravityEngine_Core
                     LogFrameTimingData(&frame_check, &second_check, &frames_per_second);
 
                 // Ensure frame-rate stays within requested FPS
-                SyncFrameStep(frame_step_precision);
+                SyncFrameStep();
             }
         }
 };
