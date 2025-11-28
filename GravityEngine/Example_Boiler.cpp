@@ -18,8 +18,6 @@ void GameInit()
 {
 }
 
-int i = 0;
-
 // Master pre code
 void PreGameLoop()
 {
