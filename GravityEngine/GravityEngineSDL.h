@@ -248,6 +248,7 @@ class GravityEngine_Core
         std::vector<GravityEngine_AudioChannel*> audio_channels; // List of all audio channels
         std::vector<GravityEngine_Sound*> sounds; // List of all saved sounds
         int channels; // Channel count
+        int mouse_wheel_state; // Store the current 
 
     // Gravity Engine Public Attributes
     public:
@@ -801,6 +802,35 @@ class GravityEngine_Core
                 return false;
         }
 
+        // Handle mouse input
+        // SDL_MouseButtonFlags sdlButton : Button to check state
+        bool GetMouseButtonState(SDL_MouseButtonFlags sdlButton)
+        {
+            SDL_MouseButtonFlags Buttons{ SDL_GetMouseState(NULL, NULL) };
+            if (Buttons & SDL_BUTTON_MASK(sdlButton))
+                return true;
+            else
+                return false;
+        }
+
+        // Handle mouse wheel
+        int GetMouseWheelState()
+        {
+            return mouse_wheel_state;
+        }
+
+        // Handle mouse location
+        // int* ret_x : Pointer to store the horizontal position
+        // int* ret_y : Pointer to store the vertical position
+        void GetMousePosition(int* ret_x, int* ret_y)
+        {
+            float x, y;
+            SDL_GetMouseState(&x, &y);
+
+            *ret_x = floor((x / scr_w) * canvas_w);
+            *ret_y = floor((y / scr_h) * canvas_h);
+        }
+
         // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/
         // int min : Minimum number to get random value in 
         // int max : Maximum number to get random value in 
@@ -982,10 +1012,15 @@ class GravityEngine_Core
 
             // Poll SDL
             SDL_Event event;
+            mouse_wheel_state = 0;
             while (SDL_PollEvent(&event)) {
                 // Get close event
                 if (event.type == SDL_EVENT_QUIT)
                     game_running = false;
+                if (event.type == SDL_EVENT_MOUSE_WHEEL)
+                {
+                    mouse_wheel_state = event.wheel.y;
+                }
             }
         }
 
@@ -1039,6 +1074,8 @@ class GravityEngine_Core
                 {
                     DrawChar(q, i, entity, ' ');
                     DrawChar(q, i, debug, ' ');
+                    DrawSetColor(q, i, entity, { {255,255,255}, {0,0,0} });
+                    DrawSetColor(q, i, debug, { {255,255,255}, {0,0,0} });
                     SetCollisionValue(q, i, dyn, 0);
                 }
             }
