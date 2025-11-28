@@ -232,7 +232,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Boiler Plate", "com.example.snake", "1.0", 96/2, 54/2, 480, 1920, 1080, "./Ubuntu-B-1.ttf", 16);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Snake", "com.example.snake", "1.0", 96/2, 54/2, 480, 1920, 1080, "./Ubuntu-B-1.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information

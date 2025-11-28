@@ -645,6 +645,42 @@ class GravityEngine_Core
             return c;
         }
 
+        // Draw a line
+        // int x : Starting horizontal point of the line
+        // int y : Starting vertical point of the line
+        // int to_x : Ending horizontal point of the line
+        // int to_y : Ending vertical point of the line
+        // layer l : Layer to draw on
+        // color col : Color to draw with
+        // char c : Character to draw with
+        void DrawLine(int x, int y, int to_x, int to_y, GravityEngine_Core::layer l, color col, char c)
+        {
+            // Get the total length of the line
+            double len = sqrt(((to_y - y) * (to_y - y)) + ((to_x - x) * (to_x - x)));
+            // Get the individual dimensions of the line
+            double len_x = to_x - x;
+            double len_y = to_y - y;
+            // Divide the individual length by the total length to get each step of the line
+            double step_x = len_x / len;
+            double step_y = len_y / len;
+            // Define the stepping variables
+            double xx = x;
+            double yy = y;
+            // Step through the line to create its segments
+            while ( 
+                    (len_x > 0 && floor(xx) <= to_x) ||
+                    (len_y > 0 && floor(yy) <= to_y) ||
+                    (len_x < 0 && floor(xx) >= to_x) ||
+                    (len_y < 0 && floor(yy) >= to_y)
+                )
+            {
+                DrawChar(round(xx), round(yy), l, c);
+                DrawSetColor(round(xx), round(yy), l, col);
+                xx += step_x;
+                yy += step_y;
+            }
+        }
+
         // Change Font
         // string fpth : Path to the font file
         void ChangeFont(std::string fpth)
