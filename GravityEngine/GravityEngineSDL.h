@@ -248,6 +248,7 @@ class GravityEngine_Core
         std::vector<GravityEngine_AudioChannel*> audio_channels; // List of all audio channels
         std::vector<GravityEngine_Sound*> sounds; // List of all saved sounds
         int channels; // Channel count
+        int mouse_wheel_state; // Store the current 
 
     // Gravity Engine Public Attributes
     public:
@@ -645,6 +646,42 @@ class GravityEngine_Core
             return c;
         }
 
+        // Draw a line
+        // int x : Starting horizontal point of the line
+        // int y : Starting vertical point of the line
+        // int to_x : Ending horizontal point of the line
+        // int to_y : Ending vertical point of the line
+        // layer l : Layer to draw on
+        // color col : Color to draw with
+        // char c : Character to draw with
+        void DrawLine(int x, int y, int to_x, int to_y, GravityEngine_Core::layer l, color col, char c)
+        {
+            // Get the total length of the line
+            double len = sqrt(((to_y - y) * (to_y - y)) + ((to_x - x) * (to_x - x)));
+            // Get the individual dimensions of the line
+            double len_x = to_x - x;
+            double len_y = to_y - y;
+            // Divide the individual length by the total length to get each step of the line
+            double step_x = len_x / len;
+            double step_y = len_y / len;
+            // Define the stepping variables
+            double xx = x;
+            double yy = y;
+            // Step through the line to create its segments
+            while ( 
+                    (len_x > 0 && floor(xx) <= to_x) ||
+                    (len_y > 0 && floor(yy) <= to_y) ||
+                    (len_x < 0 && floor(xx) >= to_x) ||
+                    (len_y < 0 && floor(yy) >= to_y)
+                )
+            {
+                DrawChar(round(xx), round(yy), l, c);
+                DrawSetColor(round(xx), round(yy), l, col);
+                xx += step_x;
+                yy += step_y;
+            }
+        }
+
         // Change Font
         // string fpth : Path to the font file
         void ChangeFont(std::string fpth)
@@ -763,6 +800,35 @@ class GravityEngine_Core
                 return true;
             else
                 return false;
+        }
+
+        // Handle mouse input
+        // SDL_MouseButtonFlags sdlButton : Button to check state
+        bool GetMouseButtonState(SDL_MouseButtonFlags sdlButton)
+        {
+            SDL_MouseButtonFlags Buttons{ SDL_GetMouseState(NULL, NULL) };
+            if (Buttons & SDL_BUTTON_MASK(sdlButton))
+                return true;
+            else
+                return false;
+        }
+
+        // Handle mouse wheel
+        int GetMouseWheelState()
+        {
+            return mouse_wheel_state;
+        }
+
+        // Handle mouse location
+        // int* ret_x : Pointer to store the horizontal position
+        // int* ret_y : Pointer to store the vertical position
+        void GetMousePosition(int* ret_x, int* ret_y)
+        {
+            float x, y;
+            SDL_GetMouseState(&x, &y);
+
+            *ret_x = floor((x / scr_w) * canvas_w);
+            *ret_y = floor((y / scr_h) * canvas_h);
         }
 
         // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/
@@ -946,10 +1012,15 @@ class GravityEngine_Core
 
             // Poll SDL
             SDL_Event event;
+            mouse_wheel_state = 0;
             while (SDL_PollEvent(&event)) {
                 // Get close event
                 if (event.type == SDL_EVENT_QUIT)
                     game_running = false;
+                if (event.type == SDL_EVENT_MOUSE_WHEEL)
+                {
+                    mouse_wheel_state = event.wheel.y;
+                }
             }
         }
 
@@ -1003,6 +1074,8 @@ class GravityEngine_Core
                 {
                     DrawChar(q, i, entity, ' ');
                     DrawChar(q, i, debug, ' ');
+                    DrawSetColor(q, i, entity, { {255,255,255}, {0,0,0} });
+                    DrawSetColor(q, i, debug, { {255,255,255}, {0,0,0} });
                     SetCollisionValue(q, i, dyn, 0);
                 }
             }
