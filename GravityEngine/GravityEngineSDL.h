@@ -1018,9 +1018,7 @@ class GravityEngine_Core
                 if (event.type == SDL_EVENT_QUIT)
                     game_running = false;
                 if (event.type == SDL_EVENT_MOUSE_WHEEL)
-                {
                     mouse_wheel_state = event.wheel.y;
-                }
             }
         }
 
