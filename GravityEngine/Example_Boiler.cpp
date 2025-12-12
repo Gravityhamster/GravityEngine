@@ -1,4 +1,5 @@
 #include "GravityEngineSDL.h"
+#include "types.h"
 #include <algorithm>
 GravityEngine_Core* geptr;
 

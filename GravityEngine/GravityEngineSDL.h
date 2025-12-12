@@ -117,8 +117,11 @@ class GravityEngine_Core
             SDL_AudioStream* sdl_audio_stream = nullptr; // SDL audio streaming object
             SDL_AudioDeviceID audio_device_id; // SDL audio playback device object
             ChannelStates state = uninit; // Playback state of this audio channel
+            std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
+            bool looping = false; // Loop audio
 
         public:
+
             // -= Methods =-
 
             // Construct audio
@@ -135,7 +138,8 @@ class GravityEngine_Core
             // Play a sound on this channel
             // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
             // GravityEngine_Sound* gravity_engine_sound_ref : Audio sound file data container
-            void PlaySound(SDL_AudioSpec audio_spec, GravityEngine_Sound* gravity_engine_sound_ref)
+            // bool loop : Whether or not audio should loop indefinitely
+            void PlaySound(SDL_AudioSpec audio_spec, GravityEngine_Sound* gravity_engine_sound_ref, bool loop = false)
             {
                 // If any audio is currently playing, stop it
                 StopPlayback();
@@ -147,6 +151,10 @@ class GravityEngine_Core
                 SDL_ResumeAudioDevice(audio_device_id);
                 // Flag that this sound channel is busy playing
                 state = playing;
+                // Set whether this channel should loop or not
+                looping = loop;
+                // Save the audio bound to this channel so we can feed the loop later
+                if (loop) currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
             }
 
             // Stop audio
@@ -158,6 +166,8 @@ class GravityEngine_Core
                 SDL_PauseAudioDevice(audio_device_id);
                 // Flag that this sound channel has been stopped and cleared
                 state = stopped;
+                // If this channel was set to loop, set it to stop looping
+                looping = false;
             }
 
             // Pause audio
@@ -178,6 +188,29 @@ class GravityEngine_Core
                 state = playing;
             }
 
+            // Cancel loop
+            void CancelLoop()
+            {
+                // Stop looping without stopping the sound altogether
+                looping = false;
+            }
+
+            // Feed the channel with loop audio
+            void FeedLoop()
+            {
+                // Is this channel truly supposed to loop?
+                if (looping == true && state == playing)
+                {
+                    auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
+                    auto size_of_sample = currently_playing_audio->size() * sizeof(Uint8);
+                    // Do not feed if the stream has plenty enough data. 
+                    // Only read if the data in the stream is less than the size of the sample.
+                    if (size_current < size_of_sample)
+                        // Feed the sdl_audio_stream
+                        SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
+                }
+            }
+
             // Get state of channel
             ChannelStates GetState()
             {
@@ -187,6 +220,7 @@ class GravityEngine_Core
             // Destruct audio
             ~GravityEngine_AudioChannel()
             {
+                currently_playing_audio = nullptr;
                 SDL_CloseAudioDevice(audio_device_id);
             };
         };
@@ -881,10 +915,11 @@ class GravityEngine_Core
         // Play a sound on a channel
         // int audio_index : Integer index to where the sound is stored
         // int channel : Integer channel index to play the sound at the index on
-        void PlaySoundOnChannel(int audio_index, int channel)
+        // bool loop : Whether the sound should loop or not
+        void PlaySoundOnChannel(int audio_index, int channel, bool loop = false)
         {
             channel = channel % audio_channels.size();
-            audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index]);
+            audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index], loop);
         }
 
         // Pause channel
@@ -906,6 +941,13 @@ class GravityEngine_Core
         void StopChannel(int channel)
         {
             audio_channels[channel]->StopPlayback();
+        }
+
+        // Cancel channel's looping status
+        // int channel : Integer channel index
+        void CancelChannelLoop(int channel)
+        {
+            audio_channels[channel]->CancelLoop();
         }
 
     private:
@@ -1009,6 +1051,10 @@ class GravityEngine_Core
         	// Call all begin_step functions
         	for (auto o : entity_list)
         		(*o).begin_step();
+
+            // Handle looping audio channels
+            for (auto ac : audio_channels)
+                ac->FeedLoop();
 
             // Poll SDL
             SDL_Event event;
