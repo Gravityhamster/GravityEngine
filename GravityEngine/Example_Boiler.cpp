@@ -1,7 +1,9 @@
 #include "GravityEngineSDL.h"
 #include "types.h"
 #include <algorithm>
+#include <thread>
 GravityEngine_Core* geptr;
+GravityEngine_Synth* s;
 
 class example : public virtual GravityEngine_Object
 {
@@ -17,6 +19,9 @@ class example : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
+    s = new GravityEngine_Synth(geptr->global_audio_spec);
+    //int i = geptr->AddSound(".\\DrumBeat.wav");
+    geptr->PlaySynthOnChannel(s, 0, true);
 }
 
 // Master pre code

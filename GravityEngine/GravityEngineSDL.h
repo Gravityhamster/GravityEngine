@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <random>
 
+#define PI 3.141592f
+
 // Copilot help on this one
 // Convert the audio in the audio buffer to a different audio spec
 // Uint8* audio_buf : The buffer for the audio data
@@ -38,6 +40,50 @@ struct color
 {
     SDL_Color f;
     SDL_Color b;
+};
+
+// Gravity Engine synth class
+class GravityEngine_Synth
+{
+private:
+    // -= Attributes =-
+    std::vector<int16_t> synth_audio; // Buffer for the final audio data
+    const int len = 1024;
+    double time = 0;
+
+public:
+    double volume = 0.125;
+    double frequency = 200;
+    // -= Methods =-
+
+    // Construct audio
+    // SDL_AudioSpec audio_spec : Audio specification to convert the audio to (this should be the global audio spec in the engine)
+    GravityEngine_Synth(SDL_AudioSpec audio_spec)
+    {
+    };
+
+    // Generate new audio
+    // SDL_AudioSpec audio_spec : Audio specification to convert the audio to (this should be the global audio spec in the engine)
+    // int length : Synth data length get override
+    std::vector<int16_t> GenerateAudio(SDL_AudioSpec audio_spec, int length = NULL)
+    {
+        if (length == NULL)
+            length = len;
+        synth_audio.clear();
+        // Generate audio
+        for (int i = 0; i < len; ++i)
+        {
+            time += 1.0 / audio_spec.freq; 
+            float sample = sinf(2.0f * PI * frequency * time); 
+            int16_t audio_val = (int16_t)(sample * volume * 32767);
+            synth_audio.push_back(audio_val);
+        }
+        // Return the audio object
+        return synth_audio;
+    }
+
+    // Destruct audio
+    ~GravityEngine_Synth() {};
 };
 
 // Template for game objects
@@ -108,6 +154,13 @@ class GravityEngine_Core
             // Destruct audio
             ~GravityEngine_Sound() {};
         };
+                
+        // Enum for audio playback format
+        enum audio_provider
+        {
+            file,
+            synth
+        };
 
         // GravityEngine audio channel class
         class GravityEngine_AudioChannel
@@ -117,8 +170,11 @@ class GravityEngine_Core
             SDL_AudioStream* sdl_audio_stream = nullptr; // SDL audio streaming object
             SDL_AudioDeviceID audio_device_id; // SDL audio playback device object
             ChannelStates state = uninit; // Playback state of this audio channel
+            std::vector<int16_t> audio; // Saved audio for feeding loop
             std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
+            GravityEngine_Synth* current_gravity_engine_synth_ref; // Currently playing synth (if synth is used on channel)
             bool looping = false; // Loop audio
+            audio_provider type = file;
 
         public:
 
@@ -155,6 +211,34 @@ class GravityEngine_Core
                 looping = loop;
                 // Save the audio bound to this channel so we can feed the loop later
                 if (loop) currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
+                // Flag the audio channel as using wav files
+                type = file;
+            }
+
+            // Play a synth on this channel
+            // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
+            // GravityEngine_Synth* gravity_engine_synth_ref : Audio sound synth data container
+            // bool loop : Whether or not audio should loop indefinitely
+            void PlaySound(SDL_AudioSpec audio_spec, GravityEngine_Synth* gravity_engine_synth_ref, bool loop = false)
+            {
+                // If any audio is currently playing, stop it
+                StopPlayback();
+                // Get the sound data from the synth
+                audio = gravity_engine_synth_ref->GenerateAudio(audio_spec);
+                // Place the audio into the audio stream to be played on the channel
+                SDL_PutAudioStreamData(sdl_audio_stream, audio.data(), audio.size());
+                // Attach the audio stream to the channel's audio device
+                SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
+                // Start playback
+                SDL_ResumeAudioDevice(audio_device_id);
+                // Flag that this sound channel is busy playing
+                state = playing;
+                // Set whether this channel should loop or not
+                looping = loop;
+                // Flag the audio channel as using wav files
+                type = synth;
+                // Save the currently playing synth
+                current_gravity_engine_synth_ref = gravity_engine_synth_ref;
             }
 
             // Stop audio
@@ -196,19 +280,40 @@ class GravityEngine_Core
             }
 
             // Feed the channel with loop audio
-            void FeedLoop()
+            // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
+            // int length : Synth data length get override
+            void FeedLoop(SDL_AudioSpec audio_spec, int length = NULL)
             {
                 // Is this channel truly supposed to loop?
                 if (looping == true && state == playing)
                 {
-                    auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
-                    auto size_of_sample = currently_playing_audio->size() * sizeof(Uint8);
-                    // Do not feed if the stream has plenty enough data. 
-                    // Only read if the data in the stream is less than the size of the sample.
-                    if (size_current < size_of_sample)
-                        // Feed the sdl_audio_stream
-                        SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
+                    // Is this playing sound files
+                    if (type == file)
+                    {
+                        auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
+                        auto size_of_sample = currently_playing_audio->size() * sizeof(Uint8);
+                        // Do not feed if the stream has plenty enough data. 
+                        // Only read if the data in the stream is less than the size of the sample.
+                        if (size_current < size_of_sample)
+                            // Feed the sdl_audio_stream
+                            SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
+                    }
+                    else if (type == synth)
+                    {
+                        auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
+                        auto size_of_sample = audio.size() * sizeof(int16_t);
+                        // Do not feed if the stream has plenty enough data. 
+                        // Only read if the data in the stream is less than the size of the sample.
+                        if (size_current < size_of_sample)
+                        {
+                            // Generate synth audio
+                            audio = current_gravity_engine_synth_ref->GenerateAudio(audio_spec, length);
+                            // Feed the sdl_audio_stream
+                            SDL_PutAudioStreamData(sdl_audio_stream, audio.data(), audio.size());
+                        }
+                    }
                 }
+
             }
 
             // Get state of channel
@@ -227,7 +332,6 @@ class GravityEngine_Core
 
     // Gravity Engine Private Attributes
     private:
-        const struct SDL_AudioSpec global_audio_spec = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
     	std::vector<GravityEngine_Object*> entity_list; // This is the list of GravityEngine objects that the engine will track and execute
         bool game_running = false; // Is the game running or no?
         int canvas_w; // Game canvas width
@@ -286,6 +390,7 @@ class GravityEngine_Core
 
     // Gravity Engine Public Attributes
     public:
+        const struct SDL_AudioSpec global_audio_spec = { SDL_AUDIO_S16,2,48000 }; // Set the format that all audio should be converted to
         bool debug_mode = false; // Show debug overlay
         bool debug_complex = false; // Show complex debug overlay
 
@@ -922,6 +1027,16 @@ class GravityEngine_Core
             audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index], loop);
         }
 
+        // Play a synth on a channel
+        // GravityEngine_Synth* gravity_engine_synth_ref : Audio sound synth data container
+        // int channel : Integer channel index to play the sound at the index on
+        // bool loop : Whether the synth should loop or not (probably should for a synth)
+        void PlaySynthOnChannel(GravityEngine_Synth* gravity_engine_synth_ref, int channel, bool loop = true)
+        {
+            channel = channel % audio_channels.size();
+            audio_channels[channel]->PlaySound(global_audio_spec, gravity_engine_synth_ref, loop);
+        }
+
         // Pause channel
         // int channel : Integer channel index
         void PauseChannel(int channel)
@@ -1054,7 +1169,7 @@ class GravityEngine_Core
 
             // Handle looping audio channels
             for (auto ac : audio_channels)
-                ac->FeedLoop();
+                ac->FeedLoop(global_audio_spec);
 
             // Poll SDL
             SDL_Event event;
