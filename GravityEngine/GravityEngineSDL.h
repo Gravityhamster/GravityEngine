@@ -2,8 +2,8 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 #include <chrono>
-#include <thread>
 #include <math.h>
+#include <thread>
 #include <vector>
 #include <string>
 #include <unordered_map>
