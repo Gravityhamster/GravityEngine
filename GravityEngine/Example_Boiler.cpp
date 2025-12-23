@@ -2,6 +2,7 @@
 #include <math.h>
 
 GravityEngine_Core* geptr;
+GravityEngine_Synth* synptr;
 
 class example : public virtual GravityEngine_Object
 {
@@ -17,13 +18,17 @@ class example : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
-    int ind = geptr->AddSound(".\\DrumBeat.wav");
-    geptr->PlaySoundOnChannel(ind, 0, false);
+    /*int ind = geptr->AddSound(".\\DrumBeat.wav");
+    geptr->PlaySoundOnChannel(ind, 0, false);*/
+    synptr = new GravityEngine_Synth();
+    geptr->BindSynthToChannel(synptr, 0);
 }
 
 // Master pre code
 void PreGameLoop()
 {
+    if (geptr->GetKeyState(SDL_SCANCODE_0))
+        geptr->StopChannel(0);
 }
 
 // Master post code
