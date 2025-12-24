@@ -65,8 +65,17 @@ public:
     float freq = 50.0f;
     int sample_frames;
     float* audio_data;
+    float volume = 1;
+    float pulse_width_delta = 0;
 
-    // Some of this code provided by Copilot - Call this from a thread
+    // Some of this code provided by Copilot, unfortunately. 
+    // I couldn't figure out how to feed the buffer in a way that didn't
+    // make it sound like a demon was shrieking from the pits of hell.
+    // In short, what copilot provided was a sinewave generator that handles proper data formatting
+    // and phasing correction to prevent clicking. Then I took this code and encapsulated it into my
+    // engine with a thread to ensure it always runs independently.
+    // As such this is to be called from and audio channel ([game engine pointer]->BindSynthToChannel).
+    // Please don't call this independently.
     // GravityEngine_Synth* synth : Synth object reference
     // SDL_AudioStream* stream : Audio stream that the synth audio plays on
     // SDL_AudioSpec* spec : Audio spec to format the audio with
@@ -85,7 +94,7 @@ public:
         float phase = 0.0f;
 
         double q = 0.0;
-        double v = 0.125 / 2;
+        double v = synth->volume;
 
         while ((*state) == playing || (*state) == paused) {
             if ((*state) == paused)
@@ -94,17 +103,17 @@ public:
             for (int i = 0; i < samples; i++) {
                 auto one = phase * 2.0f * 3.141592f;
                 // buffer[i] = v*(sinf(one) > 0 ? 1 : -1); // SQUARE
-                // buffer[i] = v*(sinf(one) > (sin(q)/2)+0.5 ? 1 : -1); // PULSE
-                buffer[i] = sinf(one);
-                // buffer[i] = fmod(one, 1);
-                phase += synth->freq / sample_rate;
+                buffer[i] = v*(sinf(one) > ((sin(synth->pulse_width_delta)/2)*0.99)+0.5 ? 1 : -1); // PULSE
+                // buffer[i] = v*sinf(one); // SINE
+                // buffer[i] = v*fmod(one, 1); // SAWTOOTH
+                phase += (synth->freq/2) / sample_rate;
                 if (phase >= 1.0f) phase -= 1.0f;
             }
 
             SDL_PutAudioStreamData(stream, buffer, samples * sizeof(float));
             SDL_Delay(5);
 
-            q += 1. / 20.;
+            synth->pulse_width_delta += 1. / 20.;
         }
 
         SDL_free(buffer);
@@ -193,10 +202,10 @@ class GravityEngine_Core
             // Construct audio
             GravityEngine_AudioChannel(SDL_AudioSpec audio_spec)
             {
+                // Open the audio device for playback
+                audio_device_id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
                 // Create the audio stream
                 sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
-                // Open the audio device for playback
-                audio_device_id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &audio_spec);
                 // Flag the the audio channel is ready for playback
                 state = init;
             };
@@ -252,20 +261,20 @@ class GravityEngine_Core
             // Stop audio
             void StopPlayback()
             {
-                // Empty the audio stream data
-                SDL_ClearAudioStream(sdl_audio_stream);
-                // Stop the playback
-                SDL_PauseAudioDevice(audio_device_id);
                 // Flag that this sound channel has been stopped and cleared
                 state = stopped;
-                // If this channel was set to loop, set it to stop looping
-                looping = false;
                 // Wait for the synth thread if this is a synth
                 if (type == synth)
                 {
                     // Wait for the thread to quit
                     while (synth_playing) {}
                 }
+                // Stop the playback
+                SDL_PauseAudioDevice(audio_device_id);
+                // Empty the audio stream data
+                SDL_ClearAudioStream(sdl_audio_stream);
+                // If this channel was set to loop, set it to stop looping
+                looping = false;
             }
 
             // Pause audio
@@ -324,6 +333,17 @@ class GravityEngine_Core
             // Destruct audio
             ~GravityEngine_AudioChannel()
             {
+                // Stop the playback
+                SDL_PauseAudioDevice(audio_device_id);
+                // Flag that this sound channel has been stopped and cleared
+                state = stopped;
+                // Wait for the synth thread if this is a synth
+                if (type == synth)
+                {
+                    // Wait for the thread to quit
+                    while (synth_playing) {}
+                }
+                SDL_Delay(5);
                 currently_playing_audio = nullptr;
                 SDL_CloseAudioDevice(audio_device_id);
             };
@@ -331,7 +351,7 @@ class GravityEngine_Core
 
     // Gravity Engine Private Attributes
     private:
-        struct SDL_AudioSpec global_audio_spec = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
+        struct SDL_AudioSpec global_audio_spec; // = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
         std::vector<GravityEngine_Object*> entity_list; // This is the list of GravityEngine objects that the engine will track and execute
         bool game_running = false; // Is the game running or no?
         int canvas_w; // Game canvas width
@@ -624,6 +644,11 @@ class GravityEngine_Core
             }
             // Create the SDL window
             SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
+
+            // Load the audio spec
+            auto dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
+            SDL_GetAudioDeviceFormat(dev, &global_audio_spec, nullptr);
+            SDL_CloseAudioDevice(dev);
 
             // Initialize all audio channels
             for (int i = 0; i < channels; i++)
