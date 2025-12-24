@@ -67,7 +67,8 @@ enum SynthWaveForm
     square,
     pulse,
     sawtooth,
-    triangle
+    triangle,
+    noise
 };
 
 // Template for synth objects
@@ -131,6 +132,15 @@ public:
                             sample = (pan_volume * synth->volume) * (one * 2 - 1);
                         else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
                             sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
+                        else if (synth->waveform == noise)
+                        {
+                            // Initialize a random number generator
+                            std::random_device rd;
+                            std::mt19937 gen(rd());
+                            std::uniform_int_distribution<> distrib(-10000, 10000);
+                            // Return value
+                            sample = distrib(gen) / 10000.;
+                        }
 
                         buffer[i] = sample;
                     }
@@ -150,6 +160,16 @@ public:
                             sample = (pan_volume * synth->volume) * (one * 2 - 1);
                         else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
                             sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
+                        else if (synth->waveform == noise)
+                        {
+                            // Initialize a random number generator
+                            std::random_device rd;
+                            std::mt19937 gen(rd());
+                            std::uniform_int_distribution<> distrib(-10000, 10000);
+                            // Return value
+                            sample = distrib(gen) / 10000.;
+                        }
+
                         buffer[i] = sample;
                         // Step
                         phase += synth->freq / spec->freq;

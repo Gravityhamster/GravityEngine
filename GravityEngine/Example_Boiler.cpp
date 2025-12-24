@@ -31,7 +31,7 @@ void GameInit()
     synptr->pulse_width_freq = 1.0f;
     synptr->freq = 261.63;
     synptr->volume = 0.25;
-    synptr->waveform = triangle;
+    synptr->waveform = noise;
 }
 
 // Master pre code
