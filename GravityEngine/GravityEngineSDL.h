@@ -86,12 +86,13 @@ public:
     SynthWaveForm waveform = sine;
 
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
-    // The only thing I don't understand is why you need the whole phasing thing where it divides by the sample_rate and then subtracts 1 if it is over 1.
+    // It simply generates a waveform. Never call this indepentently please. Use BindSynthToChannel in the engine instead.
     // GravityEngine_Synth* synth : Synth object reference
     // SDL_AudioStream* stream : Audio stream that the synth audio plays on
     // SDL_AudioSpec* spec : Audio spec to format the audio with
     // SDL_AudioDeviceID dev : Device the audio will play on
-    // ChannelStates state : Current state of the channel
+    // ChannelStates* state : Current state of the channel
+    // bool* synth_playing : Flag to indicate the thread has successfully finished
     static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, ChannelStates* state, bool* synth_playing)
     {
         // Crop panning
