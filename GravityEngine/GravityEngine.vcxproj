@@ -20,7 +20,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GravityEngineSDL.h" />
-    <ClInclude Include="SynthSDL.h" />
     <ClInclude Include="types.h" />
   </ItemGroup>
   <ItemGroup>

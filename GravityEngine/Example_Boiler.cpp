@@ -7,10 +7,6 @@ bool is_true;
 bool was_true;
 
 GravityEngine_Synth* synptr;
-GravityEngine_Synth* synptr1;
-GravityEngine_Synth* synptr2;
-GravityEngine_Synth* synptr3;
-GravityEngine_Synth* synptr4;
 
 class example : public virtual GravityEngine_Object
 {
@@ -23,42 +19,19 @@ class example : public virtual GravityEngine_Object
 		void end_step() {};
 };
 
+void play()
+{
+    geptr->BindSynthToChannel(synptr, 0);
+}
+
 // Master pre code
 void GameInit()
 {
     synptr = new GravityEngine_Synth();
+    synptr->pulse_width_freq = 1.0f;
     synptr->freq = 261.63;
-    synptr->pulse_width_delta = 0;
-    synptr->volume = 0.125 / 10;
-
-    synptr1 = new GravityEngine_Synth();
-    synptr1->freq = 261.63 - 1;
-    synptr->pulse_width_delta = 1;
-    synptr1->volume = 0.125 / 10;
-
-    synptr2 = new GravityEngine_Synth();
-    synptr2->freq = 261.63 + 1;
-    synptr->pulse_width_delta = 2;
-    synptr2->volume = 0.125 / 10;
-
-    synptr3 = new GravityEngine_Synth();
-    synptr3->freq = 261.63 - 2;
-    synptr->pulse_width_delta = 3;
-    synptr3->volume = 0.125 / 10;
-
-    synptr4 = new GravityEngine_Synth();
-    synptr4->freq = 261.63 + 2;
-    synptr->pulse_width_delta = 4;
-    synptr4->volume = 0.125 / 10;
-}
-
-void play()
-{
-    geptr->BindSynthToChannel(synptr, 0);
-    geptr->BindSynthToChannel(synptr1, 1);
-    geptr->BindSynthToChannel(synptr2, 2);
-    geptr->BindSynthToChannel(synptr3, 3);
-    geptr->BindSynthToChannel(synptr4, 4);
+    synptr->volume = 0.25;
+    synptr->waveform = sine;
 }
 
 // Master pre code
@@ -70,10 +43,6 @@ void PreGameLoop()
     if (!is_true && ply)
     {
         geptr->StopChannel(0);
-        geptr->StopChannel(1);
-        geptr->StopChannel(2);
-        geptr->StopChannel(3);
-        geptr->StopChannel(4);
         ply = false;
     }
     else if (is_true && !ply)

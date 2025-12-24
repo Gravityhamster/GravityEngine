@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <random>
 
+#define PI 3.141592f
+
 // Copilot help on this one
 // Convert the audio in the audio buffer to a different audio spec
 // Uint8* audio_buf : The buffer for the audio data
@@ -58,24 +60,32 @@ enum ChannelType
     synth
 };
 
+// Enum to define the wave forms on a synth
+enum SynthWaveForm
+{
+    sine,
+    square,
+    pulse,
+    sawtooth,
+    triangle
+};
+
 // Template for synth objects
 class GravityEngine_Synth
 {
 public:
-    float freq = 50.0f;
+    float freq = 50.0;
     int sample_frames;
     float* audio_data;
     float volume = 1;
-    float pulse_width_delta = 0;
+    float panning = 0.5;
+    float pan_freq = 0.0;
+    float pulse_width = 0.5;
+    float pulse_width_freq = 0.0;
+    SynthWaveForm waveform = sine;
 
-    // Some of this code provided by Copilot, unfortunately. 
-    // I couldn't figure out how to feed the buffer in a way that didn't
-    // make it sound like a demon was shrieking from the pits of hell.
-    // In short, what copilot provided was a sinewave generator that handles proper data formatting
-    // and phasing correction to prevent clicking. Then I took this code and encapsulated it into my
-    // engine with a thread to ensure it always runs independently.
-    // As such this is to be called from and audio channel ([game engine pointer]->BindSynthToChannel).
-    // Please don't call this independently.
+    // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
+    // The only thing I don't understand is why you need the whole phasing thing where it divides by the sample_rate and then subtracts 1 if it is over 1.
     // GravityEngine_Synth* synth : Synth object reference
     // SDL_AudioStream* stream : Audio stream that the synth audio plays on
     // SDL_AudioSpec* spec : Audio spec to format the audio with
@@ -83,39 +93,95 @@ public:
     // ChannelStates state : Current state of the channel
     static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, ChannelStates* state, bool* synth_playing)
     {
+        // Crop panning
+        synth->panning = std::clamp<float>(synth->panning, 0.f, 1.f);
+        // Get sample frames
         SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
-        const float sample_rate = (float)spec->freq;
-
-        // Use the device's preferred frame size
-        int samples = synth->sample_frames * spec->channels;
-
-        float* buffer = (float*)SDL_malloc(samples * sizeof(float));
-        synth->audio_data = buffer;
-        float phase = 0.0f;
-
-        double q = 0.0;
-        double v = synth->volume;
-
+        if (spec->channels > 2)
+            spec->channels = 2;
+        // Get buffer size
+        int buffer_size = synth->sample_frames * spec->channels;
+        float* buffer = (float*)SDL_malloc(buffer_size * sizeof(float));
+        float phase = 0.;
+        float pan_phase = synth->panning;
+        float pw_phase = synth->pulse_width;
+        // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
+            // If the synth is paused, do not play the synth
             if ((*state) == paused)
                 continue;
+            // Fill in audio data
+            for (int i = 0; i < buffer_size; i++)
+            {
+                if (spec->channels == 2)
+                {
+                    if (i % 2 == 0) // left
+                    {
+                        float pan_volume = abs(synth->panning-1.);
+                        float one = phase * 2. * PI;
+                        // Set sample based on wave form
+                        float sample = 0.;
+                        if (synth->waveform == sine)
+                            sample = (pan_volume * synth->volume) * sin(one);
+                        else if (synth->waveform == square)
+                            sample = (pan_volume * synth->volume) * (sin(one) > 0 ? 1 : -1);
+                        else if (synth->waveform == pulse)
+                            sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
+                        else if (synth->waveform == sawtooth)
+                            sample = (pan_volume * synth->volume) * (one * 2 - 1);
 
-            for (int i = 0; i < samples; i++) {
-                auto one = phase * 2.0f * 3.141592f;
-                // buffer[i] = v*(sinf(one) > 0 ? 1 : -1); // SQUARE
-                buffer[i] = v*(sinf(one) > ((sin(synth->pulse_width_delta)/2)*0.99)+0.5 ? 1 : -1); // PULSE
-                // buffer[i] = v*sinf(one); // SINE
-                // buffer[i] = v*fmod(one, 1); // SAWTOOTH
-                phase += (synth->freq/2) / sample_rate;
-                if (phase >= 1.0f) phase -= 1.0f;
+                        buffer[i] = sample;
+                    }
+                    if (i % 2 == 1) // right
+                    {
+                        float pan_volume = 1 - abs(synth->panning-1.);
+                        float one = phase * 2. * PI;
+                        // Set sample based on wave form
+                        float sample = 0.;
+                        if (synth->waveform == sine)
+                            sample = (pan_volume * synth->volume) * sin(one);
+                        else if (synth->waveform == square)
+                            sample = (pan_volume * synth->volume) * (sin(one) > 0 ? 1 : -1);
+                        else if (synth->waveform == pulse)
+                            sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
+                        else if (synth->waveform == sawtooth)
+                            sample = (pan_volume * synth->volume) * (one * 2 - 1);
+                        buffer[i] = sample;
+                        // Step
+                        phase += synth->freq / spec->freq;
+                        if (phase > 1.)
+                            phase -= 1.;
+                        // Step panning
+                        if (synth->pan_freq > 0)
+                        {
+                            pan_phase += synth->pan_freq / spec->freq;
+                            synth->panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
+                            if (pan_phase > 1.)
+                                pan_phase -= 1.;
+                        }
+                        // Step pulse width
+                        if (synth->pulse_width_freq > 0)
+                        {
+                            pw_phase += synth->pulse_width_freq / spec->freq;
+                            synth->pulse_width = (sin(pw_phase * 2. * PI) / 2)*0.99 + 0.5;
+                            if (pw_phase > 1.)
+                                pw_phase -= 1.;
+                        }
+                    }
+                }
+                else
+                {
+                    float one = phase * 2. * PI;
+                    float sample = synth->volume * sin(one);
+                    buffer[i] = sample;
+                    if (phase > 1.)
+                        phase -= 1.;
+                }
             }
-
-            SDL_PutAudioStreamData(stream, buffer, samples * sizeof(float));
-            SDL_Delay(5);
-
-            synth->pulse_width_delta += 1. / 20.;
+            // Push buffer to stream
+            SDL_PutAudioStreamData(stream, buffer, buffer_size * sizeof(float));
         }
-
+        // End sequence
         SDL_free(buffer);
         (*synth_playing) = false;
     }
@@ -690,14 +756,14 @@ class GravityEngine_Core
 			TTF_DestroyRendererTextEngine(engine);
             TTF_Quit();
 
-            // Kill SDL
-            SDL_Quit();
-
             // Free audio channels
             for (auto ac : audio_channels)
                 delete ac;
             for (auto s : sounds)
                 delete s;
+
+            // Kill SDL
+            SDL_Quit();
 
             // Free all objects
         	for (auto o : entity_list)
