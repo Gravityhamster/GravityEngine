@@ -129,6 +129,8 @@ public:
                             sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
                         else if (synth->waveform == sawtooth)
                             sample = (pan_volume * synth->volume) * (one * 2 - 1);
+                        else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
+                            sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
 
                         buffer[i] = sample;
                     }
@@ -146,11 +148,15 @@ public:
                             sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
                         else if (synth->waveform == sawtooth)
                             sample = (pan_volume * synth->volume) * (one * 2 - 1);
+                        else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
+                            sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
                         buffer[i] = sample;
                         // Step
                         phase += synth->freq / spec->freq;
                         if (phase > 1.)
+                        {
                             phase -= 1.;
+                        }
                         // Step panning
                         if (synth->pan_freq > 0)
                         {
