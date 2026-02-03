@@ -1,5 +1,4 @@
 #include "GravityEngineSDL.h"
-#include <math.h>
 
 GravityEngine_Core* geptr;
 bool ply = false;
