@@ -33,6 +33,7 @@ enum SynthWaveForm
     noise
 };
 
+/*
 // Enum to define the type of filter applied to audio channel
 enum FilterType
 {
@@ -51,6 +52,7 @@ struct GravityEngine_Filter
     float resonance;
     float bandpass_plateu;
 };
+*/
 
 // Template for synth objects
 class GravityEngine_Synth
