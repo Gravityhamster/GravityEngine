@@ -191,7 +191,7 @@ public:
                         phase -= 1.;
                 }
             }
-            // Allow time for CPU updating 
+            // Yield CPU and prevent overfilling the audio buffer - Note this came from Copilot, and I added the part of the condition that handles play and pause
             while (SDL_GetAudioStreamAvailable(stream) > buffer_size && ((*state) == playing || (*state) == paused)) {
                 SDL_Delay(0); // yield without adding latency 
             }
