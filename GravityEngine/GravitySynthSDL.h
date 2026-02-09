@@ -191,12 +191,12 @@ public:
                         phase -= 1.;
                 }
             }
-            // Yield CPU and prevent overfilling the audio buffer - Note this came from Copilot, and I added the part of the condition that handles play and pause
+            // Push buffer to stream
+            SDL_PutAudioStreamData(stream, buffer, buffer_size * sizeof(float));
+            // Yield CPU and prevent overfilling the audio buffer - Note; this came from Copilot, and I added the part of the condition that handles play and pause
             while (SDL_GetAudioStreamAvailable(stream) > buffer_size && ((*state) == playing || (*state) == paused)) {
                 SDL_Delay(0); // yield without adding latency 
             }
-            // Push buffer to stream
-            SDL_PutAudioStreamData(stream, buffer, buffer_size * sizeof(float));
         }
         // End sequence
         SDL_free(buffer);
