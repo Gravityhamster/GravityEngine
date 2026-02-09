@@ -94,7 +94,10 @@ public:
         while ((*state) == playing || (*state) == paused) {
             // If the synth is paused, do not play the synth
             if ((*state) == paused)
+            {
+                SDL_Delay(0);
                 continue;
+            }
             // Fill in audio data
             for (int i = 0; i < buffer_size; i++)
             {
@@ -187,6 +190,10 @@ public:
                     if (phase > 1.)
                         phase -= 1.;
                 }
+            }
+            // Allow time for CPU updating 
+            while (SDL_GetAudioStreamAvailable(stream) > buffer_size && ((*state) == playing || (*state) == paused)) {
+                SDL_Delay(0); // yield without adding latency 
             }
             // Push buffer to stream
             SDL_PutAudioStreamData(stream, buffer, buffer_size * sizeof(float));
