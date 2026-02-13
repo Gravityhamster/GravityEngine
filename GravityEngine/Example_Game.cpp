@@ -14,29 +14,133 @@ int p;
 class player : public virtual GravityEngine_Object
 {
     private:
-        int x;
-        int y;
+        double x;
+        double y;
+        double yvel = 0;
+        double xvel = 0;
+        double grav = .0625;
+        double max_grav = 5;
+        double accel = 0.5;
+        double jump = -1;
+        std::vector<int> collides_with = {1};
 	public:
         player() 
         {
-            x = 96 / 2;
-            y = 54 / 2;
+            x = geptr->GetCanvasW() / 2;
+            y = geptr->GetCanvasH() / 2;
         };
 		~player() {};
 		void begin_step() {};
 		void step() 
         {
-            geptr->DrawChar(x, y, geptr->entity, '@');
+            // Calculate velocities
+            if (!check_collision_solid(floor(x), floor(y + 1)))
+            {
+                if (yvel < max_grav)
+                    yvel += grav;
+            }
+            else
+            {
+                yvel = 0;
+            }
+
+            // Handle input
+            xvel = (is_true_right - is_true_left) * accel;
+            if (check_collision_solid(floor(x), floor(y + 1)) && is_true_a)
+                yvel = jump;
+
+            // Set the temp y and x velocity movement values
+            double xv_t = xvel;
+            double yv_t = yvel;
+
+            // Apply the x velocity
+            if (check_collision_solid_x(x + xv_t))
+            {
+                while (abs(xv_t) >= 1 && !check_collision_solid(floor(x), floor(x + (xv_t / abs(xv_t)))))
+                {
+                    x += xv_t / abs(xv_t);
+                    xv_t = (abs(xv_t) - 1) * (xv_t / abs(xv_t));
+                }
+                xv_t = 0;
+                xvel = 0;
+            }
+            x += xv_t;
+
+            // Apply the y velocity
+            if (check_collision_solid_y(y + yv_t))
+            {
+                while (abs(yv_t) >= 1 && !check_collision_solid(floor(x), floor(y + (yv_t / abs(yv_t)))))
+                {
+                    y += yv_t / abs(yv_t);
+                    yv_t = (abs(yv_t) - 1) * (yv_t / abs(yv_t));
+                }
+                yv_t = 0;
+                yvel = 0;
+            }
+            y += yv_t;
+
+            // Draw the character at the end
+            geptr->DrawChar(floor(x), floor(y), geptr->entity, '@');
         };
 		void end_step() {};
+
+        // Check if there is a collision at this point
+        bool check_collision_solid(int _x, int _y)
+        {
+            if (_x == x && _y == y)
+                return false;
+            else
+                return (VectorContains(collides_with, geptr->GetCollisionValue(_x, _y, geptr->stat)) ||
+                        VectorContains(collides_with, geptr->GetCollisionValue(_x, _y, geptr->dyn)));
+        }
+
+        // Check if there is a collision at any point between here and there horizontally
+        bool check_collision_solid_x(int _x)
+        {
+            if (_x == x)
+                return false;
+            else
+            {
+                while (abs(_x - floor(x)) >= 1)
+                {
+                    if (check_collision_solid(_x, y))
+                        return true;
+                    if (_x < x)
+                        _x++;
+                    else if (_x > x)
+                        _x--;
+                }
+                return false;
+            }
+        }
+
+        // Check if there is a collision at eny point between here and there vertically
+        bool check_collision_solid_y(int _y)
+        {
+            if (_y == y)
+                return false;
+            else
+            {
+                while (abs(_y - floor(y)) >= 1)
+                {
+                    if (check_collision_solid(x, _y))
+                        return true;
+                    if (_y < y)
+                        _y++;
+                    else if (_y > y)
+                        _y--;
+                }
+                return false;
+            }
+        }
 };
 
 // Master pre code
 void GameInit()
 {
-    for (int q = 44; q < 54; q++)
+    for (int q = geptr->GetCanvasH() / 1.5; q < geptr->GetCanvasH() / 1.5+1; q++)
     {
-        for (int i = 0; i < 96; i++)
+        for (int i = 0; i < geptr->GetCanvasW(); i++)
         {
             geptr->DrawChar(i, q, geptr->background, 'O');
             geptr->DrawSetColor(i, q, geptr->background, { {0,255,0},{0,0,0} });
@@ -52,11 +156,22 @@ void GameInit()
 void PreGameLoop()
 {
     was_true_a = is_true_a;
-    is_true_a = geptr->GetKeyState(SDL_SCANCODE_Z);
+    is_true_a = geptr->GetKeyState(SDL_SCANCODE_UP);
     was_true_left = is_true_left;
     is_true_left = geptr->GetKeyState(SDL_SCANCODE_LEFT);
     was_true_right = is_true_right;
     is_true_right = geptr->GetKeyState(SDL_SCANCODE_RIGHT);
+
+    if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
+    {
+        int _x;
+        int _y;
+        geptr->GetMousePosition(&_x, &_y);
+
+        geptr->DrawChar(_x, _y, geptr->background, 'O');
+        geptr->DrawSetColor(_x, _y, geptr->background, { {0,255,0},{0,0,0} });
+        geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
+    }
 }
 
 // Master post code
@@ -67,7 +182,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96, 54, 60, 1920, 1080, "./Ubuntu-B-1.ttf", 16);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 60, 1920, 1080, "./Ubuntu-B-1.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = true; // Show all information

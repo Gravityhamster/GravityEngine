@@ -516,10 +516,17 @@ class GravityEngine_Core
         // col_layer cl : Layer to get collision from
         int GetCollisionValue(int x, int y, col_layer cl)
         {
-            if (cl == stat)
-                return collision_static[y][x];
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                if (cl == stat)
+                    return collision_static[y][x];
+                else
+                    return collision_dynamic[y][x];
+            }
             else
-                return collision_dynamic[y][x];
+            {
+                return NULL;
+            }
         }
 
         // Set the collision type at the given location
@@ -529,10 +536,13 @@ class GravityEngine_Core
         // int v : Collision type value
         void SetCollisionValue(int x, int y, col_layer cl, int v)
         {
-            if (cl == stat)
-                collision_static[y][x] = v;
-            else if (cl == dyn)
-                collision_dynamic[y][x] = v;
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                if (cl == stat)
+                    collision_static[y][x] = v;
+                else if (cl == dyn)
+                    collision_dynamic[y][x] = v;
+            }
         }
 
         // Gravity Engine Destructor
@@ -1330,3 +1340,13 @@ class GravityEngine_Core
             }
         }
 };
+
+// -- General utility functions --
+
+// Check if the vector contains the value
+// std::vector<T> v : The vector to check
+// T val : The value to check the presence of
+template <typename T> bool
+VectorContains(std::vector<T> v, T val) {
+    return std::find(v.begin(), v.end(), val) != v.end();
+}
