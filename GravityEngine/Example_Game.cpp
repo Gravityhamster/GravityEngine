@@ -18,10 +18,20 @@ class player : public virtual GravityEngine_Object
         double y;
         double yvel = 0;
         double xvel = 0;
-        double grav = .0625;
+        double grav = .0625/4;
         double max_grav = 5;
-        double accel = 0.5;
-        double jump = -1;
+        double g_accel = 0.25;
+        double a_accel = 0.25/5;
+        double g_deccel = 0.25/10;
+        double a_deccel = 0.25/20;
+        double spd = 0.25;
+        double jump = -0.5;
+        double minjump = -0.25;
+        double coyote_time = 10;
+        double coyote_timer = 0;
+        bool willjump = false;
+        int willjump_time = 10;
+        int willjump_timer = 0;
         std::vector<int> collides_with = {1};
 	public:
         player() 
@@ -36,25 +46,63 @@ class player : public virtual GravityEngine_Object
             // Calculate velocities
             if (!check_collision_solid(floor(x), floor(y + 1)))
             {
+                willjump_timer++;
+                coyote_timer++;
                 if (yvel < max_grav)
                     yvel += grav;
             }
-            else
+            else 
             {
-                yvel = 0;
+                // Reset coyote time and velocity
+                coyote_timer = 0;
+                if (yvel > 0)
+                    yvel = 0;
             }
 
             // Handle input
-            xvel = (is_true_right - is_true_left) * accel;
-            if (check_collision_solid(floor(x), floor(y + 1)) && is_true_a)
+            double accel = check_collision_solid(floor(x), floor(y + 1)) ? g_accel : a_accel;
+            double deccel = check_collision_solid(floor(x), floor(y + 1)) ? g_deccel : a_deccel;
+
+            xvel += (is_true_right - is_true_left) * accel;
+            if ((is_true_right - is_true_left) == 0)
+            {
+                if (xvel > 0)
+                {
+                    if (xvel - deccel < 0)
+                        xvel = 0;
+                    else
+                        xvel -= deccel;
+                }
+                if (xvel < 0)
+                {
+                    if (xvel + deccel > 0)
+                        xvel = 0;
+                    else
+                        xvel += deccel;
+                }
+            }
+            xvel = std::clamp(xvel, -spd, spd);
+            if (!is_true_a)
+                yvel = std::max(yvel, minjump);
+            if ((check_collision_solid(floor(x), floor(y + 1)) || coyote_timer < coyote_time) && ((is_true_a && !was_true_a) || willjump))
+            {
                 yvel = jump;
+                willjump = false;
+            }
+            else if (is_true_a && !was_true_a)
+            {
+                willjump = true;
+                willjump_timer = 0;
+            }
+            if (willjump_timer >= willjump_time)
+                willjump = false;
 
             // Set the temp y and x velocity movement values
             double xv_t = xvel;
             double yv_t = yvel;
 
             // Apply the x velocity
-            if (check_collision_solid_x(x + xv_t))
+            if (check_collision_solid_x(floor(x + xv_t)))
             {
                 while (abs(xv_t) >= 1 && !check_collision_solid(floor(x), floor(x + (xv_t / abs(xv_t)))))
                 {
@@ -67,7 +115,7 @@ class player : public virtual GravityEngine_Object
             x += xv_t;
 
             // Apply the y velocity
-            if (check_collision_solid_y(y + yv_t))
+            if (check_collision_solid_y(floor(y + yv_t)))
             {
                 while (abs(yv_t) >= 1 && !check_collision_solid(floor(x), floor(y + (yv_t / abs(yv_t)))))
                 {
@@ -80,7 +128,7 @@ class player : public virtual GravityEngine_Object
             y += yv_t;
 
             // Draw the character at the end
-            geptr->DrawChar(floor(x), floor(y), geptr->entity, '@');
+            geptr->DrawChar(floor(x), floor(y), geptr->entity, '{');
         };
 		void end_step() {};
 
@@ -138,15 +186,12 @@ class player : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
-    for (int q = geptr->GetCanvasH() / 1.5; q < geptr->GetCanvasH() / 1.5+1; q++)
+    int q = geptr->GetCanvasH() - 1;
+    for (int i = 0; i < geptr->GetCanvasW(); i++)
     {
-        for (int i = 0; i < geptr->GetCanvasW(); i++)
-        {
-            geptr->DrawChar(i, q, geptr->background, 'O');
-            geptr->DrawSetColor(i, q, geptr->background, { {0,255,0},{0,0,0} });
-            geptr->SetCollisionValue(i, q, geptr->stat, 1);
-
-        }
+        geptr->DrawChar(i, q, geptr->background, 'A');
+        geptr->DrawSetColor(i, q, geptr->background, { {0,255,0},{0,255,0} });
+        geptr->SetCollisionValue(i, q, geptr->stat, 1);
     }
 
     p = geptr->AddObject(new player());
@@ -168,8 +213,8 @@ void PreGameLoop()
         int _y;
         geptr->GetMousePosition(&_x, &_y);
 
-        geptr->DrawChar(_x, _y, geptr->background, 'O');
-        geptr->DrawSetColor(_x, _y, geptr->background, { {0,255,0},{0,0,0} });
+        geptr->DrawChar(_x, _y, geptr->background, 'B');
+        geptr->DrawSetColor(_x, _y, geptr->background, { {0,255,0},{0,255,0} });
         geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
     }
 }
@@ -182,10 +227,10 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 60, 1920, 1080, "./Ubuntu-B-1.ttf", 16);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 60, 1920, 1080, "./GameFont.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
-    ge_inst.debug_complex = true; // Show all information
+    ge_inst.debug_complex = false; // Show all information
     geptr = &ge_inst; // Set the pointer to the console engine class
 
     // Start game loop
