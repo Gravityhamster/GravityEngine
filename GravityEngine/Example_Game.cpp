@@ -8,8 +8,20 @@ bool is_true_left;
 bool was_true_left;
 bool is_true_right;
 bool was_true_right;
+bool is_true_up;
+bool was_true_up;
+bool is_true_down;
+bool was_true_down;
 
 int p;
+
+struct bounding_box
+{
+    int x;
+    int y;
+    int w;
+    int h;
+};
 
 class player : public virtual GravityEngine_Object
 {
@@ -18,12 +30,12 @@ class player : public virtual GravityEngine_Object
         double y;
         double yvel = 0;
         double xvel = 0;
-        double grav = .0625/4;
+        double grav = 0.015625;
         double max_grav = 5;
         double g_accel = 0.25;
-        double a_accel = 0.25/5;
-        double g_deccel = 0.25/10;
-        double a_deccel = 0.25/20;
+        double a_accel = 0.05;
+        double g_deccel = 0.025;
+        double a_deccel = 0.0125;
         double spd = 0.25;
         double jump = -0.5;
         double minjump = -0.25;
@@ -32,19 +44,23 @@ class player : public virtual GravityEngine_Object
         bool willjump = false;
         int willjump_time = 10;
         int willjump_timer = 0;
+        int sprite_index;
+        double col_prec = 0.0125;
         std::vector<int> collides_with = {1};
+        bounding_box collision_box = { 0, 0, 32, 40 };
 	public:
         player() 
         {
             x = geptr->GetCanvasW() / 2;
             y = geptr->GetCanvasH() / 2;
+            sprite_index = geptr->AddSprite("wario.png");
         };
 		~player() {};
 		void begin_step() {};
 		void step() 
         {
             // Calculate velocities
-            if (!check_collision_solid(floor(x), floor(y + 1)))
+            if (!check_collision_solid(x, y + col_prec))
             {
                 willjump_timer++;
                 coyote_timer++;
@@ -60,8 +76,8 @@ class player : public virtual GravityEngine_Object
             }
 
             // Handle input
-            double accel = check_collision_solid(floor(x), floor(y + 1)) ? g_accel : a_accel;
-            double deccel = check_collision_solid(floor(x), floor(y + 1)) ? g_deccel : a_deccel;
+            double accel = check_collision_solid(x, y + col_prec) ? g_accel : a_accel;
+            double deccel = check_collision_solid(x, y + col_prec) ? g_deccel : a_deccel;
 
             xvel += (is_true_right - is_true_left) * accel;
             if ((is_true_right - is_true_left) == 0)
@@ -82,11 +98,14 @@ class player : public virtual GravityEngine_Object
                 }
             }
             xvel = std::clamp(xvel, -spd, spd);
+
+            // Jumping logic
             if (!is_true_a)
                 yvel = std::max(yvel, minjump);
             if ((check_collision_solid(floor(x), floor(y + 1)) || coyote_timer < coyote_time) && ((is_true_a && !was_true_a) || willjump))
             {
                 yvel = jump;
+                coyote_timer = coyote_time;
                 willjump = false;
             }
             else if (is_true_a && !was_true_a)
@@ -101,13 +120,13 @@ class player : public virtual GravityEngine_Object
             double xv_t = xvel;
             double yv_t = yvel;
 
-            // Apply the x velocity
-            if (check_collision_solid_x(floor(x + xv_t)))
+            // Apply the y velocity
+            if (check_collision_solid(x + xv_t, y))
             {
-                while (abs(xv_t) >= 1 && !check_collision_solid(floor(x), floor(x + (xv_t / abs(xv_t)))))
+                while (abs(xv_t) >= col_prec && !check_collision_solid(x + col_prec * (xv_t / abs(xv_t)), y))
                 {
-                    x += xv_t / abs(xv_t);
-                    xv_t = (abs(xv_t) - 1) * (xv_t / abs(xv_t));
+                    x += col_prec * (xv_t / abs(xv_t));
+                    xv_t = (abs(xv_t) - col_prec) * (xv_t / abs(xv_t));
                 }
                 xv_t = 0;
                 xvel = 0;
@@ -115,12 +134,12 @@ class player : public virtual GravityEngine_Object
             x += xv_t;
 
             // Apply the y velocity
-            if (check_collision_solid_y(floor(y + yv_t)))
+            if (check_collision_solid(x, y + yv_t))
             {
-                while (abs(yv_t) >= 1 && !check_collision_solid(floor(x), floor(y + (yv_t / abs(yv_t)))))
+                while (abs(yv_t) >= col_prec && !check_collision_solid(x, y + col_prec * (yv_t / abs(yv_t))))
                 {
-                    y += yv_t / abs(yv_t);
-                    yv_t = (abs(yv_t) - 1) * (yv_t / abs(yv_t));
+                    y += col_prec * (yv_t / abs(yv_t));
+                    yv_t = (abs(yv_t) - col_prec) * (yv_t / abs(yv_t));
                 }
                 yv_t = 0;
                 yvel = 0;
@@ -128,59 +147,29 @@ class player : public virtual GravityEngine_Object
             y += yv_t;
 
             // Draw the character at the end
-            // geptr->DrawChar(floor(x), floor(y), geptr->entity, '{');
-            geptr->DrawSprite(floor(x * geptr->GetFontW()-6), floor(y * geptr->GetFontH() - 22), 2, 2, "wario.png", geptr->p_entity);
+            geptr->DrawSprite(sprite_index, floor(x * geptr->GetFontW()-6), floor(y * geptr->GetFontH() - 22), 2, 2, geptr->p_entity);
+            //geptr->DrawRect(floor(x * geptr->GetFontW() + collision_box.x), floor(y * geptr->GetFontH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->p_entity);
         };
 		void end_step() {};
 
-        // Check if there is a collision at this point
-        bool check_collision_solid(int _x, int _y)
+        bool check_collision_solid(double x, double y)
         {
-            if (_x == x && _y == y)
-                return false;
-            else
-                return (VectorContains(collides_with, geptr->GetCollisionValue(_x, _y, geptr->stat)) ||
-                        VectorContains(collides_with, geptr->GetCollisionValue(_x, _y, geptr->dyn)));
-        }
+            int x1 = floor((x * geptr->GetFontW() + collision_box.x) / geptr->GetFontW());
+            int y1 = floor((y * geptr->GetFontH() + collision_box.y) / geptr->GetFontH());
+            int x2 = floor(((x * geptr->GetFontW() + collision_box.x) + collision_box.w-1) / geptr->GetFontW());
+            int y2 = floor(((y * geptr->GetFontH() + collision_box.y) + collision_box.h-1) / geptr->GetFontH());
 
-        // Check if there is a collision at any point between here and there horizontally
-        bool check_collision_solid_x(int _x)
-        {
-            if (_x == x)
-                return false;
-            else
+            for (int q = y1; q <= y2; q++)
             {
-                while (abs(_x - floor(x)) >= 1)
+                for (int i = x1; i <= x2; i++)
                 {
-                    if (check_collision_solid(_x, y))
+                    if (VectorContains<int>(collides_with, geptr->GetCollisionValue(i, q, geptr->stat)) ||
+                        VectorContains<int>(collides_with, geptr->GetCollisionValue(i, q, geptr->dyn)))
                         return true;
-                    if (_x < x)
-                        _x++;
-                    else if (_x > x)
-                        _x--;
                 }
-                return false;
             }
-        }
 
-        // Check if there is a collision at eny point between here and there vertically
-        bool check_collision_solid_y(int _y)
-        {
-            if (_y == y)
-                return false;
-            else
-            {
-                while (abs(_y - floor(y)) >= 1)
-                {
-                    if (check_collision_solid(x, _y))
-                        return true;
-                    if (_y < y)
-                        _y++;
-                    else if (_y > y)
-                        _y--;
-                }
-                return false;
-            }
+            return false;
         }
 };
 
@@ -216,6 +205,10 @@ void PreGameLoop()
     is_true_left = geptr->GetKeyState(SDL_SCANCODE_LEFT);
     was_true_right = is_true_right;
     is_true_right = geptr->GetKeyState(SDL_SCANCODE_RIGHT);
+    was_true_up = is_true_up;
+    is_true_up = geptr->GetKeyState(SDL_SCANCODE_UP);
+    was_true_down = is_true_down;
+    is_true_down = geptr->GetKeyState(SDL_SCANCODE_DOWN);
 
     if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
     {

@@ -356,6 +356,7 @@ private:
     int mouse_wheel_state; // Store the current 
     int text_writes = 0;
     std::ofstream file_out = std::ofstream("output.txt");
+    std::vector<SDL_Texture*> sprite_list; // List of sprite resources loaded into the game
 
     // Gravity Engine Public Attributes
 public:
@@ -678,6 +679,8 @@ public:
         // Free all objects
         for (auto o : entity_list)
             delete o;
+        for (auto s : sprite_list)
+            SDL_DestroyTexture(s);
 
         // Success!
         return SDL_APP_SUCCESS;
@@ -937,47 +940,6 @@ public:
         return font_h;
     }
 
-    // Draw a sprite at a location
-    void DrawSprite(double _x, double _y, double _w_scale, double _h_scale, const char* _p, sprite_layer _l)
-    {
-        // TEST
-        SDL_Texture* rt = t_entity_texture;
-        // Set the target layer
-        switch (_l)
-        {
-        case background:
-            rt = t_background_texture;
-            break;
-        case entity:
-            rt = t_entity_texture;
-            break;
-        case foreground:
-            rt = t_foreground_texture;
-            break;
-        case ui:
-            rt = t_ui_texture;
-            break;
-        case debug:
-            rt = t_debug_texture;
-            break;
-        }
-        SDL_SetRenderTarget(renderer, rt);
-        auto sprite = IMG_Load(_p);
-        auto text_wario = SDL_CreateTextureFromSurface(renderer, sprite);
-        SDL_SetTextureScaleMode(text_wario, SDL_SCALEMODE_NEAREST);
-        // Get the dimensions of the character
-        float w, h;
-        SDL_GetTextureSize(text_wario, &w, &h);
-        // Create an FRect to draw to
-        SDL_FRect dst = { _x, _y, w * _w_scale, h * _w_scale };
-        // Render the char texture to the char texture
-        SDL_RenderTexture(renderer, text_wario, NULL, &dst);
-        // Delete the temp char texture
-        SDL_DestroyTexture(text_wario);
-        // END TEST
-        screen_updated = true;
-    }
-
     // Get elapsed_frames
     long GetElapsedFrames()
     {
@@ -1050,6 +1012,107 @@ public:
     void RemoveObject(GravityEngine_Object* object)
     {
         std::erase(entity_list, object);
+    }
+
+    // Add the sprite to the sprite list
+    // const char* sprite_path : File path to the sprite to be loaded
+    // SDL_ScaleMode scale_mode : Antialiasing type
+    int AddSprite(const char* sprite_path, SDL_ScaleMode scale_mode = SDL_SCALEMODE_NEAREST)
+    {
+        auto sprite = IMG_Load(sprite_path);
+        auto texture = SDL_CreateTextureFromSurface(renderer, sprite);
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+        SDL_DestroySurface(sprite);
+        sprite_list.insert(sprite_list.end(), texture);
+        return sprite_list.size() - 1;
+    }
+
+    // Delete sprite from the sprite list
+    // int index : Integer index to where the sprite is stored
+    void DeleteSprite(int index)
+    {
+        // Delete the texture
+        SDL_DestroyTexture(sprite_list[index]);
+        // Set this index to a nullptr
+        sprite_list[index] = nullptr;
+    }
+
+    // Draw a sprite at a location
+    // int index : Integer index to where the sprite is stored
+    // double x : Horizontal position of sprite
+    // double y : Vertical position of sprite
+    // double w_scale : Horizontal scaling of sprite
+    // double H_scale : Vertical scaling of sprite
+    // sprite_layer l : Layer to draw the sprite on
+    void DrawSprite(int index, double x, double y, double w_scale, double h_scale, sprite_layer l)
+    {
+        SDL_Texture* rt = t_entity_texture;
+        // Set the target layer
+        switch (l)
+        {
+        case background:
+            rt = t_background_texture;
+            break;
+        case entity:
+            rt = t_entity_texture;
+            break;
+        case foreground:
+            rt = t_foreground_texture;
+            break;
+        case ui:
+            rt = t_ui_texture;
+            break;
+        case debug:
+            rt = t_debug_texture;
+            break;
+        }
+        SDL_SetRenderTarget(renderer, rt);
+        // Get the dimensions of the character
+        float w, h;
+        SDL_GetTextureSize(sprite_list[index], &w, &h);
+        // Create an FRect to draw to
+        SDL_FRect dst = { x, y, w * w_scale, h * w_scale };
+        // Render the sprite to the graphical layer
+        SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst);
+        // Notofy the drawing pipeline that a change has been made
+        screen_updated = true;
+    }
+
+    // Draw a rectangle
+    void DrawRect(double x, double y, double w, double h, SDL_Color c, sprite_layer l)
+    {
+        SDL_Texture* rt = t_entity_texture;
+        // Set the target layer
+        switch (l)
+        {
+        case background:
+            rt = t_background_texture;
+            break;
+        case entity:
+            rt = t_entity_texture;
+            break;
+        case foreground:
+            rt = t_foreground_texture;
+            break;
+        case ui:
+            rt = t_ui_texture;
+            break;
+        case debug:
+            rt = t_debug_texture;
+            break;
+        }
+        SDL_SetRenderTarget(renderer, rt);
+        // Create an FRect to draw to
+        SDL_FRect fr = { x, y, w, h };
+        // Fill the rectangle with color
+        SDL_SetRenderDrawColor(renderer,
+            c.r,
+            c.g,
+            c.b,
+            c.a);
+        SDL_RenderFillRect(renderer, &fr);
+        // Render the rectangle
+        SDL_RenderRect(renderer, &fr);
     }
 
     // Add sounds to the sound list
