@@ -1,6 +1,7 @@
 #include "GravitySynthSDL.h"
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
+#include <SDL3_image/SDL_image.h>
 #include <iostream>
 #include <chrono>
 #include <math.h>
@@ -1186,6 +1187,13 @@ private:
         // Render all layers to the render_texture
         if (screen_updated)
         {
+            // TEST
+            auto sprite = 0;
+
+
+            // END TEXT
+
+
             // Render to texture instead of directly to the screen
             SDL_SetRenderTarget(renderer, render_texture);
             // Define where the layer will go in a rect
