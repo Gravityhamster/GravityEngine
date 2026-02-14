@@ -785,7 +785,7 @@ public:
         return c;
     }
 
-    // Draw a line
+    // Draw a line out of text
     // int x : Starting horizontal point of the line
     // int y : Starting vertical point of the line
     // int to_x : Ending horizontal point of the line
@@ -793,7 +793,7 @@ public:
     // layer l : Layer to draw on
     // color col : Color to draw with
     // char c : Character to draw with
-    void DrawLine(int x, int y, int to_x, int to_y, GravityEngine_Core::layer l, color col, char c)
+    void DrawTextLine(int x, int y, int to_x, int to_y, GravityEngine_Core::layer l, color col, char c)
     {
         // Get the total length of the line
         double len = sqrt(((to_y - y) * (to_y - y)) + ((to_x - x) * (to_x - x)));
@@ -923,6 +923,59 @@ public:
                 q++;
             }
         }
+    }
+
+    // Get the width of the font grid
+    int GetFontW()
+    {
+        return font_w;
+    }
+
+    // Get the height of the font grid
+    int GetFontH()
+    {
+        return font_h;
+    }
+
+    // Draw a sprite at a location
+    void DrawSprite(double _x, double _y, double _w_scale, double _h_scale, const char* _p, sprite_layer _l)
+    {
+        // TEST
+        SDL_Texture* rt = t_entity_texture;
+        // Set the target layer
+        switch (_l)
+        {
+        case background:
+            rt = t_background_texture;
+            break;
+        case entity:
+            rt = t_entity_texture;
+            break;
+        case foreground:
+            rt = t_foreground_texture;
+            break;
+        case ui:
+            rt = t_ui_texture;
+            break;
+        case debug:
+            rt = t_debug_texture;
+            break;
+        }
+        SDL_SetRenderTarget(renderer, rt);
+        auto sprite = IMG_Load(_p);
+        auto text_wario = SDL_CreateTextureFromSurface(renderer, sprite);
+        SDL_SetTextureScaleMode(text_wario, SDL_SCALEMODE_NEAREST);
+        // Get the dimensions of the character
+        float w, h;
+        SDL_GetTextureSize(text_wario, &w, &h);
+        // Create an FRect to draw to
+        SDL_FRect dst = { _x, _y, w * _w_scale, h * _w_scale };
+        // Render the char texture to the char texture
+        SDL_RenderTexture(renderer, text_wario, NULL, &dst);
+        // Delete the temp char texture
+        SDL_DestroyTexture(text_wario);
+        // END TEST
+        screen_updated = true;
     }
 
     // Get elapsed_frames
@@ -1195,22 +1248,6 @@ private:
         // Render all layers to the render_texture
         if (screen_updated)
         {
-            // TEST
-            SDL_SetRenderTarget(renderer, p_foreground_texture);
-            auto sprite = IMG_Load("wario.png");
-            auto text_wario = SDL_CreateTextureFromSurface(renderer, sprite);
-            SDL_SetTextureScaleMode(text_wario, SDL_SCALEMODE_NEAREST);
-            // Get the dimensions of the character
-            float w, h;
-            SDL_GetTextureSize(text_wario, &w, &h);
-            // Create an FRect to draw to
-            SDL_FRect dst = { 0, 0, w*2, h*2 };
-            // Render the char texture to the char texture
-            SDL_RenderTexture(renderer, text_wario, NULL, &dst);
-            // Delete the temp char texture
-            SDL_DestroyTexture(text_wario);
-            // END TEST
-
             // Render to texture instead of directly to the screen
             SDL_SetRenderTarget(renderer, render_texture);
             // Define where the layer will go in a rect
