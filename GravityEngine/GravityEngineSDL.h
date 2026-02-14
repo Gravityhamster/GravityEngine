@@ -3,6 +3,7 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #include <SDL3_image/SDL_image.h>
 #include <iostream>
+#include <fstream>
 #include <chrono>
 #include <math.h>
 #include <future>
@@ -353,6 +354,8 @@ private:
     std::vector<GravityEngine_Sound*> sounds; // List of all saved sounds
     int channels; // Channel count
     int mouse_wheel_state; // Store the current 
+    int text_writes = 0;
+    std::ofstream file_out = std::ofstream("output.txt");
 
     // Gravity Engine Public Attributes
 public:
@@ -1090,6 +1093,7 @@ private:
         // Init the x and y coords for the output
         int x = 0;
         int y = 0;
+        text_writes = 0;
         // Render to texture instead of directly to the screen
         SDL_SetRenderTarget(renderer, render_texture);
         // Loop through all of the characters in the
@@ -1105,6 +1109,8 @@ private:
             // Check drawing mode
             if (buf_char_screen[buf_index] != last_buf_char_screen[buf_index] ||
                 buf_layer_screen[buf_index] != last_buf_layer_screen[buf_index] ||
+                (buf_layer_screen[buf_index] == debug && buf_char_screen[buf_index] != ' ') ||
+                (buf_layer_screen[buf_index] == entity && buf_char_screen[buf_index] != ' ') ||
                 buf_col_screen[buf_index].b.r != last_buf_col_screen[buf_index].b.r ||
                 buf_col_screen[buf_index].b.g != last_buf_col_screen[buf_index].b.g ||
                 buf_col_screen[buf_index].b.b != last_buf_col_screen[buf_index].b.b ||
@@ -1112,6 +1118,7 @@ private:
                 buf_col_screen[buf_index].f.g != last_buf_col_screen[buf_index].f.g ||
                 buf_col_screen[buf_index].f.b != last_buf_col_screen[buf_index].f.b)
             {
+                text_writes++;
                 SDL_Texture* rt = t_background_texture;
                 // Set the target layer
                 switch (buf_layer_screen[buf_index])
@@ -1330,14 +1337,14 @@ private:
         
         SDL_SetRenderTarget(renderer, t_debug_texture);
         SDL_RenderClear(renderer);
-        SDL_SetRenderTarget(renderer, t_ui_texture);
-        SDL_RenderClear(renderer);
-        SDL_SetRenderTarget(renderer, t_foreground_texture);
-        SDL_RenderClear(renderer);
+        //SDL_SetRenderTarget(renderer, t_ui_texture);
+        //SDL_RenderClear(renderer);
+        //SDL_SetRenderTarget(renderer, t_foreground_texture);
+        //SDL_RenderClear(renderer);
         SDL_SetRenderTarget(renderer, t_entity_texture);
         SDL_RenderClear(renderer);
-        SDL_SetRenderTarget(renderer, t_background_texture);
-        SDL_RenderClear(renderer);
+        //SDL_SetRenderTarget(renderer, t_background_texture);
+        //SDL_RenderClear(renderer);
 
         // Call all step functions
         for (auto o : entity_list)
@@ -1405,14 +1412,22 @@ private:
             (*second_check) += 1;
         }
         // Draw the debug overlay
+        std::cout.rdbuf(file_out.rdbuf());
         if (debug_complex)
         {
-            DrawTextString(0, 0, debug, "DELTA TIME: " + std::to_string(DeltaTime()) + " ELAPSED SECONDS: " + std::to_string(seconds) + " ELAPSED FRAMES: " + std::to_string(elapsed_frames), { {255,255,255},{0,0,0} });
-            DrawTextString(0, 1, debug, "FRAME TIME: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second), { {255,255,255},{0,0,0} });
+            std::cout << "DELTA TIME: " + std::to_string(DeltaTime()) + " ELAPSED SECONDS: " + std::to_string(seconds) + " ELAPSED FRAMES: " + std::to_string(elapsed_frames) + "\n"
+                << "FRAME TIME: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second) + "\n"
+                << "TEXT WRITES: " + std::to_string(text_writes) + "\n";
+
+            //DrawTextString(0, 0, debug, "DELTA TIME: " + std::to_string(DeltaTime()) + " ELAPSED SECONDS: " + std::to_string(seconds) + " ELAPSED FRAMES: " + std::to_string(elapsed_frames), { {255,255,255},{0,0,0} });
+            //DrawTextString(0, 1, debug, "FRAME TIME: " + std::to_string(frame_time) + " FPS: " + std::to_string(*frames_per_second), { {255,255,255},{0,0,0} });
+            //DrawTextString(0, 2, debug, "TEXT WRITES: " + std::to_string(text_writes), {{255,255,255},{0,0,0}});
         }
         else
         {
-            DrawTextString(0, 0, debug, "FPS: " + std::to_string(*frames_per_second), { {255,255,255},{0,0,0} });
+            std::cout << "FPS: " + std::to_string(*frames_per_second) + "\n";
+
+            //DrawTextString(0, 0, debug, "FPS: " + std::to_string(*frames_per_second), { {255,255,255},{0,0,0} });
         }
 
         // Set the fps variable

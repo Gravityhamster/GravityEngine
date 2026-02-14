@@ -128,7 +128,7 @@ class player : public virtual GravityEngine_Object
             y += yv_t;
 
             // Draw the character at the end
-            geptr->DrawChar(floor(x), floor(y), geptr->entity, '{');
+            //geptr->DrawChar(floor(x), floor(y), geptr->entity, '{');
         };
 		void end_step() {};
 
@@ -239,7 +239,7 @@ int main()
     GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 9999, 1920, 1080, "./GameFont.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
-    ge_inst.debug_complex = false; // Show all information
+    ge_inst.debug_complex = true; // Show all information
     geptr = &ge_inst; // Set the pointer to the console engine class
 
     // Start game loop
