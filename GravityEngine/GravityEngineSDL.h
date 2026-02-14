@@ -1144,6 +1144,7 @@ private:
                 minx += 5;
                 // Convert the text surface to a texture
                 auto text_char = SDL_CreateTextureFromSurface(renderer, draw_chars[buf_index]);
+                SDL_SetTextureScaleMode(text_char, SDL_SCALEMODE_NEAREST);
                 // Set the character texture to be the render target
                 SDL_SetRenderTarget(renderer, char_texture);
                 // Draw glyph - Fill background with back color
@@ -1188,11 +1189,20 @@ private:
         if (screen_updated)
         {
             // TEST
-            auto sprite = 0;
-
-
-            // END TEXT
-
+            SDL_SetRenderTarget(renderer, p_foreground_texture);
+            auto sprite = IMG_Load("wario.png");
+            auto text_wario = SDL_CreateTextureFromSurface(renderer, sprite);
+            SDL_SetTextureScaleMode(text_wario, SDL_SCALEMODE_NEAREST);
+            // Get the dimensions of the character
+            float w, h;
+            SDL_GetTextureSize(text_wario, &w, &h);
+            // Create an FRect to draw to
+            SDL_FRect dst = { 0, 0, w*2, h*2 };
+            // Render the char texture to the char texture
+            SDL_RenderTexture(renderer, text_wario, NULL, &dst);
+            // Delete the temp char texture
+            SDL_DestroyTexture(text_wario);
+            // END TEST
 
             // Render to texture instead of directly to the screen
             SDL_SetRenderTarget(renderer, render_texture);
