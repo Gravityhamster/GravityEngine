@@ -186,6 +186,15 @@ class player : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
+    for (int q = 0; q < geptr->GetCanvasH(); q++)
+    {
+        for (int i = 0; i < geptr->GetCanvasW(); i++)
+        {
+            geptr->DrawChar(i, q, geptr->background, ' ');
+            geptr->DrawSetColor(i, q, geptr->background, { {0,0,0},{0,0,255} });
+        }
+    }
+
     int q = geptr->GetCanvasH() - 1;
     for (int i = 0; i < geptr->GetCanvasW(); i++)
     {
@@ -213,8 +222,8 @@ void PreGameLoop()
         int _y;
         geptr->GetMousePosition(&_x, &_y);
 
-        geptr->DrawChar(_x, _y, geptr->background, 'B');
-        geptr->DrawSetColor(_x, _y, geptr->background, { {0,255,0},{0,255,0} });
+        geptr->DrawChar(_x, _y, geptr->foreground, 'B');
+        geptr->DrawSetColor(_x, _y, geptr->foreground, { {0,255,0},{0,255,0} });
         geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
     }
 }
@@ -227,7 +236,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 60, 1920, 1080, "./GameFont.ttf", 16);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 9999, 1920, 1080, "./GameFont.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information

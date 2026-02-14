@@ -49,6 +49,11 @@ public:
     {
         ui, foreground, background, entity, debug
     };
+    // Enum to define which pixel-based graphical layer to work in
+    enum sprite_layer
+    {
+        p_ui, p_foreground, p_background, p_entity, p_debug
+    };
     // Enum to define which collision layer to work in
     enum col_layer
     {
@@ -299,9 +304,11 @@ private:
     char** collision_static; // Game static collision layer
     char** collision_dynamic; // Game dynamic collision layer
     char* buf_char_screen; // The final game canvas
+    layer* buf_layer_screen; // The final game char layer
     color* buf_col_screen; // The final color canvas
     char* last_buf_char_screen; // The final game canvas
     color* last_buf_col_screen; // The final color canvas
+    layer* last_buf_layer_screen; // The final game char layer
     int elapsed_frames = 0; // Frames since game was started
     char def_char = ' '; // Default character to clean the graphics arrays
     color def_color = { {255,255,255}, {0,0,0} }; // Default color to clean the color arrays
@@ -330,6 +337,16 @@ private:
     TTF_TextEngine* engine = NULL; // Point to the SDL_ttf text engine (only used if glyph_precaching is off)
     TTF_Font* sans = NULL; // SDL_ttf font to use
     SDL_Surface** draw_chars = NULL; // List of character objects that are drawn in a grid (only used if glyph_precaching is off)
+    SDL_Texture* p_background_texture = NULL; // Background sprite layer
+    SDL_Texture* p_entity_texture = NULL; // Enttiy sprite layer
+    SDL_Texture* p_foreground_texture = NULL; // Foreground sprite layer
+    SDL_Texture* p_ui_texture = NULL; // Ui sprite layer
+    SDL_Texture* p_debug_texture = NULL; // Debug sprite layer
+    SDL_Texture* t_background_texture = NULL; // Background sprite layer
+    SDL_Texture* t_entity_texture = NULL; // Enttiy sprite layer
+    SDL_Texture* t_foreground_texture = NULL; // Foreground sprite layer
+    SDL_Texture* t_ui_texture = NULL; // Ui sprite layer
+    SDL_Texture* t_debug_texture = NULL; // Debug sprite layer
     const bool* keyboard_keys = SDL_GetKeyboardState(NULL); // Initialize keystate list
     std::vector<GravityEngine_AudioChannel*> audio_channels; // List of all audio channels
     std::vector<GravityEngine_Sound*> sounds; // List of all saved sounds
@@ -470,14 +487,18 @@ public:
         // Instantiate screen buffer
         buf_char_screen = new char[canvas_w * canvas_h];
         buf_col_screen = new color[canvas_w * canvas_h];
+        buf_layer_screen = new layer[canvas_w * canvas_h];
         last_buf_char_screen = new char[canvas_w * canvas_h];
         last_buf_col_screen = new color[canvas_w * canvas_h];
+        last_buf_layer_screen = new layer[canvas_w * canvas_h];
         for (int i = 0; i < canvas_w * canvas_h; i++)
         {
             buf_char_screen[i] = ' ';
             buf_col_screen[i] = { {255,255,255},{0,0,0} };
             last_buf_char_screen[i] = '1';
             last_buf_col_screen[i] = { {0,0,0},{0,0,0} };
+            buf_layer_screen[i] = background;
+            last_buf_layer_screen[i] = background;
         }
         // Set the desired frame length to 1 second divided be the desired frame rate
         frame_length = 1000000000 / f;
@@ -561,6 +582,9 @@ public:
         delete[] collision_dynamic;
         delete[] buf_col_screen;
         delete[] buf_char_screen;
+        delete[] last_buf_layer_screen;
+        delete[] last_buf_col_screen;
+        delete[] last_buf_char_screen;
     }
 
     // Start the video game
@@ -595,6 +619,16 @@ public:
         // Create the render texture
         render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, canvas_w * font_w, canvas_h * font_h);
         char_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, font_w, font_h);
+        p_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        p_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        p_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        p_ui_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        p_debug_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        t_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        t_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        t_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        t_ui_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        t_debug_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
 
         // Create the engine used to write text
         engine = TTF_CreateRendererTextEngine(renderer);
@@ -792,6 +826,7 @@ public:
         {
             last_buf_char_screen[i] = NULL;
             last_buf_col_screen[i] = { {NULL,NULL,NULL},{NULL,NULL,NULL} };
+            last_buf_layer_screen[i] = background;
         }
         // Create font
         const char* fp = fpth.c_str();
@@ -1032,20 +1067,22 @@ private:
     // Draw character into the screen buffer with char c and color col
     // int x : Horizontal position to read color
     // int y : Vertical position to read color
+    // layer l : Layer that this char is coming from
     // char c : Character to insert into the screen buffer
     // color col : Color struct instance
-    void Draw(int x, int y, char c = '0', color col = { {255, 255, 255}, {0, 0, 0} })
+    void Draw(int x, int y, layer l, char c = '0', color col = { {255, 255, 255}, {0, 0, 0} })
     {
         // Only write if the character is in the bounds of the screen buffer
         if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
         {
             buf_char_screen[y * canvas_w + x] = c;
             buf_col_screen[y * canvas_w + x] = col;
+            buf_layer_screen[y * canvas_w + x] = l;
         }
     }
 
     // Draw screen buffer to the SDL window
-    void DrawScreenText()
+    void DrawScreen()
     {
         // Init the iterator for the character buffer
         int buf_index = 0;
@@ -1066,6 +1103,7 @@ private:
 
             // Check drawing mode
             if (buf_char_screen[buf_index] != last_buf_char_screen[buf_index] ||
+                buf_layer_screen[buf_index] != last_buf_layer_screen[buf_index] ||
                 buf_col_screen[buf_index].b.r != last_buf_col_screen[buf_index].b.r ||
                 buf_col_screen[buf_index].b.g != last_buf_col_screen[buf_index].b.g ||
                 buf_col_screen[buf_index].b.b != last_buf_col_screen[buf_index].b.b ||
@@ -1073,10 +1111,30 @@ private:
                 buf_col_screen[buf_index].f.g != last_buf_col_screen[buf_index].f.g ||
                 buf_col_screen[buf_index].f.b != last_buf_col_screen[buf_index].f.b)
             {
+                SDL_Texture* rt = t_background_texture;
+                // Set the target layer
+                switch (buf_layer_screen[buf_index])
+                {
+                case background:
+                    rt = t_background_texture;
+                    break;
+                case entity:
+                    rt = t_entity_texture;
+                    break;
+                case foreground:
+                    rt = t_foreground_texture;
+                    break;
+                case ui:
+                    rt = t_ui_texture;
+                    break;
+                case debug:
+                    rt = t_debug_texture;
+                    break;
+                }
                 // Please post the render at the end of the frame
                 screen_updated = true;
                 // Create the text surface for the character we are going to draw
-                draw_chars[buf_index] = TTF_RenderGlyph_Blended(sans, buf_char_screen[buf_index], buf_col_screen[buf_index].f); //TTF_CreateText(engine, sans, "0", 0u);
+                draw_chars[buf_index] = TTF_RenderGlyph_Blended(sans, buf_char_screen[buf_index], buf_col_screen[buf_index].f);
                 // Get the glyph metrics so that we can offset the text if it is off to the left
                 int minx, maxx, miny, maxy, advance;
                 char c = buf_char_screen[buf_index];
@@ -1105,7 +1163,7 @@ private:
                 // Delete the temp char texture
                 SDL_DestroyTexture(text_char);
                 // Go back to the previous and then draw the char texture
-                SDL_SetRenderTarget(renderer, render_texture);
+                SDL_SetRenderTarget(renderer, rt);
                 // Define where the char will go in a rect
                 SDL_FRect c_rect;
                 c_rect.x = x * font_disp_x;
@@ -1116,6 +1174,7 @@ private:
                 SDL_RenderTexture(renderer, char_texture, NULL, new SDL_FRect(c_rect));
                 // Clear the char texture
                 SDL_SetRenderTarget(renderer, char_texture);
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
                 SDL_RenderClear(renderer);
             }
 
@@ -1123,6 +1182,40 @@ private:
             x++;
             buf_index++;
         }
+
+        // Render all layers to the render_texture
+        if (screen_updated)
+        {
+            // Render to texture instead of directly to the screen
+            SDL_SetRenderTarget(renderer, render_texture);
+            // Define where the layer will go in a rect
+            SDL_FRect c_rect;
+            c_rect.x = 0;
+            c_rect.y = 0;
+            c_rect.w = scr_w;
+            c_rect.h = scr_h;
+            // Draw the background text texture to the renderer
+            SDL_RenderTexture(renderer, p_background_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the background text texture to the renderer
+            SDL_RenderTexture(renderer, t_background_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the background text texture to the renderer
+            SDL_RenderTexture(renderer, p_entity_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the entity text texture to the renderer
+            SDL_RenderTexture(renderer, t_entity_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the foreground text texture to the renderer
+            SDL_RenderTexture(renderer, p_foreground_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the foreground text texture to the renderer
+            SDL_RenderTexture(renderer, t_foreground_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the ui text texture to the renderer
+            SDL_RenderTexture(renderer, p_ui_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the ui text texture to the renderer
+            SDL_RenderTexture(renderer, t_ui_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the debug text texture to the renderer
+            SDL_RenderTexture(renderer, p_debug_texture, NULL, new SDL_FRect(c_rect));
+            // Draw the debug text texture to the renderer
+            SDL_RenderTexture(renderer, t_debug_texture, NULL, new SDL_FRect(c_rect));
+        }
+
         // Reset render back to screen
         SDL_SetRenderTarget(renderer, NULL);
     }
@@ -1167,7 +1260,7 @@ private:
         DrawLayers();
 
         // Draw text
-        DrawScreenText();
+        DrawScreen();
     }
 
     // Post-game code
@@ -1194,6 +1287,7 @@ private:
         {
             last_buf_char_screen[i] = buf_char_screen[i];
             last_buf_col_screen[i] = buf_col_screen[i];
+            last_buf_layer_screen[i] = buf_layer_screen[i];
         }
 
         // Clear the Dynamic Collision, Entity, and Debug layers
@@ -1208,6 +1302,24 @@ private:
                 SetCollisionValue(q, i, dyn, 0);
             }
         }
+
+        // Clear the Entity and Debug pixel layers
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+        SDL_SetRenderTarget(renderer, p_debug_texture);
+        SDL_RenderClear(renderer);
+        SDL_SetRenderTarget(renderer, p_entity_texture);
+        SDL_RenderClear(renderer);
+        
+        SDL_SetRenderTarget(renderer, t_debug_texture);
+        SDL_RenderClear(renderer);
+        SDL_SetRenderTarget(renderer, t_ui_texture);
+        SDL_RenderClear(renderer);
+        SDL_SetRenderTarget(renderer, t_foreground_texture);
+        SDL_RenderClear(renderer);
+        SDL_SetRenderTarget(renderer, t_entity_texture);
+        SDL_RenderClear(renderer);
+        SDL_SetRenderTarget(renderer, t_background_texture);
+        SDL_RenderClear(renderer);
 
         // Call all step functions
         for (auto o : entity_list)
@@ -1225,31 +1337,31 @@ private:
                 if (debug_mode)
                 {
                     if (canvas_fg[i][q] == ' ' && canvas_debug[i][q] == ' ' && canvas_ent[i][q] == ' ' && canvas_ui[i][q] == ' ')
-                        Draw(q, i, canvas_bg[i][q], color_bg[i][q]);
+                        Draw(q, i, background, canvas_bg[i][q], color_bg[i][q]);
                     if (canvas_ent[i][q] != ' ')
                         if (canvas_fg[i][q] == ' ' && canvas_debug[i][q] == ' ' && canvas_ui[i][q] == ' ')
-                            Draw(q, i, canvas_ent[i][q], color_ent[i][q]);
+                            Draw(q, i, entity, canvas_ent[i][q], color_ent[i][q]);
                     if (canvas_fg[i][q] != ' ')
                         if (canvas_debug[i][q] == ' ' && canvas_ui[i][q] == ' ')
-                            Draw(q, i, canvas_fg[i][q], color_fg[i][q]);
+                            Draw(q, i, foreground, canvas_fg[i][q], color_fg[i][q]);
                     if (canvas_ui[i][q] != ' ')
                         if (canvas_debug[i][q] == ' ')
-                            Draw(q, i, canvas_ui[i][q], color_ui[i][q]);
+                            Draw(q, i, ui, canvas_ui[i][q], color_ui[i][q]);
                     if (canvas_debug[i][q] != ' ')
-                        Draw(q, i, canvas_debug[i][q], color_debug[i][q]);
+                        Draw(q, i, debug, canvas_debug[i][q], color_debug[i][q]);
                 }
                 else
                 {
                     if (canvas_fg[i][q] == ' ' && canvas_ent[i][q] == ' ' && canvas_ui[i][q] == ' ')
-                        Draw(q, i, canvas_bg[i][q], color_bg[i][q]);
+                        Draw(q, i, background, canvas_bg[i][q], color_bg[i][q]);
                     if (canvas_ent[i][q] != ' ')
                         if (canvas_fg[i][q] == ' ' && canvas_ui[i][q] == ' ')
-                            Draw(q, i, canvas_ent[i][q], color_ent[i][q]);
+                            Draw(q, i, entity, canvas_ent[i][q], color_ent[i][q]);
                     if (canvas_fg[i][q] != ' ')
                         if (canvas_ui[i][q] == ' ')
-                            Draw(q, i, canvas_fg[i][q], color_fg[i][q]);
+                            Draw(q, i, foreground, canvas_fg[i][q], color_fg[i][q]);
                     if (canvas_ui[i][q] != ' ')
-                        Draw(q, i, canvas_ui[i][q], color_ui[i][q]);
+                        Draw(q, i, ui, canvas_ui[i][q], color_ui[i][q]);
                 }
             }
         }
