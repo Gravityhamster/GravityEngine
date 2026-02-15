@@ -161,8 +161,8 @@ class player : public virtual GravityEngine_Object
             geptr->cam_offset_y = y * geptr->GetFontH() - geptr->GetScreenH() / 2;
 
             // Draw the character at the end
-            geptr->DrawSprite(sprite_index, floor(x * geptr->GetFontW()-6), floor(y * geptr->GetFontH() - 22), 2, 2, geptr->p_entity);
-            //geptr->DrawRect(floor(x * geptr->GetFontW() + collision_box.x), floor(y * geptr->GetFontH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->p_entity);
+            geptr->DrawSprite(sprite_index, floor(x * geptr->GetFontW()-6), floor(y * geptr->GetFontH() - 22), 2, 2, geptr->entity);
+            // geptr->DrawRect(floor(x * geptr->GetFontW() + collision_box.x), floor(y * geptr->GetFontH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->entity);
         };
 		void end_step() {};
 
@@ -201,20 +201,10 @@ class player : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
-    for (int q = 0; q < geptr->GetCanvasH()*2; q++)
-    {
-        for (int i = 0; i < geptr->GetCanvasW()*2; i++)
-        {
-            geptr->DrawChar(i, q, geptr->background, ' ');
-            geptr->DrawSetColor(i, q, geptr->background, { {0,0,0},{0,0,255} });
-        }
-    }
-
     int q = geptr->GetCanvasH() - 1;
-    for (int i = 0; i < geptr->GetCanvasW()*2; i++)
+    for (int i = 0; i < geptr->GetCanvasW() * 2; i++)
     {
-        geptr->DrawChar(i, q, geptr->background, 'A');
-        geptr->DrawSetColor(i, q, geptr->background, { {0,255,0},{0,255,0} });
+        geptr->DrawRect(i * geptr->GetFontW(), q * geptr->GetFontH(), geptr->GetFontW(), geptr->GetFontH(), { 255,0,0,255 }, geptr->background);
         geptr->SetCollisionValue(i, q, geptr->stat, 1);
     }
 
@@ -254,21 +244,16 @@ void PreGameLoop()
     _x = floor(_x);
     _y = floor(_y);
 
-    geptr->DrawChar(_x, _y, geptr->entity, 'B');
-    geptr->DrawSetColor(_x, _y, geptr->entity, { {255,255,255},{255,255,255} });
     if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
     {
-        geptr->DrawChar(_x, _y, geptr->foreground, 'B');
-        geptr->DrawSetColor(_x, _y, geptr->foreground, { {0,0,0},{0,255,0} });
+        geptr->DrawRect(_x * geptr->GetFontW(), _y * geptr->GetFontH(), geptr->GetFontW(), geptr->GetFontH(), { 255,0,0,255 }, geptr->background);
         geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
     }
     if (geptr->GetMouseButtonState(SDL_BUTTON_RIGHT))
     {
         geptr->GetMousePosition(&_x, &_y);
-
-        geptr->DrawChar(_x, _y, geptr->foreground, ' ');
-        geptr->DrawSetColor(_x, _y, geptr->foreground, { {0,0,0},{0,255,0} });
-        geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
+        geptr->DrawRect(_x * geptr->GetFontW(), _y * geptr->GetFontH(), geptr->GetFontW(), geptr->GetFontH(), { 0,0,0,255 }, geptr->background);
+        geptr->SetCollisionValue(_x, _y, geptr->stat, 0);
     }
 }
 
