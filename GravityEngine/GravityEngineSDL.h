@@ -311,6 +311,12 @@ private:
     char* last_buf_char_screen; // The final game canvas
     color* last_buf_col_screen; // The final color canvas
     layer* last_buf_layer_screen; // The final game char layer
+    char* buf_char_screen_ui; // The final game canvas
+    layer* buf_layer_screen_ui; // The final game char layer
+    color* buf_col_screen_ui; // The final color canvas
+    char* last_buf_char_screen_ui; // The final game canvas
+    color* last_buf_col_screen_ui; // The final color canvas
+    layer* last_buf_layer_screen_ui; // The final game char layer
     int elapsed_frames = 0; // Frames since game was started
     char def_char = ' '; // Default character to clean the graphics arrays
     color def_color = { {255,255,255}, {0,0,0} }; // Default color to clean the color arrays
@@ -334,11 +340,12 @@ private:
     std::string font_path; // Location of the font to use for the text on screen
     SDL_Window* window = NULL; // Pointer to the SDL window object
     SDL_Renderer* renderer = NULL; // Pointer to the SDL renderer object
+    SDL_Texture* final_texture = NULL; // The texture for the entire screen
     SDL_Texture* render_texture = NULL; // The texture for the entire screen
+    SDL_Texture* render_texture_ui = NULL; // The texture for the entire screen
     SDL_Texture* char_texture = NULL; // The texture for the current character to draw
     TTF_TextEngine* engine = NULL; // Point to the SDL_ttf text engine (only used if glyph_precaching is off)
     TTF_Font* sans = NULL; // SDL_ttf font to use
-    SDL_Surface** draw_chars = NULL; // List of character objects that are drawn in a grid (only used if glyph_precaching is off)
     SDL_Texture* p_background_texture = NULL; // Background sprite layer
     SDL_Texture* p_entity_texture = NULL; // Enttiy sprite layer
     SDL_Texture* p_foreground_texture = NULL; // Foreground sprite layer
@@ -362,6 +369,8 @@ private:
 public:
     bool debug_mode = false; // Show debug overlay
     bool debug_complex = false; // Show complex debug overlay
+    int cam_offset_x = 0;
+    int cam_offset_y = 0;
 
     // Gravity Engine Public Methods
 public:
@@ -419,25 +428,25 @@ public:
             for (int q = 0; q < canvas_w; q++)
                 canvas_ui[i][q] = def_char;
         // Instantiate canvas fg
-        canvas_fg = new char* [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            canvas_fg[i] = new char[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        canvas_fg = new char* [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            canvas_fg[i] = new char[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 canvas_fg[i][q] = def_char;
         // Instantiate canvas bg
-        canvas_bg = new char* [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            canvas_bg[i] = new char[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        canvas_bg = new char* [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            canvas_bg[i] = new char[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 canvas_bg[i][q] = def_char;
         // Instantiate canvas ent
-        canvas_ent = new char* [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            canvas_ent[i] = new char[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        canvas_ent = new char* [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            canvas_ent[i] = new char[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 canvas_ent[i][q] = def_char;
         // Instantiate color debug
         color_debug = new color * [canvas_h];
@@ -454,49 +463,49 @@ public:
             for (int q = 0; q < canvas_w; q++)
                 color_ui[i][q] = def_color;
         // Instantiate color fg
-        color_fg = new color * [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            color_fg[i] = new color[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        color_fg = new color * [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            color_fg[i] = new color[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 color_fg[i][q] = def_color;
         // Instantiate color bg
-        color_bg = new color * [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            color_bg[i] = new color[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        color_bg = new color * [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            color_bg[i] = new color[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 color_bg[i][q] = def_color;
         // Instantiate color ent
-        color_ent = new color * [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            color_ent[i] = new color[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        color_ent = new color * [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            color_ent[i] = new color[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 color_ent[i][q] = def_color;
         // Instantiate collision static
-        collision_static = new char* [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            collision_static[i] = new char[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        collision_static = new char* [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            collision_static[i] = new char[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 collision_static[i][q] = def_col;
         // Instantiate collision dynamic
-        collision_dynamic = new char* [canvas_h];
-        for (int i = 0; i < canvas_h; i++)
-            collision_dynamic[i] = new char[canvas_w];
-        for (int i = 0; i < canvas_h; i++)
-            for (int q = 0; q < canvas_w; q++)
+        collision_dynamic = new char* [canvas_h * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            collision_dynamic[i] = new char[canvas_w * 2];
+        for (int i = 0; i < canvas_h * 2; i++)
+            for (int q = 0; q < canvas_w * 2; q++)
                 collision_dynamic[i][q] = def_col;
 
         // Instantiate screen buffer
-        buf_char_screen = new char[canvas_w * canvas_h];
-        buf_col_screen = new color[canvas_w * canvas_h];
-        buf_layer_screen = new layer[canvas_w * canvas_h];
-        last_buf_char_screen = new char[canvas_w * canvas_h];
-        last_buf_col_screen = new color[canvas_w * canvas_h];
-        last_buf_layer_screen = new layer[canvas_w * canvas_h];
-        for (int i = 0; i < canvas_w * canvas_h; i++)
+        buf_char_screen = new char[(canvas_w * 2) * (canvas_h * 2)];
+        buf_col_screen = new color[(canvas_w * 2) * (canvas_h * 2)];
+        buf_layer_screen = new layer[(canvas_w * 2) * (canvas_h * 2)];
+        last_buf_char_screen = new char[(canvas_w * 2) * (canvas_h * 2)];
+        last_buf_col_screen = new color[(canvas_w * 2) * (canvas_h * 2)];
+        last_buf_layer_screen = new layer[(canvas_w * 2) * (canvas_h * 2)];
+        for (int i = 0; i < (canvas_w * 2) * (canvas_h * 2); i++)
         {
             buf_char_screen[i] = ' ';
             buf_col_screen[i] = { {255,255,255},{0,0,0} };
@@ -504,6 +513,21 @@ public:
             last_buf_col_screen[i] = { {0,0,0},{0,0,0} };
             buf_layer_screen[i] = background;
             last_buf_layer_screen[i] = background;
+        }
+        buf_char_screen_ui = new char[canvas_w * canvas_h];
+        buf_col_screen_ui = new color[canvas_w * canvas_h];
+        buf_layer_screen_ui = new layer[canvas_w * canvas_h];
+        last_buf_char_screen_ui = new char[canvas_w * canvas_h];
+        last_buf_col_screen_ui = new color[canvas_w * canvas_h];
+        last_buf_layer_screen_ui = new layer[canvas_w * canvas_h];
+        for (int i = 0; i < canvas_w * canvas_h; i++)
+        {
+            buf_char_screen_ui[i] = ' ';
+            buf_col_screen_ui[i] = { {255,255,255},{0,0,0} };
+            last_buf_char_screen_ui[i] = ' ';
+            last_buf_col_screen_ui[i] = { {255,255,255},{0,0,0} };
+            buf_layer_screen_ui[i] = ui;
+            last_buf_layer_screen_ui[i] = ui;
         }
         // Set the desired frame length to 1 second divided be the desired frame rate
         frame_length = 1000000000 / f;
@@ -540,7 +564,7 @@ public:
     // col_layer cl : Layer to get collision from
     int GetCollisionValue(int x, int y, col_layer cl)
     {
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
         {
             if (cl == stat)
                 return collision_static[y][x];
@@ -560,7 +584,7 @@ public:
     // int v : Collision type value
     void SetCollisionValue(int x, int y, col_layer cl, int v)
     {
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
         {
             if (cl == stat)
                 collision_static[y][x] = v;
@@ -585,11 +609,18 @@ public:
         delete[] color_debug;
         delete[] collision_static;
         delete[] collision_dynamic;
+        delete[] buf_layer_screen;
         delete[] buf_col_screen;
         delete[] buf_char_screen;
         delete[] last_buf_layer_screen;
         delete[] last_buf_col_screen;
         delete[] last_buf_char_screen;
+        delete[] buf_layer_screen_ui;
+        delete[] buf_col_screen_ui;
+        delete[] buf_char_screen_ui;
+        delete[] last_buf_layer_screen_ui;
+        delete[] last_buf_col_screen_ui;
+        delete[] last_buf_char_screen_ui;
     }
 
     // Start the video game
@@ -622,16 +653,18 @@ public:
             audio_channels.insert(audio_channels.end(), new GravityEngine_AudioChannel(global_audio_spec));
 
         // Create the render texture
-        render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, canvas_w * font_w, canvas_h * font_h);
+        render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 4, scr_h * 4);
+        render_texture_ui = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        final_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
         char_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, font_w, font_h);
-        p_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
-        p_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
-        p_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        p_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
+        p_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
+        p_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
         p_ui_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
         p_debug_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
-        t_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
-        t_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
-        t_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        t_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
+        t_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
+        t_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
         t_ui_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
         t_debug_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
 
@@ -645,11 +678,6 @@ public:
         const char* fp = font_path.c_str();
         sans = TTF_OpenFont(fp, font_h);
 
-        // Create character surfaces
-        draw_chars = new SDL_Surface * [canvas_w * canvas_h];
-        for (int i = 0; i < canvas_w * canvas_h; i++)
-            draw_chars[i] = TTF_RenderGlyph_Blended(sans, '0', { 0, 0, 0 });
-
         // Call init custom user code
         if (init_game != nullptr)
             init_game();
@@ -661,9 +689,6 @@ public:
         // Clenup goes here
 
         // TTF Quit
-        for (int i = 0; i < canvas_w * canvas_h; i++)
-            SDL_DestroySurface(draw_chars[i]);
-        delete[] draw_chars;
         TTF_DestroyRendererTextEngine(engine);
         TTF_Quit();
 
@@ -714,14 +739,17 @@ public:
     void DrawSetColor(int x, int y, layer l, color col)
     {
         // If the requested x and y is within the window...
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
         {
             // Set the color of the layer at these coordinates.
-            if (l == debug) color_debug[y][x] = col;
-            if (l == ui) color_ui[y][x] = col;
             if (l == background) color_bg[y][x] = col;
             if (l == foreground) color_fg[y][x] = col;
             if (l == entity) color_ent[y][x] = col;
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                if (l == debug) color_debug[y][x] = col;
+                if (l == ui) color_ui[y][x] = col;
+            }
         }
     }
 
@@ -733,14 +761,17 @@ public:
     void DrawChar(int x, int y, layer l, char c)
     {
         // If the requested x and y is within the window...
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
         {
             // Set the character at these coordinates on the layer.
-            if (l == debug) canvas_debug[y][x] = c;
-            if (l == ui) canvas_ui[y][x] = c;
             if (l == background) canvas_bg[y][x] = c;
             if (l == foreground) canvas_fg[y][x] = c;
             if (l == entity) canvas_ent[y][x] = c;
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                if (l == debug) canvas_debug[y][x] = c;
+                if (l == ui) canvas_ui[y][x] = c;
+            }
         }
     }
 
@@ -753,14 +784,17 @@ public:
         char c = NULL;
 
         // If the requested x and y is within the window...
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
         {
             // Set the character at these coordinates on the layer.
-            if (l == debug) c = canvas_debug[y][x];
-            if (l == ui) c = canvas_ui[y][x];
             if (l == background) c = canvas_bg[y][x];
             if (l == foreground) c = canvas_fg[y][x];
             if (l == entity) c = canvas_ent[y][x];
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                if (l == debug) c = canvas_debug[y][x];
+                if (l == ui) c = canvas_ui[y][x];
+            }
         }
 
         return c;
@@ -775,14 +809,17 @@ public:
         color c = {};
 
         // If the requested x and y is within the window...
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
         {
             // Set the character at these coordinates on the layer.
-            if (l == debug) c = color_debug[y][x];
-            if (l == ui) c = color_ui[y][x];
             if (l == background) c = color_bg[y][x];
             if (l == foreground) c = color_fg[y][x];
             if (l == entity) c = color_ent[y][x];
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                if (l == debug) c = color_debug[y][x];
+                if (l == ui) c = color_ui[y][x];
+            }
         }
 
         return c;
@@ -829,11 +866,17 @@ public:
     void ChangeFont(std::string fpth)
     {
         // Reset the last buffer so the entire frame gets drawn
-        for (int i = 0; i < canvas_w * canvas_h; i++)
+        for (int i = 0; i < (canvas_w * 2) * (canvas_h * 2); i++)
         {
             last_buf_char_screen[i] = NULL;
             last_buf_col_screen[i] = { {NULL,NULL,NULL},{NULL,NULL,NULL} };
             last_buf_layer_screen[i] = background;
+        }
+        for (int i = 0; i < canvas_w * canvas_h; i++)
+        {
+            last_buf_char_screen_ui[i] = NULL;
+            last_buf_col_screen_ui[i] = { {NULL,NULL,NULL},{NULL,NULL,NULL} };
+            last_buf_layer_screen_ui[i] = background;
         }
         // Create font
         const char* fp = fpth.c_str();
@@ -848,7 +891,7 @@ public:
     // color col : Color struct instance
     void DrawTextString(int x, int y, layer l, std::string s, color col)
     {
-        if (y >= canvas_h || y < 0)
+        if (y >= canvas_h * 2 || y < 0)
             return;
 
         // Draw text to the background layer
@@ -858,7 +901,7 @@ public:
             int q = 0;
             for (auto c : s)
             {
-                if (q + x < canvas_w)
+                if (q + x < canvas_w * 2)
                 {
                     canvas_bg[y][q + x] = c;
                     color_bg[y][q + x] = col;
@@ -873,7 +916,7 @@ public:
             int q = 0;
             for (auto c : s)
             {
-                if (q + x < canvas_w)
+                if (q + x < canvas_w * 2)
                 {
                     canvas_fg[y][q + x] = c;
                     color_fg[y][q + x] = col;
@@ -903,7 +946,7 @@ public:
             int q = 0;
             for (auto c : s)
             {
-                if (q + x < canvas_w)
+                if (q + x < canvas_w * 2)
                 {
                     canvas_ent[y][q + x] = c;
                     color_ent[y][q + x] = col;
@@ -938,6 +981,18 @@ public:
     int GetFontH()
     {
         return font_h;
+    }
+
+    // Get the width of the font grid
+    int GetScreenW()
+    {
+        return scr_w;
+    }
+
+    // Get the height of the font grid
+    int GetScreenH()
+    {
+        return scr_h;
     }
 
     // Get elapsed_frames
@@ -975,15 +1030,15 @@ public:
     }
 
     // Handle mouse location
-    // int* ret_x : Pointer to store the horizontal position
-    // int* ret_y : Pointer to store the vertical position
-    void GetMousePosition(int* ret_x, int* ret_y)
+    // float* ret_x : Pointer to store the horizontal position
+    // float* ret_y : Pointer to store the vertical position
+    void GetMousePosition(float* ret_x, float* ret_y)
     {
         float x, y;
         SDL_GetMouseState(&x, &y);
 
-        *ret_x = floor((x / scr_w) * canvas_w);
-        *ret_y = floor((y / scr_h) * canvas_h);
+        *ret_x = (x / scr_w) * canvas_w;
+        *ret_y = (y / scr_h) * canvas_h;
     }
 
     // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/
@@ -1074,6 +1129,49 @@ public:
         SDL_FRect dst = { x, y, w * w_scale, h * w_scale };
         // Render the sprite to the graphical layer
         SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst);
+        // Re-render if wrap
+        if (x + w * w_scale > scr_w * 2)
+        {
+            // Create an FRect to draw to
+            SDL_FRect dst_w = { x - scr_w * 2, y, w * w_scale, h * w_scale };
+            // Render the sprite to the graphical layer
+            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
+        }
+        if (y + h * h_scale > scr_h * 2)
+        {
+            // Create an FRect to draw to
+            SDL_FRect dst_w = { x, y - scr_h * 2, w * w_scale, h * w_scale };
+            // Render the sprite to the graphical layer
+            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
+        }
+        if (y + h * h_scale > scr_h * 2 && x + w * w_scale > scr_w * 2)
+        {
+            // Create an FRect to draw to
+            SDL_FRect dst_w = { x - scr_w * 2, y - scr_h * 2, w * w_scale, h * w_scale };
+            // Render the sprite to the graphical layer
+            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
+        }
+        if (x < 0 && y < 0)
+        {
+            // Create an FRect to draw to
+            SDL_FRect dst_w = { x + scr_w * 2, y + scr_h * 2, w * w_scale, h * w_scale };
+            // Render the sprite to the graphical layer
+            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
+        }
+        if (x < 0)
+        {
+            // Create an FRect to draw to
+            SDL_FRect dst_w = { x + scr_w * 2, y, w * w_scale, h * w_scale };
+            // Render the sprite to the graphical layer
+            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
+        }
+        if (y < 0)
+        {
+            // Create an FRect to draw to
+            SDL_FRect dst_w = { x, y + scr_h * 2, w * w_scale, h * w_scale };
+            // Render the sprite to the graphical layer
+            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
+        }
         // Notofy the drawing pipeline that a change has been made
         screen_updated = true;
     }
@@ -1193,11 +1291,23 @@ private:
     void Draw(int x, int y, layer l, char c = '0', color col = { {255, 255, 255}, {0, 0, 0} })
     {
         // Only write if the character is in the bounds of the screen buffer
-        if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+        if (l != debug && l != ui)
         {
-            buf_char_screen[y * canvas_w + x] = c;
-            buf_col_screen[y * canvas_w + x] = col;
-            buf_layer_screen[y * canvas_w + x] = l;
+            if (x >= 0 && x < canvas_w * 2 && y >= 0 && y < canvas_h * 2)
+            {
+                buf_char_screen[y * canvas_w * 2 + x] = c;
+                buf_col_screen[y * canvas_w * 2 + x] = col;
+                buf_layer_screen[y * canvas_w * 2 + x] = l;
+            }
+        }
+        else
+        {
+            if (x >= 0 && x < canvas_w && y >= 0 && y < canvas_h)
+            {
+                buf_char_screen_ui[y * canvas_w + x] = c;
+                buf_col_screen_ui[y * canvas_w + x] = col;
+                buf_layer_screen_ui[y * canvas_w + x] = l;
+            }
         }
     }
 
@@ -1213,19 +1323,18 @@ private:
         // Render to texture instead of directly to the screen
         SDL_SetRenderTarget(renderer, render_texture);
         // Loop through all of the characters in the
-        for (int i = 0; i < canvas_w * canvas_h; i++)
+        for (int i = 0; i < (canvas_w * 2) * (canvas_h * 2); i++)
         {
             // Newline
-            if (i % canvas_w == 0 && i != 0)
+            if (i % (canvas_w * 2) == 0 && i != 0)
             {
                 y++;
                 x = 0;
             }
 
-            // Check drawing mode
+            // Check drawing mode - normal
             if (buf_char_screen[buf_index] != last_buf_char_screen[buf_index] ||
                 buf_layer_screen[buf_index] != last_buf_layer_screen[buf_index] ||
-                (buf_layer_screen[buf_index] == debug && buf_char_screen[buf_index] != ' ') ||
                 (buf_layer_screen[buf_index] == entity && buf_char_screen[buf_index] != ' ') ||
                 buf_col_screen[buf_index].b.r != last_buf_col_screen[buf_index].b.r ||
                 buf_col_screen[buf_index].b.g != last_buf_col_screen[buf_index].b.g ||
@@ -1248,17 +1357,11 @@ private:
                 case foreground:
                     rt = t_foreground_texture;
                     break;
-                case ui:
-                    rt = t_ui_texture;
-                    break;
-                case debug:
-                    rt = t_debug_texture;
-                    break;
                 }
                 // Please post the render at the end of the frame
                 screen_updated = true;
                 // Create the text surface for the character we are going to draw
-                draw_chars[buf_index] = TTF_RenderGlyph_Blended(sans, buf_char_screen[buf_index], buf_col_screen[buf_index].f);
+                auto draw_char = TTF_RenderGlyph_Blended(sans, buf_char_screen[buf_index], buf_col_screen[buf_index].f);
                 // Get the glyph metrics so that we can offset the text if it is off to the left
                 int minx, maxx, miny, maxy, advance;
                 char c = buf_char_screen[buf_index];
@@ -1266,7 +1369,8 @@ private:
                 // -5 pixels is when the font overlaps on the left all the way
                 minx += 5;
                 // Convert the text surface to a texture
-                auto text_char = SDL_CreateTextureFromSurface(renderer, draw_chars[buf_index]);
+                auto text_char = SDL_CreateTextureFromSurface(renderer, draw_char);
+                SDL_DestroySurface(draw_char);
                 SDL_SetTextureScaleMode(text_char, SDL_SCALEMODE_NEAREST);
                 // Set the character texture to be the render target
                 SDL_SetRenderTarget(renderer, char_texture);
@@ -1308,37 +1412,156 @@ private:
             buf_index++;
         }
 
+        // Repeat for UI
+
+        // Init the iterator for the character buffer
+        buf_index = 0;
+        // Init the x and y coords for the output
+        x = 0;
+        y = 0;
+        // Render to texture instead of directly to the screen
+        SDL_SetRenderTarget(renderer, render_texture);
+        // Loop through all of the characters in the
+        for (int i = 0; i < (canvas_w) * (canvas_h); i++)
+        {
+            // Newline
+            if (i % (canvas_w) == 0 && i != 0)
+            {
+                y++;
+                x = 0;
+            }
+
+            if (buf_char_screen_ui[buf_index] != last_buf_char_screen_ui[buf_index] ||
+                buf_layer_screen_ui[buf_index] != last_buf_layer_screen_ui[buf_index] ||
+                (buf_layer_screen_ui[buf_index] == debug && buf_char_screen_ui[buf_index] != ' ') ||
+                buf_col_screen_ui[buf_index].b.r != last_buf_col_screen_ui[buf_index].b.r ||
+                buf_col_screen_ui[buf_index].b.g != last_buf_col_screen_ui[buf_index].b.g ||
+                buf_col_screen_ui[buf_index].b.b != last_buf_col_screen_ui[buf_index].b.b ||
+                buf_col_screen_ui[buf_index].f.r != last_buf_col_screen_ui[buf_index].f.r ||
+                buf_col_screen_ui[buf_index].f.g != last_buf_col_screen_ui[buf_index].f.g ||
+                buf_col_screen_ui[buf_index].f.b != last_buf_col_screen_ui[buf_index].f.b)
+            {
+                text_writes++;
+                SDL_Texture* rt = t_ui_texture;
+                // Set the target layer
+                switch (buf_layer_screen_ui[buf_index])
+                {
+                case ui:
+                    rt = t_ui_texture;
+                    break;
+                case debug:
+                    rt = t_debug_texture;
+                    break;
+                }
+                // Please post the render at the end of the frame
+                screen_updated = true;
+                // Create the text surface for the character we are going to draw
+                auto draw_char = TTF_RenderGlyph_Blended(sans, buf_char_screen_ui[buf_index], buf_col_screen_ui[buf_index].f);
+                // Get the glyph metrics so that we can offset the text if it is off to the left
+                int minx, maxx, miny, maxy, advance;
+                char c = buf_char_screen_ui[buf_index];
+                TTF_GetGlyphMetrics(sans, buf_char_screen_ui[buf_index], &minx, &maxx, &miny, &maxy, &advance);
+                // -5 pixels is when the font overlaps on the left all the way
+                minx += 5;
+                // Convert the text surface to a texture
+                auto text_char = SDL_CreateTextureFromSurface(renderer, draw_char);
+                SDL_DestroySurface(draw_char);
+                SDL_SetTextureScaleMode(text_char, SDL_SCALEMODE_NEAREST);
+                // Set the character texture to be the render target
+                SDL_SetRenderTarget(renderer, char_texture);
+                // Draw glyph - Fill background with back color
+                SDL_SetRenderDrawColor(renderer,
+                    buf_col_screen_ui[buf_index].b.r,
+                    buf_col_screen_ui[buf_index].b.g,
+                    buf_col_screen_ui[buf_index].b.b,
+                    255);
+                SDL_RenderFillRect(renderer, NULL);
+                // Render the char texture
+                float w, h;
+                // Get the dimensions of the character
+                SDL_GetTextureSize(text_char, &w, &h);
+                // Create an FRect to draw to
+                SDL_FRect dst = { minx, 0, w, h };
+                // Render the char texture to the char texture
+                SDL_RenderTexture(renderer, text_char, NULL, &dst);
+                // Delete the temp char texture
+                SDL_DestroyTexture(text_char);
+                // Go back to the previous and then draw the char texture
+                SDL_SetRenderTarget(renderer, rt);
+                // Define where the char will go in a rect
+                SDL_FRect c_rect;
+                c_rect.x = x * font_disp_x;
+                c_rect.y = y * font_h;
+                c_rect.w = font_w;
+                c_rect.h = font_h;
+                // Actually render the char texture to that rect
+                SDL_RenderTexture(renderer, char_texture, NULL, new SDL_FRect(c_rect));
+                // Clear the char texture
+                SDL_SetRenderTarget(renderer, char_texture);
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+                SDL_RenderClear(renderer);
+            }
+
+            // Inc vars
+            x++;
+            buf_index++;
+        }
+
         // Render all layers to the render_texture
         if (screen_updated)
         {
-            // Render to texture instead of directly to the screen
-            SDL_SetRenderTarget(renderer, render_texture);
             // Define where the layer will go in a rect
-            SDL_FRect c_rect;
-            c_rect.x = 0;
-            c_rect.y = 0;
-            c_rect.w = scr_w;
-            c_rect.h = scr_h;
-            // Draw the background text texture to the renderer
-            SDL_RenderTexture(renderer, p_background_texture, NULL, new SDL_FRect(c_rect));
-            // Draw the background text texture to the renderer
-            SDL_RenderTexture(renderer, t_background_texture, NULL, new SDL_FRect(c_rect));
-            // Draw the background text texture to the renderer
-            SDL_RenderTexture(renderer, p_entity_texture, NULL, new SDL_FRect(c_rect));
-            // Draw the entity text texture to the renderer
-            SDL_RenderTexture(renderer, t_entity_texture, NULL, new SDL_FRect(c_rect));
-            // Draw the foreground text texture to the renderer
-            SDL_RenderTexture(renderer, p_foreground_texture, NULL, new SDL_FRect(c_rect));
-            // Draw the foreground text texture to the renderer
-            SDL_RenderTexture(renderer, t_foreground_texture, NULL, new SDL_FRect(c_rect));
+            for (int q = 0; q <= 1; q++)
+            {
+                for (int i = 0; i <= 1; i++)
+                {
+                    SDL_FRect c_rect;
+                    c_rect.x = scr_w * i * 2;
+                    c_rect.y = scr_h * q * 2;
+                    c_rect.w = scr_w * 2;
+                    c_rect.h = scr_h * 2;
+                    SDL_FRect s_rect;
+                    s_rect.x = 0;
+                    s_rect.y = 0;
+                    s_rect.w = scr_w * 2;
+                    s_rect.h = scr_h * 2;
+                    // Render to texture instead of directly to the screen
+                    SDL_SetRenderTarget(renderer, render_texture);
+                    // Draw the background text texture to the renderer
+                    SDL_RenderTexture(renderer, p_background_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+                    // Draw the background text texture to the renderer
+                    SDL_RenderTexture(renderer, t_background_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+                    // Draw the background text texture to the renderer
+                    SDL_RenderTexture(renderer, p_entity_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+                    // Draw the entity text texture to the renderer
+                    SDL_RenderTexture(renderer, t_entity_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+                    // Draw the foreground text texture to the renderer
+                    SDL_RenderTexture(renderer, p_foreground_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+                    // Draw the foreground text texture to the renderer
+                    SDL_RenderTexture(renderer, t_foreground_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+                }
+            }
+
+            SDL_FRect d_rect;
+            d_rect.x = 0;
+            d_rect.y = 0;
+            d_rect.w = scr_w;
+            d_rect.h = scr_h;
+            SDL_FRect t_rect;
+            t_rect.x = 0;
+            t_rect.y = 0;
+            t_rect.w = scr_w;
+            t_rect.h = scr_h;
+            // Render to texture instead of directly to the screen
+            SDL_SetRenderTarget(renderer, render_texture_ui);
             // Draw the ui text texture to the renderer
-            SDL_RenderTexture(renderer, p_ui_texture, NULL, new SDL_FRect(c_rect));
+            SDL_RenderTexture(renderer, p_ui_texture, new SDL_FRect(t_rect), new SDL_FRect(d_rect));
             // Draw the ui text texture to the renderer
-            SDL_RenderTexture(renderer, t_ui_texture, NULL, new SDL_FRect(c_rect));
+            SDL_RenderTexture(renderer, t_ui_texture, new SDL_FRect(t_rect), new SDL_FRect(d_rect));
             // Draw the debug text texture to the renderer
-            SDL_RenderTexture(renderer, p_debug_texture, NULL, new SDL_FRect(c_rect));
+            SDL_RenderTexture(renderer, p_debug_texture, new SDL_FRect(t_rect), new SDL_FRect(d_rect));
             // Draw the debug text texture to the renderer
-            SDL_RenderTexture(renderer, t_debug_texture, NULL, new SDL_FRect(c_rect));
+            SDL_RenderTexture(renderer, t_debug_texture, new SDL_FRect(t_rect), new SDL_FRect(d_rect));
         }
 
         // Reset render back to screen
@@ -1394,31 +1617,60 @@ private:
         // Frame count
         elapsed_frames++;
 
+        // Mod
+        if (cam_offset_x <= 0)
+            cam_offset_x += scr_w * 2;
+        if (cam_offset_x >= scr_w * 2)
+            cam_offset_x -= scr_w * 2;
+        if (cam_offset_y <= 0)
+            cam_offset_y += scr_h * 2;
+        if (cam_offset_y >= scr_h * 2)
+            cam_offset_y -= scr_h * 2;
+
         // Draw to the window - Do not draw if the draw flag is off
         if (screen_updated)
         {
+            SDL_FRect d_rect;
+            d_rect.x = 0;
+            d_rect.y = 0;
+            d_rect.w = scr_w;
+            d_rect.h = scr_h;
+            SDL_FRect s_rect;
+            s_rect.x = cam_offset_x;
+            s_rect.y = cam_offset_y;
+            s_rect.w = scr_w;
+            s_rect.h = scr_h;
             // Draw the screen texture to the renderer
-            SDL_RenderTexture(renderer, render_texture, NULL, NULL);
-            // Present everything rendered to the renderer to the screen
+            SDL_RenderTexture(renderer, render_texture, &s_rect, NULL);
+            SDL_RenderTexture(renderer, render_texture_ui, &d_rect, NULL);
             SDL_RenderPresent(renderer);
             // I dunno why I have this delay here
             SDL_Delay(0);
             // Reset the draw flag
             screen_updated = false;
+            // Clear output
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+            SDL_RenderClear(renderer);
         }
 
         // Copy current screen state into last screen state
-        for (int i = 0; i < canvas_w * canvas_h; i++)
+        for (int i = 0; i < (canvas_w * 2) * (canvas_h * 2); i++)
         {
             last_buf_char_screen[i] = buf_char_screen[i];
             last_buf_col_screen[i] = buf_col_screen[i];
             last_buf_layer_screen[i] = buf_layer_screen[i];
         }
+        for (int i = 0; i < canvas_w * canvas_h; i++)
+        {
+            last_buf_char_screen_ui[i] = buf_char_screen_ui[i];
+            last_buf_col_screen_ui[i] = buf_col_screen_ui[i];
+            last_buf_layer_screen_ui[i] = buf_layer_screen_ui[i];
+        }
 
         // Clear the Dynamic Collision, Entity, and Debug layers
-        for (int i = 0; i < canvas_h; i++)
+        for (int i = 0; i < canvas_h * 2; i++)
         {
-            for (int q = 0; q < canvas_w; q++)
+            for (int q = 0; q < canvas_w * 2; q++)
             {
                 DrawChar(q, i, entity, ' ');
                 DrawChar(q, i, debug, ' ');
@@ -1434,7 +1686,7 @@ private:
         SDL_RenderClear(renderer);
         SDL_SetRenderTarget(renderer, p_entity_texture);
         SDL_RenderClear(renderer);
-        
+
         SDL_SetRenderTarget(renderer, t_debug_texture);
         SDL_RenderClear(renderer);
         //SDL_SetRenderTarget(renderer, t_ui_texture);
@@ -1442,6 +1694,8 @@ private:
         //SDL_SetRenderTarget(renderer, t_foreground_texture);
         //SDL_RenderClear(renderer);
         SDL_SetRenderTarget(renderer, t_entity_texture);
+        SDL_RenderClear(renderer);
+        SDL_SetRenderTarget(renderer, render_texture_ui);
         SDL_RenderClear(renderer);
         //SDL_SetRenderTarget(renderer, t_background_texture);
         //SDL_RenderClear(renderer);
@@ -1454,39 +1708,44 @@ private:
     // Draw all the layers onto the console buffer. Do not write if it is blank or the layer above is obfuscating this coord
     void DrawLayers()
     {
-        for (int i = 0; i < canvas_h; i++)
+        for (int i = 0; i < canvas_h * 2; i++)
         {
-            for (int q = 0; q < canvas_w; q++)
+            for (int q = 0; q < canvas_w * 2; q++)
             {
                 // Draw the debug layer only if debug mode is on
                 if (debug_mode)
                 {
-                    if (canvas_fg[i][q] == ' ' && canvas_debug[i][q] == ' ' && canvas_ent[i][q] == ' ' && canvas_ui[i][q] == ' ')
+                    if (canvas_fg[i][q] == ' ' && canvas_ent[i][q] == ' ')
                         Draw(q, i, background, canvas_bg[i][q], color_bg[i][q]);
                     if (canvas_ent[i][q] != ' ')
-                        if (canvas_fg[i][q] == ' ' && canvas_debug[i][q] == ' ' && canvas_ui[i][q] == ' ')
+                        if (canvas_fg[i][q] == ' ')
                             Draw(q, i, entity, canvas_ent[i][q], color_ent[i][q]);
                     if (canvas_fg[i][q] != ' ')
-                        if (canvas_debug[i][q] == ' ' && canvas_ui[i][q] == ' ')
-                            Draw(q, i, foreground, canvas_fg[i][q], color_fg[i][q]);
-                    if (canvas_ui[i][q] != ' ')
-                        if (canvas_debug[i][q] == ' ')
+                        Draw(q, i, foreground, canvas_fg[i][q], color_fg[i][q]);
+
+                    if (q >= 0 && q < canvas_w && i >= 0 && i < canvas_h)
+                    {
+                        if (canvas_ui[i][q] != ' ')
+                            if (canvas_debug[i][q] == ' ')
                             Draw(q, i, ui, canvas_ui[i][q], color_ui[i][q]);
-                    if (canvas_debug[i][q] != ' ')
-                        Draw(q, i, debug, canvas_debug[i][q], color_debug[i][q]);
+                        if (canvas_debug[i][q] != ' ' || canvas_ui[i][q] == ' ')
+                            Draw(q, i, debug, canvas_debug[i][q], color_debug[i][q]);
+                    }
                 }
                 else
                 {
-                    if (canvas_fg[i][q] == ' ' && canvas_ent[i][q] == ' ' && canvas_ui[i][q] == ' ')
+                    if (canvas_fg[i][q] == ' ' && canvas_ent[i][q] == ' ')
                         Draw(q, i, background, canvas_bg[i][q], color_bg[i][q]);
                     if (canvas_ent[i][q] != ' ')
-                        if (canvas_fg[i][q] == ' ' && canvas_ui[i][q] == ' ')
+                        if (canvas_fg[i][q] == ' ')
                             Draw(q, i, entity, canvas_ent[i][q], color_ent[i][q]);
                     if (canvas_fg[i][q] != ' ')
-                        if (canvas_ui[i][q] == ' ')
-                            Draw(q, i, foreground, canvas_fg[i][q], color_fg[i][q]);
-                    if (canvas_ui[i][q] != ' ')
+                        Draw(q, i, foreground, canvas_fg[i][q], color_fg[i][q]);
+
+                    if (q >= 0 && q < canvas_w && i >= 0 && i < canvas_h)
+                    {
                         Draw(q, i, ui, canvas_ui[i][q], color_ui[i][q]);
+                    }
                 }
             }
         }

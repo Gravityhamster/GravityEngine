@@ -146,6 +146,20 @@ class player : public virtual GravityEngine_Object
             }
             y += yv_t;
 
+
+            // Wrap
+            if (x < 0)
+                x += geptr->GetCanvasW() * 2;
+            if (y < 0)
+                y += geptr->GetCanvasH() * 2;
+            if (x >= geptr->GetCanvasW() * 2)
+                x -= geptr->GetCanvasW() * 2;
+            if (y >= geptr->GetCanvasH() * 2)
+                y -= geptr->GetCanvasH() * 2;
+
+            geptr->cam_offset_x = x * geptr->GetFontW() - geptr->GetScreenW() / 2;
+            geptr->cam_offset_y = y * geptr->GetFontH() - geptr->GetScreenH() / 2;
+
             // Draw the character at the end
             geptr->DrawSprite(sprite_index, floor(x * geptr->GetFontW()-6), floor(y * geptr->GetFontH() - 22), 2, 2, geptr->p_entity);
             //geptr->DrawRect(floor(x * geptr->GetFontW() + collision_box.x), floor(y * geptr->GetFontH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->p_entity);
@@ -163,8 +177,19 @@ class player : public virtual GravityEngine_Object
             {
                 for (int i = x1; i <= x2; i++)
                 {
-                    if (VectorContains<int>(collides_with, geptr->GetCollisionValue(i, q, geptr->stat)) ||
-                        VectorContains<int>(collides_with, geptr->GetCollisionValue(i, q, geptr->dyn)))
+                    int xx = i;
+                    int yy = q;
+                    if (xx >= geptr->GetCanvasW() * 2)
+                        xx -= geptr->GetCanvasW() * 2;
+                    if (xx < 0)
+                        xx += geptr->GetCanvasW() * 2;
+                    if (yy >= geptr->GetCanvasH() * 2)
+                        yy -= geptr->GetCanvasH() * 2;
+                    if (yy < 0)
+                        yy += geptr->GetCanvasH() * 2;
+
+                    if (VectorContains<int>(collides_with, geptr->GetCollisionValue(xx, yy, geptr->stat)) ||
+                        VectorContains<int>(collides_with, geptr->GetCollisionValue(xx, yy, geptr->dyn)))
                         return true;
                 }
             }
@@ -176,9 +201,9 @@ class player : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
-    for (int q = 0; q < geptr->GetCanvasH(); q++)
+    for (int q = 0; q < geptr->GetCanvasH()*2; q++)
     {
-        for (int i = 0; i < geptr->GetCanvasW(); i++)
+        for (int i = 0; i < geptr->GetCanvasW()*2; i++)
         {
             geptr->DrawChar(i, q, geptr->background, ' ');
             geptr->DrawSetColor(i, q, geptr->background, { {0,0,0},{0,0,255} });
@@ -186,7 +211,7 @@ void GameInit()
     }
 
     int q = geptr->GetCanvasH() - 1;
-    for (int i = 0; i < geptr->GetCanvasW(); i++)
+    for (int i = 0; i < geptr->GetCanvasW()*2; i++)
     {
         geptr->DrawChar(i, q, geptr->background, 'A');
         geptr->DrawSetColor(i, q, geptr->background, { {0,255,0},{0,255,0} });
@@ -210,14 +235,39 @@ void PreGameLoop()
     was_true_down = is_true_down;
     is_true_down = geptr->GetKeyState(SDL_SCANCODE_DOWN);
 
+    float _x;
+    float _y;
+    geptr->GetMousePosition(&_x, &_y);
+
+    _x += geptr->cam_offset_x / geptr->GetFontW();
+    _y += geptr->cam_offset_y / geptr->GetFontH();
+
+    if (_x >= geptr->GetCanvasW() * 2)
+        _x -= geptr->GetCanvasW() * 2;
+    if (_x < 0)
+        _x += geptr->GetCanvasW() * 2;
+    if (_y >= geptr->GetCanvasH() * 2)
+        _y -= geptr->GetCanvasH() * 2;
+    if (_y < 0)
+        _y += geptr->GetCanvasH() * 2;
+
+    _x = floor(_x);
+    _y = floor(_y);
+
+    geptr->DrawChar(_x, _y, geptr->entity, 'B');
+    geptr->DrawSetColor(_x, _y, geptr->entity, { {255,255,255},{255,255,255} });
     if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
     {
-        int _x;
-        int _y;
+        geptr->DrawChar(_x, _y, geptr->foreground, 'B');
+        geptr->DrawSetColor(_x, _y, geptr->foreground, { {0,0,0},{0,255,0} });
+        geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
+    }
+    if (geptr->GetMouseButtonState(SDL_BUTTON_RIGHT))
+    {
         geptr->GetMousePosition(&_x, &_y);
 
-        geptr->DrawChar(_x, _y, geptr->foreground, 'B');
-        geptr->DrawSetColor(_x, _y, geptr->foreground, { {0,255,0},{0,255,0} });
+        geptr->DrawChar(_x, _y, geptr->foreground, ' ');
+        geptr->DrawSetColor(_x, _y, geptr->foreground, { {0,0,0},{0,255,0} });
         geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
     }
 }
@@ -230,9 +280,9 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 60, 1920, 1080, "./GameFont.ttf", 16);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 9999, 1920, 1080, "./GameFont.ttf", 16);
 
-    ge_inst.debug_mode = false; // Show debug overlay
+    ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information
     geptr = &ge_inst; // Set the pointer to the console engine class
 
