@@ -59,6 +59,15 @@ public:
 
     // Gravity Engine private types
 private:
+    // Tileset type
+    struct tileset
+    {
+        SDL_Texture* texture;
+        int width;
+        int height;
+        int tile_w;
+        int tile_h;
+    };
 
     // Gravity Engine private classes
 private:
@@ -286,15 +295,15 @@ private:
     struct SDL_AudioSpec global_audio_spec; // = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
     std::vector<GravityEngine_Object*> entity_list; // This is the list of GravityEngine objects that the engine will track and execute
     bool game_running = false; // Is the game running or no?
-    int canvas_w; // Game canvas width
-    int canvas_h; // Game canvas height
     char** collision_static; // Game static collision layer
     char** collision_dynamic; // Game dynamic collision layer
     int elapsed_frames = 0; // Frames since game was started
     color def_color = { {255,255,255}, {0,0,0} }; // Default color to clean the color arrays
     int def_col = 0; // Default collision value to clean the collision arrays with
-    int font_w; // Width of the font
-    int font_h; // Height of the font
+    int canvas_w; // Game canvas width
+    int canvas_h; // Game canvas height
+    int tile_w; // Width of the font
+    int tile_h; // Height of the font
     int64_t frame_time = 0; // The current time the last frame took
     int64_t frame_length; // The desired frame length
     std::chrono::system_clock::time_point gobal_start_time; // When the game started
@@ -306,6 +315,8 @@ private:
     const char* game_version; // The version of the game
     int scr_w; // W of screen
     int scr_h; // H of screen
+    int wnd_w; // W of window
+    int wnd_h; // H of window
     int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
     bool screen_updated = false; // The flag that tells the game if it should update the screen or not
     std::string font_path; // Location of the font to use for the text on screen
@@ -327,13 +338,13 @@ private:
     int mouse_wheel_state; // Store the current 
     std::ofstream file_out = std::ofstream("output.txt");
     std::vector<SDL_Texture*> sprite_list; // List of sprite resources loaded into the game
+    std::vector<tileset*> tileset_list; // List of tilesets loaded into the game
+    SDL_ScaleMode scale_mode = SDL_SCALEMODE_NEAREST; // Global draw layer scale mode
 
     // Gravity Engine Public Attributes
 public:
     bool debug_mode = false; // Show debug overlay
     bool debug_complex = false; // Show complex debug overlay
-    int cam_offset_x = 0;
-    int cam_offset_y = 0;
 
     // Gravity Engine Public Methods
 public:
@@ -342,15 +353,21 @@ public:
     // const char* gt : Game title
     // const char* gi : Game id
     // const char* gv : Game version
-    // int cw : Canvas width (chars wide)
-    // int ch : Canvas height (chars tall)
-    // int fw : Font width (-1 for auto-detect)
-    // int fh : Font height (-1 for auto-detect)
+    // int cw : Canvas width (tiles wide)
+    // int ch : Canvas height (tiles tall)
+    // int fw : Tile width (-1 for auto-detect with screen resolution)
+    // int fh : Tile height (-1 for auto-detect with screen resolution)
     // int f : Frame rate cap in frames per second
     // int sw : Screen width
     // int sh : Screen height
     // string fp : Path to the display font
     // int c : Number of audio channels
+    //
+    // Note: To prevent graphical errors, you must ensure that the canvas dimensions (canvas w and h times tile width and height)
+    //       are at least half the game resolution. This is because the engine doubles your canvas to provide a drawing buffer for
+    //       screen scrolling. If your canvas is less than half the resolution, this will result in camera over-draw and the screen will stretch
+    //       when the camera reaches the borders. It is, however, recommended that you use a canvas dimension that is equal to or greater 
+    //       than the game resolution.
     GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int fw, int fh, int f, int sw, int sh, std::string fp, int c)
     {
         // Set game font
@@ -372,8 +389,8 @@ public:
             fw = (int)(floor(scr_w / cw));
         if (fh == -1)
             fh = (int)(floor(scr_h / ch));
-        font_w = fw;
-        font_h = fh;
+        tile_w = fw;
+        tile_h = fh;
 
         // Instantiate collision static
         collision_static = new char* [canvas_h * 2];
@@ -396,17 +413,6 @@ public:
         // Set channel count
         channels = c;
     }
-
-    // Gravity Engine Constructor
-    // const char* gt : Game title
-    // const char* gi : Game id
-    // const char* gv : Game version
-    // int f : Frame rate cap in frames per second
-    // int w : Screen width
-    // int h : Screen height
-    // string fp : Path to the display font
-    // int c : Number of audio channels
-    GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, int w, int h, std::string fp, int c) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, w, h, fp, c) {}
 
     // Get the canvas width
     int GetCanvasW()
@@ -481,7 +487,10 @@ public:
             std::system("pause");
         }
         // Create the SDL window
-        SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
+        SDL_CreateWindowAndRenderer(game_title, canvas_w * tile_w, canvas_h * tile_h, SDL_window_props, &window, &renderer);
+
+        // Get the width of the window
+        SDL_GetWindowSize(window, &wnd_w, &wnd_h);
 
         // Load the audio spec
         auto dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
@@ -493,16 +502,23 @@ public:
             audio_channels.insert(audio_channels.end(), new GravityEngine_AudioChannel(global_audio_spec));
 
         // Create the render texture
-        render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 4, scr_h * 4);
+        render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        SDL_SetTextureScaleMode(render_texture, scale_mode);
         render_texture_ui = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
-        p_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
+        SDL_SetTextureScaleMode(render_texture_ui, scale_mode);
+        p_background_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        SDL_SetTextureScaleMode(p_background_texture, scale_mode);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_SetRenderTarget(renderer, p_background_texture);
         SDL_RenderClear(renderer);
-        p_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
-        p_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w * 2, scr_h * 2);
+        p_foreground_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        SDL_SetTextureScaleMode(p_foreground_texture, scale_mode);
+        p_entity_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        SDL_SetTextureScaleMode(p_entity_texture, scale_mode);
         p_ui_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        SDL_SetTextureScaleMode(p_ui_texture, scale_mode);
         p_debug_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
+        SDL_SetTextureScaleMode(p_debug_texture, scale_mode);
 
         // Create the engine used to write text
         engine = TTF_CreateRendererTextEngine(renderer);
@@ -512,7 +528,7 @@ public:
 
         // Create font
         const char* fp = font_path.c_str();
-        sans = TTF_OpenFont(fp, font_h);
+        sans = TTF_OpenFont(fp, tile_h);
 
         // Call init custom user code
         if (init_game != nullptr)
@@ -542,6 +558,11 @@ public:
             delete o;
         for (auto s : sprite_list)
             SDL_DestroyTexture(s);
+        for (auto t : tileset_list)
+        {
+            SDL_DestroyTexture(t->texture);
+            delete t;
+        }
 
         // Success!
         return SDL_APP_SUCCESS;
@@ -567,37 +588,49 @@ public:
         return current_fps;
     }
 
-    // Change Font
-    // string fpth : Path to the font file
+    // Change Tile
+    // string path : Path to the tile file
     void ChangeFont(std::string fpth)
     {
-        // Create font
+        // Create tile
         const char* fp = fpth.c_str();
-        sans = TTF_OpenFont(fp, font_h);
+        sans = TTF_OpenFont(fp, tile_h);
     }
 
-    // Get the width of the font grid
-    int GetFontW()
+    // Get the width of the tile grid
+    int GetTileW()
     {
-        return font_w;
+        return tile_w;
     }
 
-    // Get the height of the font grid
-    int GetFontH()
+    // Get the height of the tile grid
+    int GetTileH()
     {
-        return font_h;
+        return tile_h;
     }
 
-    // Get the width of the font grid
+    // Get the width of the screen
     int GetScreenW()
     {
         return scr_w;
     }
 
-    // Get the height of the font grid
+    // Get the height of the screen
     int GetScreenH()
     {
         return scr_h;
+    }
+
+    // Get the width of the window
+    int GetWindowW()
+    {
+        return wnd_w;
+    }
+
+    // Get the height of the window
+    int GetWindowH()
+    {
+        return wnd_h;
     }
 
     // Get elapsed_frames
@@ -639,11 +672,7 @@ public:
     // float* ret_y : Pointer to store the vertical position
     void GetMousePosition(float* ret_x, float* ret_y)
     {
-        float x, y;
-        SDL_GetMouseState(&x, &y);
-
-        *ret_x = (x / scr_w) * canvas_w;
-        *ret_y = (y / scr_h) * canvas_h;
+        SDL_GetMouseState(ret_x, ret_y);
     }
 
     // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/
@@ -697,6 +726,34 @@ public:
         sprite_list[index] = nullptr;
     }
 
+    // Add the tileset to the tileset list
+    // const char* image_path : File path to the image to be loaded
+    // int w : The tile width of the tileset
+    // int h : The tile height of the tileset
+    // SDL_ScaleMode scale_mode : Antialiasing type
+    int AddTileset(const char* image_path, int w, int h, SDL_ScaleMode scale_mode = SDL_SCALEMODE_NEAREST)
+    {
+        auto image = IMG_Load(image_path);
+        auto texture = SDL_CreateTextureFromSurface(renderer, image);
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+        SDL_DestroySurface(image);
+        float tw, th;
+        SDL_GetTextureSize(texture, &tw, &th);
+        tileset_list.insert(tileset_list.end(), new tileset(texture, tw, th, w, h));
+        return tileset_list.size() - 1;
+    }
+
+    // Delete tileset from the tileset list
+    // int index : Integer index to where the tileset is stored
+    void DeleteTileset(int index)
+    {
+        // Delete the texture
+        SDL_DestroyTexture(tileset_list[index]->texture);
+        // Set this index to a nullptr
+        delete tileset_list[index];
+        tileset_list[index] = nullptr;
+    }
+
     // Draw a sprite at a location
     // int index : Integer index to where the sprite is stored
     // double x : Horizontal position of sprite
@@ -734,50 +791,7 @@ public:
         SDL_FRect dst = { x, y, w * w_scale, h * w_scale };
         // Render the sprite to the graphical layer
         SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst);
-        // Re-render if wrap
-        if (x + w * w_scale > scr_w * 2)
-        {
-            // Create an FRect to draw to
-            SDL_FRect dst_w = { x - scr_w * 2, y, w * w_scale, h * w_scale };
-            // Render the sprite to the graphical layer
-            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
-        }
-        if (y + h * h_scale > scr_h * 2)
-        {
-            // Create an FRect to draw to
-            SDL_FRect dst_w = { x, y - scr_h * 2, w * w_scale, h * w_scale };
-            // Render the sprite to the graphical layer
-            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
-        }
-        if (y + h * h_scale > scr_h * 2 && x + w * w_scale > scr_w * 2)
-        {
-            // Create an FRect to draw to
-            SDL_FRect dst_w = { x - scr_w * 2, y - scr_h * 2, w * w_scale, h * w_scale };
-            // Render the sprite to the graphical layer
-            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
-        }
-        if (x < 0 && y < 0)
-        {
-            // Create an FRect to draw to
-            SDL_FRect dst_w = { x + scr_w * 2, y + scr_h * 2, w * w_scale, h * w_scale };
-            // Render the sprite to the graphical layer
-            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
-        }
-        if (x < 0)
-        {
-            // Create an FRect to draw to
-            SDL_FRect dst_w = { x + scr_w * 2, y, w * w_scale, h * w_scale };
-            // Render the sprite to the graphical layer
-            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
-        }
-        if (y < 0)
-        {
-            // Create an FRect to draw to
-            SDL_FRect dst_w = { x, y + scr_h * 2, w * w_scale, h * w_scale };
-            // Render the sprite to the graphical layer
-            SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst_w);
-        }
-        // Notofy the drawing pipeline that a change has been made
+        // Notify the drawing pipeline that a change has been made
         screen_updated = true;
     }
 
@@ -896,30 +910,24 @@ private:
         if (screen_updated)
         {
             // Define where the layer will go in a rect
-            for (int q = 0; q <= 1; q++)
-            {
-                for (int i = 0; i <= 1; i++)
-                {
-                    SDL_FRect c_rect;
-                    c_rect.x = scr_w * i * 2;
-                    c_rect.y = scr_h * q * 2;
-                    c_rect.w = scr_w * 2;
-                    c_rect.h = scr_h * 2;
-                    SDL_FRect s_rect;
-                    s_rect.x = 0;
-                    s_rect.y = 0;
-                    s_rect.w = scr_w * 2;
-                    s_rect.h = scr_h * 2;
-                    // Render to texture instead of directly to the screen
-                    SDL_SetRenderTarget(renderer, render_texture);
-                    // Draw the background text texture to the renderer
-                    SDL_RenderTexture(renderer, p_background_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
-                    // Draw the background text texture to the renderer
-                    SDL_RenderTexture(renderer, p_entity_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
-                    // Draw the foreground text texture to the renderer
-                    SDL_RenderTexture(renderer, p_foreground_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
-                }
-            }
+            SDL_FRect c_rect;
+            c_rect.x = 0;
+            c_rect.y = 0;
+            c_rect.w = scr_w;
+            c_rect.h = scr_h;
+            SDL_FRect s_rect;
+            s_rect.x = 0;
+            s_rect.y = 0;
+            s_rect.w = scr_w;
+            s_rect.h = scr_h;
+            // Render to texture instead of directly to the screen
+            SDL_SetRenderTarget(renderer, render_texture);
+            // Draw the background text texture to the renderer
+            SDL_RenderTexture(renderer, p_background_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+            // Draw the background text texture to the renderer
+            SDL_RenderTexture(renderer, p_entity_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
+            // Draw the foreground text texture to the renderer
+            SDL_RenderTexture(renderer, p_foreground_texture, new SDL_FRect(s_rect), new SDL_FRect(c_rect));
 
             SDL_FRect d_rect;
             d_rect.x = 0;
@@ -989,16 +997,6 @@ private:
         // Frame count
         elapsed_frames++;
 
-        // Mod
-        if (cam_offset_x <= 0)
-            cam_offset_x += scr_w * 2;
-        if (cam_offset_x >= scr_w * 2)
-            cam_offset_x -= scr_w * 2;
-        if (cam_offset_y <= 0)
-            cam_offset_y += scr_h * 2;
-        if (cam_offset_y >= scr_h * 2)
-            cam_offset_y -= scr_h * 2;
-
         // Draw to the window - Do not draw if the draw flag is off
         if (screen_updated)
         {
@@ -1008,8 +1006,8 @@ private:
             d_rect.w = scr_w;
             d_rect.h = scr_h;
             SDL_FRect s_rect;
-            s_rect.x = cam_offset_x;
-            s_rect.y = cam_offset_y;
+            s_rect.x = 0;
+            s_rect.y = 0;
             s_rect.w = scr_w;
             s_rect.h = scr_h;
             // Draw the screen texture to the renderer

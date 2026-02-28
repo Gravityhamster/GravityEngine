@@ -146,32 +146,24 @@ class player : public virtual GravityEngine_Object
             }
             y += yv_t;
 
+            //geptr->cam_offset_x = x * geptr->GetTileW() - geptr->GetScreenW() / 2;
+            //geptr->cam_offset_y = y * geptr->GetTileH() - geptr->GetScreenH() / 2;
 
-            // Wrap
-            if (x < 0)
-                x += geptr->GetCanvasW() * 2;
-            if (y < 0)
-                y += geptr->GetCanvasH() * 2;
-            if (x >= geptr->GetCanvasW() * 2)
-                x -= geptr->GetCanvasW() * 2;
-            if (y >= geptr->GetCanvasH() * 2)
-                y -= geptr->GetCanvasH() * 2;
-
-            geptr->cam_offset_x = x * geptr->GetFontW() - geptr->GetScreenW() / 2;
-            geptr->cam_offset_y = y * geptr->GetFontH() - geptr->GetScreenH() / 2;
+            //geptr->cam_offset_x += (is_true_right - is_true_left) * 25;
+            //geptr->cam_offset_y += (is_true_down - is_true_up) * 25;
 
             // Draw the character at the end
-            geptr->DrawSprite(sprite_index, floor(x * geptr->GetFontW()-6), floor(y * geptr->GetFontH() - 22), 2, 2, geptr->entity);
-            // geptr->DrawRect(floor(x * geptr->GetFontW() + collision_box.x), floor(y * geptr->GetFontH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->entity);
+            geptr->DrawSprite(sprite_index, floor(x * geptr->GetTileW()-6), floor(y * geptr->GetTileH() - 22), 2, 2, geptr->entity);
+            // geptr->DrawRect(floor(x * geptr->GetTileW() + collision_box.x), floor(y * geptr->GetTileH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->entity);
         };
 		void end_step() {};
 
         bool check_collision_solid(double x, double y)
         {
-            int x1 = floor((x * geptr->GetFontW() + collision_box.x) / geptr->GetFontW());
-            int y1 = floor((y * geptr->GetFontH() + collision_box.y) / geptr->GetFontH());
-            int x2 = floor(((x * geptr->GetFontW() + collision_box.x) + collision_box.w-1) / geptr->GetFontW());
-            int y2 = floor(((y * geptr->GetFontH() + collision_box.y) + collision_box.h-1) / geptr->GetFontH());
+            int x1 = floor((x * geptr->GetTileW() + collision_box.x) / geptr->GetTileW());
+            int y1 = floor((y * geptr->GetTileH() + collision_box.y) / geptr->GetTileH());
+            int x2 = floor(((x * geptr->GetTileW() + collision_box.x) + collision_box.w-1) / geptr->GetTileW());
+            int y2 = floor(((y * geptr->GetTileH() + collision_box.y) + collision_box.h-1) / geptr->GetTileH());
 
             for (int q = y1; q <= y2; q++)
             {
@@ -201,12 +193,22 @@ class player : public virtual GravityEngine_Object
 // Master pre code
 void GameInit()
 {
+    geptr->DrawRect(0, 0, geptr->GetScreenW()/2, geptr->GetScreenH() / 2, { 255,255,0,255 }, geptr->background);
+    geptr->DrawRect(geptr->GetScreenW() / 2, 0, geptr->GetScreenW() / 2, geptr->GetScreenH() / 2, { 255,0,255,255 }, geptr->background);
+    geptr->DrawRect(0, geptr->GetScreenH() / 2, geptr->GetScreenW() / 2, geptr->GetScreenH() / 2, { 255,0,255,255 }, geptr->background);
+    geptr->DrawRect(geptr->GetScreenW() / 2, geptr->GetScreenH() / 2, geptr->GetScreenW() / 2, geptr->GetScreenH() / 2, { 0,255,255,255 }, geptr->background);
+
     int q = geptr->GetCanvasH() - 1;
-    for (int i = 0; i < geptr->GetCanvasW() * 2; i++)
+    for (int i = 0; i < geptr->GetCanvasW()*2; i++)
     {
-        geptr->DrawRect(i * geptr->GetFontW(), q * geptr->GetFontH(), geptr->GetFontW(), geptr->GetFontH(), { 255,0,0,255 }, geptr->background);
+        geptr->DrawRect(i * geptr->GetTileW(), q * geptr->GetTileH(), geptr->GetTileW(), geptr->GetTileH(), { 255,0,0,255 }, geptr->background);
         geptr->SetCollisionValue(i, q, geptr->stat, 1);
     }
+
+    int sp = geptr->AddSprite("testtileset.png");
+    geptr->DrawSprite(sp, 10, 10, 1, 1, geptr->ui);
+    geptr->DrawSprite(sp, geptr->GetScreenW() - 42, geptr->GetScreenH() - 42, 1, 1, geptr->ui);
+    //geptr->AddTileset("testtileset.png", 16, 16);
 
     p = geptr->AddObject(new player());
 }
@@ -225,12 +227,20 @@ void PreGameLoop()
     was_true_down = is_true_down;
     is_true_down = geptr->GetKeyState(SDL_SCANCODE_DOWN);
 
+
+    /*if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
+    {
+        int uiuiuwr = 0;
+    }
+
     float _x;
     float _y;
     geptr->GetMousePosition(&_x, &_y);
 
-    _x += geptr->cam_offset_x / geptr->GetFontW();
-    _y += geptr->cam_offset_y / geptr->GetFontH();
+    _x = (geptr->cam_offset_x + geptr->GetScreenW()/2) / geptr->GetTileW();
+    _y = (geptr->cam_offset_y + geptr->GetScreenH()/2) / geptr->GetTileH();
+    //_x *= (float)geptr->GetScreenW() / (float)geptr->GetWindowW();
+    //_y *= (float)geptr->GetScreenH() / (float)geptr->GetWindowH();
 
     if (_x >= geptr->GetCanvasW() * 2)
         _x -= geptr->GetCanvasW() * 2;
@@ -246,15 +256,15 @@ void PreGameLoop()
 
     if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
     {
-        geptr->DrawRect(_x * geptr->GetFontW(), _y * geptr->GetFontH(), geptr->GetFontW(), geptr->GetFontH(), { 255,0,0,255 }, geptr->background);
+        geptr->DrawRect(_x * geptr->GetTileW(), _y * geptr->GetTileH(), geptr->GetTileW(), geptr->GetTileH(), { 255,0,0,255 }, geptr->background);
         geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
     }
-    if (geptr->GetMouseButtonState(SDL_BUTTON_RIGHT))
+    /*if (geptr->GetMouseButtonState(SDL_BUTTON_RIGHT))
     {
         geptr->GetMousePosition(&_x, &_y);
-        geptr->DrawRect(_x * geptr->GetFontW(), _y * geptr->GetFontH(), geptr->GetFontW(), geptr->GetFontH(), { 0,0,0,255 }, geptr->background);
+        geptr->DrawRect(_x * geptr->GetTileW(), _y * geptr->GetTileH(), geptr->GetTileW(), geptr->GetTileH(), { 0,0,0,255 }, geptr->background);
         geptr->SetCollisionValue(_x, _y, geptr->stat, 0);
-    }
+    }*/
 }
 
 // Master post code
@@ -264,8 +274,8 @@ void PostGameLoop()
 
 int main()
 {
-    // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, 60, 1920, 1080, "./GameFont.ttf", 16);
+    // Init engine
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 60, 15, 16, 16, 60, 960, 540, "./GameFont.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information
