@@ -667,12 +667,22 @@ public:
         return mouse_wheel_state;
     }
 
+    // Handle mouse location raw
+    // float* ret_x : Pointer to store the horizontal position
+    // float* ret_y : Pointer to store the vertical position
+    void GetMousePositionRaw(float* ret_x, float* ret_y)
+    {
+        SDL_GetMouseState(ret_x, ret_y);
+    }
+
     // Handle mouse location
     // float* ret_x : Pointer to store the horizontal position
     // float* ret_y : Pointer to store the vertical position
     void GetMousePosition(float* ret_x, float* ret_y)
     {
         SDL_GetMouseState(ret_x, ret_y);
+        *ret_x *= (float)GetScreenW() / (float)GetWindowW();
+        *ret_y *= (float)GetScreenH() / (float)GetWindowH();
     }
 
     // Get a random number - https://www.geeksforgeeks.org/cpp/how-to-generate-random-number-in-range-in-cpp/

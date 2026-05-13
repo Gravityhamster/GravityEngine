@@ -13,6 +13,7 @@ bool was_true_up;
 bool is_true_down;
 bool was_true_down;
 
+int sp;
 int p;
 
 struct bounding_box
@@ -146,15 +147,8 @@ class player : public virtual GravityEngine_Object
             }
             y += yv_t;
 
-            //geptr->cam_offset_x = x * geptr->GetTileW() - geptr->GetScreenW() / 2;
-            //geptr->cam_offset_y = y * geptr->GetTileH() - geptr->GetScreenH() / 2;
-
-            //geptr->cam_offset_x += (is_true_right - is_true_left) * 25;
-            //geptr->cam_offset_y += (is_true_down - is_true_up) * 25;
-
             // Draw the character at the end
             geptr->DrawSprite(sprite_index, floor(x * geptr->GetTileW()-6), floor(y * geptr->GetTileH() - 22), 2, 2, geptr->entity);
-            // geptr->DrawRect(floor(x * geptr->GetTileW() + collision_box.x), floor(y * geptr->GetTileH() + collision_box.y), collision_box.w, collision_box.h, { 255,0,0,255 }, geptr->entity);
         };
 		void end_step() {};
 
@@ -205,10 +199,9 @@ void GameInit()
         geptr->SetCollisionValue(i, q, geptr->stat, 1);
     }
 
-    int sp = geptr->AddSprite("testtileset.png");
+    sp = geptr->AddSprite("testtileset.png");
     geptr->DrawSprite(sp, 10, 10, 1, 1, geptr->ui);
     geptr->DrawSprite(sp, geptr->GetScreenW() - 42, geptr->GetScreenH() - 42, 1, 1, geptr->ui);
-    //geptr->AddTileset("testtileset.png", 16, 16);
 
     p = geptr->AddObject(new player());
 }
@@ -227,44 +220,10 @@ void PreGameLoop()
     was_true_down = is_true_down;
     is_true_down = geptr->GetKeyState(SDL_SCANCODE_DOWN);
 
-
-    /*if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
-    {
-        int uiuiuwr = 0;
-    }
-
     float _x;
     float _y;
     geptr->GetMousePosition(&_x, &_y);
-
-    _x = (geptr->cam_offset_x + geptr->GetScreenW()/2) / geptr->GetTileW();
-    _y = (geptr->cam_offset_y + geptr->GetScreenH()/2) / geptr->GetTileH();
-    //_x *= (float)geptr->GetScreenW() / (float)geptr->GetWindowW();
-    //_y *= (float)geptr->GetScreenH() / (float)geptr->GetWindowH();
-
-    if (_x >= geptr->GetCanvasW() * 2)
-        _x -= geptr->GetCanvasW() * 2;
-    if (_x < 0)
-        _x += geptr->GetCanvasW() * 2;
-    if (_y >= geptr->GetCanvasH() * 2)
-        _y -= geptr->GetCanvasH() * 2;
-    if (_y < 0)
-        _y += geptr->GetCanvasH() * 2;
-
-    _x = floor(_x);
-    _y = floor(_y);
-
-    if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
-    {
-        geptr->DrawRect(_x * geptr->GetTileW(), _y * geptr->GetTileH(), geptr->GetTileW(), geptr->GetTileH(), { 255,0,0,255 }, geptr->background);
-        geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
-    }
-    /*if (geptr->GetMouseButtonState(SDL_BUTTON_RIGHT))
-    {
-        geptr->GetMousePosition(&_x, &_y);
-        geptr->DrawRect(_x * geptr->GetTileW(), _y * geptr->GetTileH(), geptr->GetTileW(), geptr->GetTileH(), { 0,0,0,255 }, geptr->background);
-        geptr->SetCollisionValue(_x, _y, geptr->stat, 0);
-    }*/
+    geptr->DrawSprite(sp, _x, _y, 1, 1, geptr->entity);
 }
 
 // Master post code
@@ -275,7 +234,7 @@ void PostGameLoop()
 int main()
 {
     // Init engine
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 60, 15, 16, 16, 60, 960, 540, "./GameFont.ttf", 16);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 60, 15, 16, 16, 60, 1920, 1080, "./GameFont.ttf", 16);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information
