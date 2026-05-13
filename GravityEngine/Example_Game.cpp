@@ -1,222 +1,131 @@
 #include "GravityEngineSDL.h"
 
 GravityEngine_Core* geptr;
-bool ply = false;
-bool is_true_a;
-bool was_true_a;
-bool is_true_left;
-bool was_true_left;
-bool is_true_right;
-bool was_true_right;
+bool play_was_held = false;
+bool play_is_held = false;
+std::vector<m_node*> m_node_list;
 
-int p;
+// class example : public virtual GravityEngine_Object
+// {
+// private:
+// public:
+//     example() {};
+//     ~example() {};
+//     void begin_step() {};
+//     void step() {};
+//     void end_step() {};
+// };
 
-class player : public virtual GravityEngine_Object
+enum m_node_type
 {
-    private:
-        double x;
-        double y;
-        double yvel = 0;
-        double xvel = 0;
-        double grav = .0625/4;
-        double max_grav = 5;
-        double g_accel = 0.25;
-        double a_accel = 0.25/5;
-        double g_deccel = 0.25/10;
-        double a_deccel = 0.25/20;
-        double spd = 0.25;
-        double jump = -0.5;
-        double minjump = -0.25;
-        double coyote_time = 10;
-        double coyote_timer = 0;
-        bool willjump = false;
-        int willjump_time = 10;
-        int willjump_timer = 0;
-        std::vector<int> collides_with = {1};
-	public:
-        player() 
-        {
-            x = geptr->GetCanvasW() / 2;
-            y = geptr->GetCanvasH() / 2;
-        };
-		~player() {};
-		void begin_step() {};
-		void step() 
-        {
-            // Calculate velocities
-            if (!check_collision_solid(floor(x), floor(y + 1)))
-            {
-                willjump_timer++;
-                coyote_timer++;
-                if (yvel < max_grav)
-                    yvel += grav;
-            }
-            else 
-            {
-                // Reset coyote time and velocity
-                coyote_timer = 0;
-                if (yvel > 0)
-                    yvel = 0;
-            }
-
-            // Handle input
-            double accel = check_collision_solid(floor(x), floor(y + 1)) ? g_accel : a_accel;
-            double deccel = check_collision_solid(floor(x), floor(y + 1)) ? g_deccel : a_deccel;
-
-            xvel += (is_true_right - is_true_left) * accel;
-            if ((is_true_right - is_true_left) == 0)
-            {
-                if (xvel > 0)
-                {
-                    if (xvel - deccel < 0)
-                        xvel = 0;
-                    else
-                        xvel -= deccel;
-                }
-                if (xvel < 0)
-                {
-                    if (xvel + deccel > 0)
-                        xvel = 0;
-                    else
-                        xvel += deccel;
-                }
-            }
-            xvel = std::clamp(xvel, -spd, spd);
-            if (!is_true_a)
-                yvel = std::max(yvel, minjump);
-            if ((check_collision_solid(floor(x), floor(y + 1)) || coyote_timer < coyote_time) && ((is_true_a && !was_true_a) || willjump))
-            {
-                yvel = jump;
-                willjump = false;
-            }
-            else if (is_true_a && !was_true_a)
-            {
-                willjump = true;
-                willjump_timer = 0;
-            }
-            if (willjump_timer >= willjump_time)
-                willjump = false;
-
-            // Set the temp y and x velocity movement values
-            double xv_t = xvel;
-            double yv_t = yvel;
-
-            // Apply the x velocity
-            if (check_collision_solid_x(floor(x + xv_t)))
-            {
-                while (abs(xv_t) >= 1 && !check_collision_solid(floor(x), floor(x + (xv_t / abs(xv_t)))))
-                {
-                    x += xv_t / abs(xv_t);
-                    xv_t = (abs(xv_t) - 1) * (xv_t / abs(xv_t));
-                }
-                xv_t = 0;
-                xvel = 0;
-            }
-            x += xv_t;
-
-            // Apply the y velocity
-            if (check_collision_solid_y(floor(y + yv_t)))
-            {
-                while (abs(yv_t) >= 1 && !check_collision_solid(floor(x), floor(y + (yv_t / abs(yv_t)))))
-                {
-                    y += yv_t / abs(yv_t);
-                    yv_t = (abs(yv_t) - 1) * (yv_t / abs(yv_t));
-                }
-                yv_t = 0;
-                yvel = 0;
-            }
-            y += yv_t;
-
-            // Draw the character at the end
-            geptr->DrawChar(floor(x), floor(y), geptr->entity, '{');
-        };
-		void end_step() {};
-
-        // Check if there is a collision at this point
-        bool check_collision_solid(int _x, int _y)
-        {
-            if (_x == x && _y == y)
-                return false;
-            else
-                return (VectorContains(collides_with, geptr->GetCollisionValue(_x, _y, geptr->stat)) ||
-                        VectorContains(collides_with, geptr->GetCollisionValue(_x, _y, geptr->dyn)));
-        }
-
-        // Check if there is a collision at any point between here and there horizontally
-        bool check_collision_solid_x(int _x)
-        {
-            if (_x == x)
-                return false;
-            else
-            {
-                while (abs(_x - floor(x)) >= 1)
-                {
-                    if (check_collision_solid(_x, y))
-                        return true;
-                    if (_x < x)
-                        _x++;
-                    else if (_x > x)
-                        _x--;
-                }
-                return false;
-            }
-        }
-
-        // Check if there is a collision at eny point between here and there vertically
-        bool check_collision_solid_y(int _y)
-        {
-            if (_y == y)
-                return false;
-            else
-            {
-                while (abs(_y - floor(y)) >= 1)
-                {
-                    if (check_collision_solid(x, _y))
-                        return true;
-                    if (_y < y)
-                        _y++;
-                    else if (_y > y)
-                        _y--;
-                }
-                return false;
-            }
-        }
+    origin,
+    ping,
+    left,
+    right,
+    up,
+    down
 };
+
+class m_node : public virtual GravityEngine_Object
+{
+private:
+    m_node_type type;
+    int x;
+    int y;
+public:
+    m_node(int xx, int yy, m_node_type t) { type = t; x = xx; y = yy; };
+    ~m_node() {};
+    void begin_step() {
+        switch(type)
+        {
+            case origin:
+                geptr->DrawChar(x, y, geptr->background, 'O');
+                if (play_is_held && !play_was_held)
+                {
+                    // auto mn = new m_node(x, y, ping);
+                    // geptr->AddObject(mn);
+                }
+                break;
+            case up:
+                geptr->DrawChar(x, y, geptr->background, '^');
+                break;
+            case down:
+                geptr->DrawChar(x, y, geptr->background, 'V');
+                break;
+            case left:
+                geptr->DrawChar(x, y, geptr->background, '<');
+                break;
+            case right:
+                geptr->DrawChar(x, y, geptr->background, '>');
+                break;
+            case ping:
+                geptr->DrawChar(x, y, geptr->foreground, '+');
+                break;
+        }
+    };
+    void step() {};
+    void end_step() {};
+};
+
+int NewNode(int x, int y, m_node_type type)
+{
+
+}
 
 // Master pre code
 void GameInit()
 {
-    int q = geptr->GetCanvasH() - 1;
-    for (int i = 0; i < geptr->GetCanvasW(); i++)
-    {
-        geptr->DrawChar(i, q, geptr->background, 'A');
-        geptr->DrawSetColor(i, q, geptr->background, { {0,255,0},{0,255,0} });
-        geptr->SetCollisionValue(i, q, geptr->stat, 1);
-    }
-
-    p = geptr->AddObject(new player());
+    
 }
 
 // Master pre code
 void PreGameLoop()
 {
-    was_true_a = is_true_a;
-    is_true_a = geptr->GetKeyState(SDL_SCANCODE_UP);
-    was_true_left = is_true_left;
-    is_true_left = geptr->GetKeyState(SDL_SCANCODE_LEFT);
-    was_true_right = is_true_right;
-    is_true_right = geptr->GetKeyState(SDL_SCANCODE_RIGHT);
-
-    if (geptr->GetMouseButtonState(SDL_BUTTON_LEFT))
+    // Mouse position
+    int x, y;
+    geptr->GetMousePosition(&x, &y); 
+    auto c = geptr->GetChar(x, y, geptr->background);
+    if (c == ' ')
     {
-        int _x;
-        int _y;
-        geptr->GetMousePosition(&_x, &_y);
-
-        geptr->DrawChar(_x, _y, geptr->background, 'B');
-        geptr->DrawSetColor(_x, _y, geptr->background, { {0,255,0},{0,255,0} });
-        geptr->SetCollisionValue(_x, _y, geptr->stat, 1);
+        geptr->DrawChar(x, y, geptr->entity, '_');
+        geptr->DrawSetColor(x, y, geptr->entity, { {255, 255, 255}, {255, 255, 255} });
     }
+    else
+    {
+        geptr->DrawChar(x, y, geptr->entity, c);
+        geptr->DrawSetColor(x, y, geptr->entity, { {0, 0, 0}, {255, 255, 255} });
+    }
+
+    // Create musical mode
+    if (geptr->GetKeyState(SDL_SCANCODE_O))
+    {
+        auto mn = new m_node(x, y, origin);
+        geptr->AddObject(mn);
+    }
+    if (geptr->GetKeyState(SDL_SCANCODE_UP))
+    {
+        auto mn = new m_node(x, y, up);
+        geptr->AddObject(mn);
+    }
+    if (geptr->GetKeyState(SDL_SCANCODE_DOWN))
+    {
+        auto mn = new m_node(x, y, down);
+        geptr->AddObject(mn);
+    }
+    if (geptr->GetKeyState(SDL_SCANCODE_LEFT))
+    {
+        auto mn = new m_node(x, y, left);
+        geptr->AddObject(mn);
+    }
+    if (geptr->GetKeyState(SDL_SCANCODE_RIGHT))
+    {
+        auto mn = new m_node(x, y, right);
+        geptr->AddObject(mn);
+    }
+
+    // Get other inputs
+    play_was_held = play_is_held;
+    play_is_held = geptr->GetKeyState(SDL_SCANCODE_RETURN);
 }
 
 // Master post code

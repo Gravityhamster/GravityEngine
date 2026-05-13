@@ -960,6 +960,11 @@ public:
         std::erase(entity_list, object);
     }
 
+    const std::vector<GravityEngine_Object*>* EntityList()
+    {
+        return &entity_list;
+    }
+
     // Add sounds to the sound list
     // const char* path : Path to sound file
     int AddSound(const char* path)
