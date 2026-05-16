@@ -15,6 +15,7 @@ bool was_true_down;
 
 int sp;
 int p;
+int t;
 
 struct bounding_box
 {
@@ -57,6 +58,7 @@ class player : public virtual GravityEngine_Object
             sprite_index = geptr->AddSprite("wario.png");
         };
 		~player() {};
+        void moveright() { x+=0.1; }
 		void begin_step() {};
 		void step() 
         {
@@ -203,6 +205,8 @@ void GameInit()
     geptr->DrawSprite(sp, 10, 10, 1, 1, geptr->ui);
     geptr->DrawSprite(sp, geptr->GetScreenW() - 42, geptr->GetScreenH() - 42, 1, 1, geptr->ui);
 
+    t = geptr->AddTileset("testtileset.png", 16, 16);
+
     p = geptr->AddObject(new player());
 }
 
@@ -229,6 +233,13 @@ void PreGameLoop()
 // Master post code
 void PostGameLoop()
 {
+    GravityEngine_Object* ref = geptr->GetObjectReference(p);
+    dynamic_cast<player*>(ref)->moveright();
+
+    geptr->DrawTile(t, 32, 54, 1, 1, 0, 0, geptr->entity);
+    geptr->DrawTile(t, 52, 54, 1, 1, 1, 0, geptr->entity);
+    geptr->DrawTile(t, 32, 74, 1, 1, 0, 1, geptr->entity);
+    geptr->DrawTile(t, 52, 74, 1, 1, 1, 1, geptr->entity);
 }
 
 int main()

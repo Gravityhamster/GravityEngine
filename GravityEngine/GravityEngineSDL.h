@@ -327,7 +327,7 @@ private:
     TTF_TextEngine* engine = NULL; // Point to the SDL_ttf text engine
     TTF_Font* sans = NULL; // SDL_ttf font to use
     SDL_Texture* p_background_texture = NULL; // Background sprite layer
-    SDL_Texture* p_entity_texture = NULL; // Enttiy sprite layer
+    SDL_Texture* p_entity_texture = NULL; // Entity sprite layer
     SDL_Texture* p_foreground_texture = NULL; // Foreground sprite layer
     SDL_Texture* p_ui_texture = NULL; // Ui sprite layer
     SDL_Texture* p_debug_texture = NULL; // Debug sprite layer
@@ -519,6 +519,9 @@ public:
         SDL_SetTextureScaleMode(p_ui_texture, scale_mode);
         p_debug_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, scr_w, scr_h);
         SDL_SetTextureScaleMode(p_debug_texture, scale_mode);
+
+        // Reset render back to screen
+        SDL_SetRenderTarget(renderer, NULL);
 
         // Create the engine used to write text
         engine = TTF_CreateRendererTextEngine(renderer);
@@ -713,6 +716,20 @@ public:
         std::erase(entity_list, object);
     }
 
+    // Remove the object from the enetity list via index
+    // int index : Index of the desired object in the entity list
+    void RemoveObject(int index)
+    {
+        RemoveObject(entity_list[index]);
+    }
+
+    // Get the pointer to a particular object
+    // int index : Index of the desired object in the entity list
+    GravityEngine_Object* GetObjectReference(int index)
+    {
+        return entity_list[index];
+    }
+
     // Add the sprite to the sprite list
     // const char* sprite_path : File path to the sprite to be loaded
     // SDL_ScaleMode scale_mode : Antialiasing type
@@ -764,12 +781,60 @@ public:
         tileset_list[index] = nullptr;
     }
 
+    // Draw a tile off of a tileset
+    // int index : Integer index to where the tileset is stored'
+    // double x : Horizontal position of tile
+    // double y : Vertical position of tile
+    // double w_scale : Horizontal scaling of sprite
+    // double h_scale : Vertical scaling of sprite
+    // double tx : Horizontal coordinate of the tile on the set
+    // double ty : Vertical coordinate of the tile on the set
+    // sprite_layer l : Layer to draw on
+    void DrawTile(int index, double x, double y, double w_scale, double h_scale, int tx, int ty, sprite_layer l)
+    {
+        SDL_Texture* rt = p_entity_texture;
+        // Set the target layer
+        switch (l)
+        {
+        case background:
+            rt = p_background_texture;
+            break;
+        case entity:
+            rt = p_entity_texture;
+            break;
+        case foreground:
+            rt = p_foreground_texture;
+            break;
+        case ui:
+            rt = p_ui_texture;
+            break;
+        case debug:
+            rt = p_debug_texture;
+            break;
+        }
+        SDL_SetRenderTarget(renderer, rt);
+        // Get the tileset
+        tileset t = *tileset_list[index];
+        // Get the dimensions of the sprite
+        float w = t.tile_w;
+        float h = t.tile_h;
+        // Create an FRect to draw to
+        SDL_FRect src = { tx * tile_w, ty * tile_h, w, h };
+        SDL_FRect dst = { x, y, w * w_scale, h * h_scale };
+        // Render the sprite to the graphical layer
+        SDL_RenderTexture(renderer, t.texture, &src, &dst);
+        // Notify the drawing pipeline that a change has been made
+        screen_updated = true;
+        // Reset render back to screen
+        SDL_SetRenderTarget(renderer, NULL);
+    }
+
     // Draw a sprite at a location
     // int index : Integer index to where the sprite is stored
     // double x : Horizontal position of sprite
     // double y : Vertical position of sprite
     // double w_scale : Horizontal scaling of sprite
-    // double H_scale : Vertical scaling of sprite
+    // double h_scale : Vertical scaling of sprite
     // sprite_layer l : Layer to draw the sprite on
     void DrawSprite(int index, double x, double y, double w_scale, double h_scale, sprite_layer l)
     {
@@ -794,15 +859,17 @@ public:
             break;
         }
         SDL_SetRenderTarget(renderer, rt);
-        // Get the dimensions of the character
+        // Get the dimensions of the sprite
         float w, h;
         SDL_GetTextureSize(sprite_list[index], &w, &h);
         // Create an FRect to draw to
-        SDL_FRect dst = { x, y, w * w_scale, h * w_scale };
+        SDL_FRect dst = { x, y, w * w_scale, h * h_scale };
         // Render the sprite to the graphical layer
         SDL_RenderTexture(renderer, sprite_list[index], NULL, &dst);
         // Notify the drawing pipeline that a change has been made
         screen_updated = true;
+        // Reset render back to screen
+        SDL_SetRenderTarget(renderer, NULL);
     }
 
     // Draw a rectangle
@@ -842,6 +909,8 @@ public:
         SDL_RenderRect(renderer, &fr);
         // Notify the drawing pipeline that a change has been made
         screen_updated = true;
+        // Reset render back to screen
+        SDL_SetRenderTarget(renderer, NULL);
     }
 
     // Add sounds to the sound list
@@ -997,7 +1066,7 @@ private:
         // Clear surface
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 
-        // Draw visuals
+        // Draw visuals to the rendering pipeline
         DrawScreen();
     }
 
@@ -1006,6 +1075,9 @@ private:
     {
         // Frame count
         elapsed_frames++;
+
+        // Draw post-step visuals to the rendering pipeline
+        DrawScreen();
 
         // Draw to the window - Do not draw if the draw flag is off
         if (screen_updated)
@@ -1050,6 +1122,8 @@ private:
         SDL_RenderClear(renderer);
         SDL_SetRenderTarget(renderer, render_texture_ui);
         SDL_RenderClear(renderer);
+        // Reset render back to screen
+        SDL_SetRenderTarget(renderer, NULL);
 
         // Call all step functions
         for (auto o : entity_list)
