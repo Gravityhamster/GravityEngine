@@ -496,6 +496,14 @@ public:
     // int c : Number of audio channels
     GravityEngine_Core(const char* gt, const char* gi, const char* gv, int cw, int ch, int f, int w, int h, std::string fp, int c) : GravityEngine_Core(gt, gi, gv, cw, ch, -1, -1, f, w, h, fp, c) {}
 
+    // Change the frame rate of the engine
+    // int f : New frame rate
+    void ChangeFramerate(int f)
+    {
+        // Set the desired frame length to 1 second divided be the desired frame rate
+        frame_length = 1000000000 / f;
+    }
+
     // Get the canvas width
     int GetCanvasW()
     {
@@ -958,6 +966,20 @@ public:
     void RemoveObject(GravityEngine_Object* object)
     {
         std::erase(entity_list, object);
+    }
+
+    // Remove the object from the enetity list via index
+    // int index : Index of the desired object in the entity list
+    void RemoveObject(int index)
+    {
+        RemoveObject(entity_list[index]);
+    }
+
+    // Get the pointer to a particular object
+    // int index : Index of the desired object in the entity list
+    GravityEngine_Object* GetObjectReference(int index)
+    {
+        return entity_list[index];
     }
 
     // Add sounds to the sound list

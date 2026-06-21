@@ -59,6 +59,10 @@ class GravityEngine_Synth
 {
 public:
     float freq = 50.0;
+    float pitch_freq = 0;
+    float volume_freq = 0;
+    // float vibrato_freq = 0; -- Not yet implemented
+    // float vibrato_amp = 0; -- Not yet implemented
     int sample_frames;
     float* audio_data;
     float volume = 1;
@@ -180,6 +184,20 @@ public:
                             if (pw_phase > 1.)
                                 pw_phase -= 1.;
                         }
+                        // Step note
+                        if (synth->pitch_freq != 0)
+                        {
+                            double amount = synth->pitch_freq / spec->freq;
+                            synth->freq += amount;
+                        }
+                        // Step volumne
+                        if (synth->volume_freq != 0)
+                        {
+                            double amount = synth->volume_freq / spec->freq;
+                            synth->volume += amount;
+                        }
+                        if (synth->volume < 0)
+                            synth->volume = 0;
                     }
                 }
                 else
