@@ -6,8 +6,9 @@ bool s2isplaying = 0;
 double global_timer = 1;
 bool was = 0;
 bool is = 0;
-int bpm = 295; // Beats per minute
-int fps = 60; // Frame rate in hz
+int bpm = 60; // Beats per minute
+int fps = 360; // Frame rate in hz
+int tps = 6; // Ticks per step
 double frametick = 0;
 
 class player : public virtual GravityEngine_Object
@@ -42,7 +43,7 @@ double BpmToFrametick(int b, int f)
 
     double x = b;
     x /= 60.0; // bpm / 60 seconds = bps
-    x *= 6.0; // 6 ticks per beat
+    x *= tps; // 6 ticks per beat
     x /= f; // ticks per frame
 
     return x;
