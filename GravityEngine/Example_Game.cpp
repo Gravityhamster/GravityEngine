@@ -11,6 +11,12 @@ int fps = 360; // Frame rate in hz
 int tps = 6; // Ticks per step
 double frametick = 0;
 
+color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
+color header_text_a = { {255, 255, 255}, {0, 0, 100} };
+color primary_text_b = { {0, 0, 0}, {255, 255, 255} };
+color body_text_a = { {255, 255, 255}, {0, 0, 0} };
+color body_text_b = { {0, 0, 0}, {255, 255, 255} };
+
 class player : public virtual GravityEngine_Object
 {
     private:
@@ -52,17 +58,81 @@ double BpmToFrametick(int b, int f)
 // Execute tick
 void DoTick()
 {
-    geptr->DrawTextString(5, 6, geptr->entity, std::to_string(synptr2->freq), { {255,255,255},{0,0,0} });
-    synptr2->volume = 1;
+    // geptr->DrawTextString(5, 6, geptr->entity, std::to_string(synptr2->freq), { {255,255,255},{0,0,0} });
+    synptr2->volume = 0.25;
+}
+
+// Find string f in s
+bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
+
+// Convert i to hex string
+std::string IntToHexString(int i)
+{
+    std::ostringstream hexs;
+    hexs << std::hex << i;
+
+    std::string tempstr = hexs.str();
+    std::string upperstr = "";
+
+    // https://www.geeksforgeeks.org/cpp/toupper-in-cpp/
+    for (auto x : tempstr)
+        upperstr += (char)toupper(x);
+
+    return upperstr;
+}
+
+// Draw Song Editor UI
+// off_x : UI offset on the x axis
+// off_y : UI offset on the y axis
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
+void DrawSongUI(int off_x, int off_y, std::string type)
+{
+    if (str_contains(type, "all") || str_contains(type, "title"))
+    {
+        geptr->DrawTextString(0, 1, geptr->background, "SONG", primary_text_a);
+    }
+    if (str_contains(type, "all") || str_contains(type, "y"))
+    {
+        int h = geptr->GetCanvasH() - 4;
+        for (int i = 0; i < h; i++)
+        {
+            int tempint = i + off_y;
+
+            auto upperstr = IntToHexString(tempint);
+
+            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+            geptr->DrawTextString(0, 3 + i, geptr->background, upperstr, primary_text_a);
+        }
+    }
+    if (str_contains(type, "all") || str_contains(type, "x"))
+    {
+        int w = (geptr->GetCanvasW() - 5) / 5;
+        for (int i = 0; i < w; i++)
+        {
+            std::string tempstr = std::to_string(i + off_x);
+            tempstr.insert(tempstr.begin(), 2 - tempstr.size(), '0');
+            geptr->DrawTextString(5 + i*5, 2, geptr->background, "CH" + tempstr, header_text_a);
+        }
+    }
+    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    {
+        int h = geptr->GetCanvasH() - 4;
+        int w = (geptr->GetCanvasW() - 5) / 5;
+
+        // TODO: Draw the song map
+    }
 }
 
 // Master pre code
 void GameInit()
 {
+    // Start song UI
+    DrawSongUI(0, 0, "all");
+
     synptr2 = new GravityEngine_Synth();
     //synptr2->pulse_width_freq = 0.5f;
     synptr2->freq = 261.63;
-    synptr2->volume = 1;
+    synptr2->volume = 0.25;
     synptr2->volume_freq = -10;
     synptr2->waveform = triangle;
     geptr->BindSynthToChannel(synptr2, 0);
@@ -72,7 +142,7 @@ void GameInit()
 void PreGameLoop()
 {
     // Show frame step calculation
-    geptr->DrawTextString(5, 5, geptr->entity, "TICKS PER FRAME: " + std::to_string(BpmToFrametick(bpm, fps)), { {255,0,255},{0,0,0} });
+    // geptr->DrawTextString(5, 5, geptr->entity, "TICKS PER FRAME: " + std::to_string(BpmToFrametick(bpm, fps)), { {255,0,255},{0,0,0} });
     frametick = BpmToFrametick(bpm, fps);
 
     // Handle music clock
