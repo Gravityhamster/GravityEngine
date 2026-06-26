@@ -123,9 +123,10 @@ private:
         std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
         bool looping = false; // Loop audio
         std::thread* synth_thread;
-        std::thread* loop_thread;
+        std::thread* file_thread;
         bool synth_playing = false;
-        bool is_looping = false;
+        bool file_playing = false;
+        bool file_first_loop = false;
 
     public:
 
@@ -145,11 +146,11 @@ private:
         // Feed the looping audio for the sound file
         // GravityEngine_AudioChannel* ac : Pointer to the audio channel to loop
         // bool* is_looping : Pointer to the variable to determine if the channel is still looping
-        static void FeedLoopAsync(GravityEngine_AudioChannel* ac, bool* is_looping)
+        static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, bool* file_playing)
         {
             while (ac->GetType() == file && ac->GetState() == playing)
-                ac->FeedLoop();
-            (*is_looping) = false;
+                ac->FeedAudioFileStream();
+            (*file_playing) = false;
         }
 
         // Play a sound on this channel
@@ -160,8 +161,15 @@ private:
         {
             // If any audio is currently playing, stop it
             StopPlayback();
-            // Place the audio into the audio stream to be played on the channel
-            SDL_PutAudioStreamData(sdl_audio_stream, gravity_engine_sound_ref->converted_audio.data(), gravity_engine_sound_ref->converted_audio.size());
+            // Save the audio bound to this channel so we can feed the channel later
+            currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
+            // Set the starting flag
+            file_first_loop = true;
+            // Start loop thread
+            file_playing = true;
+            std::thread lt(GravityEngine_AudioChannel::FeedAudioFileStreamAsync, this, &file_playing);
+            lt.detach();
+            file_thread = &lt;
             // Attach the audio stream to the channel's audio device
             SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
             // Start playback
@@ -170,16 +178,6 @@ private:
             state = playing;
             // Set whether this channel should loop or not
             looping = loop;
-            // Save the audio bound to this channel so we can feed the loop later
-            if (loop)
-            {
-                currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
-                // Start loop thread
-                is_looping = true;
-                std::thread lt(GravityEngine_AudioChannel::FeedLoopAsync, this, &is_looping);
-                lt.detach();
-                loop_thread = &lt;
-            }
             // Change the provider type
             type = file;
         }
@@ -202,8 +200,6 @@ private:
             SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
             // Start playback
             SDL_ResumeAudioDevice(audio_device_id);
-            // Set whether this channel should loop or not
-            looping = true;
             // Change the provider type
             type = synth;
         }
@@ -223,7 +219,7 @@ private:
             if (type == file)
             {
                 // Wait for the thread to quit
-                while (is_looping) {}
+                while (file_playing) {}
             }
             // Stop the playback
             SDL_PauseAudioDevice(audio_device_id);
@@ -259,18 +255,36 @@ private:
         }
 
         // Feed the channel with loop audio
-        void FeedLoop()
+        void FeedAudioFileStream()
         {
             // Is this channel truly supposed to loop?
-            if (looping == true && state == playing)
+            if (state == playing)
             {
-                auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
-                auto size_of_sample = currently_playing_audio->size() * sizeof(Uint8);
-                // Do not feed if the stream has plenty enough data. 
-                // Only read if the data in the stream is less than the size of the sample.
-                if (size_current < size_of_sample)
-                    // Feed the sdl_audio_stream
-                    SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
+                if (looping == true)
+                {
+                    auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
+                    auto size_of_sample = currently_playing_audio->size() * sizeof(Uint8);
+                    // Do not feed if the stream has plenty enough data. 
+                    // Only read if the data in the stream is less than the size of the sample.
+                    if (size_current < size_of_sample)
+                        // Feed the sdl_audio_stream
+                        SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
+                }
+                else
+                {
+                    // Should we feed the stream?
+                    if (file_first_loop == true)
+                    {
+                        // Feed the sdl_audio_stream
+                        SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
+                        file_first_loop = false;
+                    }
+                    // What is the size of the stream right now?
+                    auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
+                    // If the size 
+                    if (size_current <= 0)
+                        StopPlayback();
+                }
             }
         }
 

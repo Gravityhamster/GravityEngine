@@ -266,7 +266,7 @@ void GameInit()
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
-    geptr->PlaySoundOnChannel(i, 1, true);
+    geptr->PlaySoundOnChannel(i, 1, false);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
