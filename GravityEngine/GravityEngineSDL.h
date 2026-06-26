@@ -123,7 +123,9 @@ private:
         std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
         bool looping = false; // Loop audio
         std::thread* synth_thread;
+        std::thread* loop_thread;
         bool synth_playing = false;
+        bool is_looping = false;
 
     public:
 
@@ -139,6 +141,16 @@ private:
             // Flag the the audio channel is ready for playback
             state = init;
         };
+
+        // Feed the looping audio for the sound file
+        // GravityEngine_AudioChannel* ac : Pointer to the audio channel to loop
+        // bool* is_looping : Pointer to the variable to determine if the channel is still looping
+        static void FeedLoopAsync(GravityEngine_AudioChannel* ac, bool* is_looping)
+        {
+            while (ac->GetType() == file && ac->GetState() == playing)
+                ac->FeedLoop();
+            (*is_looping) = false;
+        }
 
         // Play a sound on this channel
         // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
@@ -159,7 +171,15 @@ private:
             // Set whether this channel should loop or not
             looping = loop;
             // Save the audio bound to this channel so we can feed the loop later
-            if (loop) currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
+            if (loop)
+            {
+                currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
+                // Start loop thread
+                is_looping = true;
+                std::thread lt(GravityEngine_AudioChannel::FeedLoopAsync, this, &is_looping);
+                lt.detach();
+                loop_thread = &lt;
+            }
             // Change the provider type
             type = file;
         }
@@ -198,6 +218,12 @@ private:
             {
                 // Wait for the thread to quit
                 while (synth_playing) {}
+            }
+            // Wait for the loop thread if this is a file
+            if (type == file)
+            {
+                // Wait for the thread to quit
+                while (is_looping) {}
             }
             // Stop the playback
             SDL_PauseAudioDevice(audio_device_id);
@@ -1155,11 +1181,6 @@ private:
         // Call all begin_step functions
         for (auto o : entity_list)
             (*o).begin_step();
-
-        // Handle looping audio channels
-        for (auto ac : audio_channels)
-            if (ac->GetType() == file)
-                ac->FeedLoop();
 
         // Poll SDL
         SDL_Event event;

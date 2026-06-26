@@ -114,7 +114,7 @@ double BpmToTicklength(int b)
 // Execute tick
 void DoTick()
 {
-    // TODO: Handle playing the music
+    // Offstep tick
     if (ticknumber % tps == 0)
     {
         synptr2->freq = NoteFreq(40);
@@ -122,8 +122,6 @@ void DoTick()
     }
     else
     {
-        //synptr2->freq = NoteFreq(32);
-        //synptr2->volume = 0.25;
     }
     ticknumber++;
 }
@@ -266,6 +264,10 @@ void GameInit()
     synptr2->waveform = square;
     geptr->BindSynthToChannel(synptr2, 0);
 
+    // Test: Init file play and play it
+    int i = geptr->AddSound("DrumBeat.wav");
+    geptr->PlaySoundOnChannel(i, 1, true);
+
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
 
@@ -282,34 +284,6 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
-    // Show frame step calculation
-    // geptr->DrawTextString(5, 5, geptr->entity, "TICKS PER FRAME: " + std::to_string(BpmToFrametick(bpm, fps)), { {255,0,255},{0,0,0} });
-
-    /*if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed())
-    {
-        bpm++;
-        fps++;
-        geptr->ChangeFramerate(fps);
-        global_timer = 0;
-    }
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed())
-    {
-        bpm--;
-        fps--;
-        geptr->ChangeFramerate(fps);
-        global_timer = 0;
-    }*/
-
-    /*// Handle music clock
-    global_timer += frametick;
-    if (global_timer >= 1)
-    {
-        while (global_timer >= 1)
-        {
-            DoTick();
-            global_timer -= 1;
-        }
-    }*/
 }
 
 // Master post code
