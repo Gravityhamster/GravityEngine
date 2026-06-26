@@ -12,12 +12,14 @@ int channelcount = 64;
 int rowcount = 0xffff;
 int** songgrid; //[0xffff][64];
 int bpm = 295; // Beats per minute
-int fps = 295; // Frame rate in hz
+int fps = 60; // Frame rate in hz
 int tps = 6; // Ticks per step
 int ticknumber = 0;
-double frametick = 0;
+double ticklength = 0;
 int song_grid_h;
 int song_grid_w;
+bool running = false;
+std::thread* timing_thread;
 
 // Tracker colors
 color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
@@ -98,35 +100,30 @@ double NoteFreq(int n)
     return 440.0 * pow(2.0, (n - 49.0) / 12.0);
 }
 
-// Beats-per-minute to Tick frequency
+// Beats-per-minute to Tick length in nanoseconds
 // b : bpm
-// f : fps
-double BpmToFrametick(int b, int f)
+double BpmToTicklength(int b)
 {
-    // 60 beats / 1 minute
-    // 60 beats * 4 steps per beat
-    // 60 beats / 60 seconds
-    // 1 beat / 1 second
-    // 6 ticks / 60 frames
-    // 0.1 tick / 1 frame
-    // 1 tick every 10 frames
-
-    double x = b * 4;
-    x /= 60.0; // bpm / 60 seconds = bps
-    x *= tps; // 6 ticks per beat
-    x /= f; // ticks per frame
-
-    return x;
+    // 295 BPM * 6 TPS * 4 Steps per Beat = 7080 ticks ber minute
+    // 7080 ticks per minute / 60 seconds = 118 ticks per second
+    // = 1 tick every 1/118th of a second
+    // TickLength = 1000000000 / 118 nano seconds
+    return 1000000000 / ((b * tps * 4) / 60);
 }
 
 // Execute tick
 void DoTick()
 {
     // TODO: Handle playing the music
-    // geptr->DrawTextString(5, 6, geptr->entity, std::to_string(synptr2->freq), { {255,255,255},{0,0,0} });
     if (ticknumber % tps == 0)
     {
+        synptr2->freq = NoteFreq(40);
         synptr2->volume = 0.25;
+    }
+    else
+    {
+        //synptr2->freq = NoteFreq(32);
+        //synptr2->volume = 0.25;
     }
     ticknumber++;
 }
@@ -221,6 +218,23 @@ void DrawSongUI(int off_x, int off_y, std::string type)
     }
 }
 
+// Handle tick hitting - This should be called from a separate thread
+void TrackTicks()
+{
+    // The next time is defined by starting at the current time
+    auto next = std::chrono::steady_clock::now();
+
+    while (running == true)
+    {
+        // Execute tick
+        DoTick();
+
+        // Sync timing
+        next += std::chrono::nanoseconds((int64_t)ticklength);
+        while (std::chrono::steady_clock::now() < next) { /* Spin in place until the clock hits the next tick */ }
+    }
+}
+
 // Master pre code
 void GameInit()
 {
@@ -247,13 +261,22 @@ void GameInit()
     synptr2 = new GravityEngine_Synth();
     synptr2->pulse_width_freq = 0.5f;
     synptr2->freq = 261.63;
-    synptr2->volume = 0.25;
+    synptr2->volume = 0;
     synptr2->volume_freq = -10;
     synptr2->waveform = square;
     geptr->BindSynthToChannel(synptr2, 0);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
+
+    // Get the length of the tick
+    ticklength = BpmToTicklength(bpm);
+
+    // Start tick tracker
+    running = true;
+    std::thread tt(TrackTicks);
+    tt.detach();
+    timing_thread = &tt;
 }
 
 // Master pre code
@@ -262,7 +285,7 @@ void PreGameLoop()
     // Show frame step calculation
     // geptr->DrawTextString(5, 5, geptr->entity, "TICKS PER FRAME: " + std::to_string(BpmToFrametick(bpm, fps)), { {255,0,255},{0,0,0} });
 
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed())
+    /*if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed())
     {
         bpm++;
         fps++;
@@ -275,11 +298,9 @@ void PreGameLoop()
         fps--;
         geptr->ChangeFramerate(fps);
         global_timer = 0;
-    }
+    }*/
 
-    frametick = BpmToFrametick(bpm, fps);
-
-    // Handle music clock
+    /*// Handle music clock
     global_timer += frametick;
     if (global_timer >= 1)
     {
@@ -288,7 +309,7 @@ void PreGameLoop()
             DoTick();
             global_timer -= 1;
         }
-    }
+    }*/
 }
 
 // Master post code
@@ -331,6 +352,7 @@ int main()
 
     // Cleanup all dynamically allocated data
     delete[] songgrid;
+    running = false;
 
     // Report success to host
     return 0;

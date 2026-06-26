@@ -311,9 +311,9 @@ private:
     int font_h; // Height of the font
     int64_t frame_time = 0; // The current time the last frame took
     int64_t frame_length; // The desired frame length
-    std::chrono::system_clock::time_point gobal_start_time; // When the game started
-    std::chrono::system_clock::time_point start_time = std::chrono::system_clock::now(); // Beginning of the frame
-    std::chrono::system_clock::time_point end_time = std::chrono::system_clock::now(); // End of the frame
+    std::chrono::steady_clock::time_point gobal_start_time; // When the game started
+    std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now(); // Beginning of the frame
+    std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now(); // End of the frame
     int current_fps = 0; // The games current frame rate
     const char* game_title; // The name of the game
     const char* game_id; // The game's id
@@ -1289,7 +1289,7 @@ private:
     {
         // Log timing
         (*frame_check)++;
-        double seconds = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now() - gobal_start_time).count() / 1000;
+        double seconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gobal_start_time).count() / 1000;
         while (seconds > (*second_check))
         {
             (*frames_per_second) = (*frame_check);
@@ -1317,9 +1317,9 @@ private:
         // Sync timing
         std::chrono::duration<int64_t, std::nano> delta(frame_length);
         auto next_frame = start_time + delta;
-        while (std::chrono::system_clock::now() < next_frame) { /* Spin in place until the clock hits the next frame */ }
+        while (std::chrono::steady_clock::now() < next_frame) { /* Spin in place until the clock hits the next frame */ }
         // Get the end of the frame time
-        end_time = std::chrono::system_clock::now();
+        end_time = next_frame;
         frame_time = (end_time - start_time).count();
     }
 
@@ -1329,7 +1329,7 @@ private:
     void GameLoop(void (*pre_loop_code)(), void (*post_loop_code)())
     {
         // Init timing stuff
-        gobal_start_time = std::chrono::system_clock::now();
+        gobal_start_time = std::chrono::steady_clock::now();
         long second_check = 1;
         long frames_per_second = 0;
         long frame_check;
@@ -1337,7 +1337,7 @@ private:
         while (game_running)
         {
             // Pre-timing
-            start_time = std::chrono::system_clock::now();
+            start_time = std::chrono::steady_clock::now();
 
             // Run pre-loop engine code
             SystemPreGameLoop();
