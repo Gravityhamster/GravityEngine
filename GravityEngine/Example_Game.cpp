@@ -2,38 +2,148 @@
 
 GravityEngine_Core* geptr;
 GravityEngine_Synth* synptr2;
-bool s2isplaying = 0;
-double global_timer = 1;
-bool was = 0;
-bool is = 0;
-int cursor_x;
-int cursor_y;
-int channelcount = 64;
-int rowcount = 0xffff;
-int bpm = 170; // Beats per minute
-int fps = 60; // Frame rate in hz
-int tps = 6; // Ticks per step
-int ticknumber = 0;
-double ticklength = 0;
-int song_grid_h;
-int song_grid_w;
-bool running = false;
-std::thread* timing_thread;
 
-// Tracker object concepts
-class chain { int arr[16]; }; // 1w x 16h - List of phrases
-class phrase { int arr[16][8]; }; // 8w x 16h - List of notes
-class instrument {}; // List of sound parameters
-class table { int arr[16][7]; }; // 7w x 16h - List of ticks for sound automation
+// Global variables --
+int ticknumber = 0; // Track tick progress
+int cursor_x; // X location of the user's cursor
+int cursor_y; // Y location of the user's cursor
+int offset_x; // X offset of the editor scroll
+int offset_y; // Y offset of the editor scroll
+const int channelcount = 64; // How many audio channels in the song
+int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
+int bpm = 170; // Beats per minute of the song
+int tps = 6; // Ticks per step of the song
+int fps = 60; // Frame rate in hz of the UI
+double ticklength = 0; // Nanoseconds per tick
+int song_grid_h; // Height of the Song Editor UI
+int song_grid_w; // Width of the Song Editor UI
+bool running = false; // Is the song currently playing?
+std::thread* timing_thread; // Thread to play ticks
 
-// Data structures
+// Tracker object concepts --
+
+// Chains - Lists of phrases
+class chain 
+{ 
+    public:
+        static const int length = 16;
+        int arr[length]; // 1w x 16h - List of phrases
+
+        // Create chain
+        chain() 
+        {
+            // Fill the chain with blanks
+            for (int x = 0; x < length; x++)
+                arr[x] = -1;
+        };
+
+        // Destruct chain
+        ~chain() {};
+};
+
+// Phrases - Lists of notes (i.e. 4/4 Measures)
+class phrase 
+{
+    public:
+        static const int len_x = 8;
+        static const int len_y = 16;
+        int arr[len_y][len_x]; // 8w x 16h - List of notes
+
+        // Create pharse
+        phrase()
+        {
+            // Fill the chain with blanks
+            for (int y = 0; y < len_y; y++)
+                for (int x = 0; x < len_x; x++)
+                    arr[y][x] = -1;
+        };
+
+        // Destruct phrase
+        ~phrase() {};
+}; 
+
+// Instruments - Note audio definitions
+class instrument 
+{
+    public:
+        // Audio parameters
+        ChannelType type;
+};
+
+// Tables - List of modulations for the currently playing instrument
+class table 
+{ 
+    public:
+        static const int len_x = 7;
+        static const int len_y = 16;
+        int arr[len_y][len_x]; // 7w x 16h - List of ticks for sound automation 
+
+        // Create pharse
+        table()
+        {
+            // Fill the chain with blanks
+            for (int y = 0; y < len_y; y++)
+                for (int x = 0; x < len_x; x++)
+                    arr[y][x] = -1;
+        };
+
+        // Destruct phrase
+        ~table() {};
+};
+
+// ChannelSequencer - Track position of the channel in time in the song
+class channelsequencer
+{
+    public:
+        int channelnumber = 0;
+        int chain_ptr = 0; // Int position of the channel in the song
+        int phrase_ptr = 0; // Int position of the channel in the chain
+        int step_ptr = 0; // Int position of the channel in the phrase
+        int tick_ptr = 0; // Int position of the channel in the table
+
+        void sub_step()
+        {
+            tick_ptr++;
+            tick_ptr = tick_ptr % table::len_y;
+        }
+
+        void step()
+        {
+            step_ptr++;
+            if (step_ptr % phrase::len_y == 0)
+            {
+                step_ptr = 0;
+                inc_phrase();
+            }
+        }
+
+    private:
+
+        void inc_phrase()
+        {
+            phrase_ptr++;
+            if (phrase_ptr % chain::length == 0)
+            {
+                phrase_ptr = 0;
+                inc_chain();
+            }
+        }
+
+        void inc_chain()
+        {
+            chain_ptr++;
+        }
+};
+
+// Data structures --
 int** songgrid; //[0xffff][64];
 std::vector<chain*> chainlist;
 std::vector<phrase*> phraselist;
 std::vector<instrument*> instrumentlist;
 std::vector<table*> tablelist;
+channelsequencer channellist[channelcount];
 
-// Tracker colors
+// Tracker colors --
 color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
 color header_text_a = { {255, 255, 255}, {0, 0, 100} };
 color primary_text_b = { {0, 0, 0}, {255, 255, 255} };
@@ -124,17 +234,37 @@ double BpmToTicklength(int b)
 }
 
 // Execute tick
+// ------------
+// This is the tick loop; All song execution should go inside this function
+// Table>Phrase>Chain>Song <- Per channel
 void DoTick()
 {
     if (ticknumber % tps == 0)
     {
-        // Do Step Code
+        // Do Step Code --
         synptr2->freq = NoteFreq(48);
-        synptr2->volume = 0.25;
+        synptr2->volume = 1;
+
+        // Step the channel sequencers
+        for (int i = 0; i < channelcount; i++)
+            channellist[i].step();
     }
     
-    // Do Sub-step Code
+    // Do Sub-step Code --
 
+    // Tick the channel sequencers
+    for (int i = 0; i < channelcount; i++)
+        channellist[i].sub_step();
+
+    // Debug : Draw channel 0's sequence
+    geptr->DrawTextString(10, 0, geptr->background,
+        std::to_string(channellist[0].chain_ptr) + " - " +
+        std::to_string(channellist[0].phrase_ptr) + " - " +
+        std::to_string(channellist[0].step_ptr) + " - " +
+        std::to_string(channellist[0].tick_ptr) + "    ",
+        primary_text_a);
+
+    // Increment global song position in ticks --
     ticknumber++;
 }
 
@@ -241,7 +371,23 @@ void TrackTicks()
 
         // Sync timing
         next += std::chrono::nanoseconds((int64_t)ticklength);
-        while (std::chrono::steady_clock::now() < next) { /* Spin in place until the clock hits the next tick */ }
+        while (true) 
+        { 
+            // Get the sleep time remaining
+            auto rem = next - std::chrono::steady_clock::now();
+
+            // Break if we have no more time
+            if (rem <= std::chrono::nanoseconds(0))
+                break;
+
+            // Should we sleep or nah?
+            if (rem > std::chrono::milliseconds(2))
+                SDL_Delay(1); // Sleep the thread to relieve the CPU
+            else
+            {
+                /* Spin in place until the clock hits the next frame */
+            }        
+        }
     }
 }
 
@@ -251,6 +397,10 @@ void GameInit()
     // Set song grid w and h
     song_grid_h = geptr->GetCanvasH() - 4;
     song_grid_w = (geptr->GetCanvasW() - 5) / 5;
+
+    // Init channel sequencers
+    for (int i = 0; i < channelcount; i++)
+        channellist->channelnumber = i;
 
     // Init song phrase list
     songgrid = new int* [rowcount];
@@ -273,7 +423,7 @@ void GameInit()
     synptr2->panning = 0.0f;
     synptr2->freq = 261.63;
     synptr2->volume = 0;
-    synptr2->volume_freq = -10;
+    synptr2->volume_freq = -50;
     synptr2->waveform = triangle;
     geptr->BindSynthToChannel(synptr2, 0);
 

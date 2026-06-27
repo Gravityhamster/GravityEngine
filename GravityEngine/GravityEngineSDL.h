@@ -1388,7 +1388,23 @@ private:
         // Sync timing
         std::chrono::duration<int64_t, std::nano> delta(frame_length);
         auto next_frame = start_time + delta;
-        while (std::chrono::steady_clock::now() < next_frame) { /* Spin in place until the clock hits the next frame */ }
+        while (true) 
+        { 
+            // The remaining time in the sync step
+            auto rem = next_frame - std::chrono::steady_clock::now();
+
+            // Break if we have no more time
+            if (rem <= std::chrono::nanoseconds(0))
+                break;
+
+            // Should we sleep or nah?
+            if (rem > std::chrono::milliseconds(2))
+                SDL_Delay(1); // Sleep the thread to relieve the CPU
+            else
+            {
+                /* Spin in place until the clock hits the next frame */
+            }
+        }
         // Get the end of the frame time
         end_time = next_frame;
         frame_time = (end_time - start_time).count();
