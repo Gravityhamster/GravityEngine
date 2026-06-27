@@ -57,19 +57,22 @@ struct GravityEngine_Filter
 // Template for synth objects
 class GravityEngine_Synth
 {
+
 public:
-    float freq = 50.0;
-    float pitch_freq = 0;
-    float volume_freq = 0;
+    std::atomic<float> freq = 50.0;
+    std::atomic<float> volume = 1;
+    std::atomic<float> panning = 0.5;
+    std::atomic<float> pulse_width = 0.5;
+
+    std::atomic<float> pitch_freq = 0;
+    std::atomic<float> volume_freq = 0;
+    std::atomic<float> pan_freq = 0.0;
+    std::atomic<float> pulse_width_freq = 0.0;
+
     // float vibrato_freq = 0; -- Not yet implemented
     // float vibrato_amp = 0; -- Not yet implemented
     int sample_frames;
     float* audio_data;
-    float volume = 1;
-    float panning = 0.5;
-    float pan_freq = 0.0;
-    float pulse_width = 0.5;
-    float pulse_width_freq = 0.0;
     SynthWaveForm waveform = sine;
 
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
@@ -88,8 +91,13 @@ public:
         SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
         if (spec->channels > 2)
             spec->channels = 2;
+        // Initialize a random number generator
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distrib(-10000, 10000);
         // Get buffer size
         int buffer_size = synth->sample_frames * spec->channels;
+        int buffer_bytes = buffer_size * sizeof(float);
         float* buffer = (float*)SDL_malloc(buffer_size * sizeof(float));
         float phase = 0.;
         float pan_phase = synth->panning;
@@ -99,7 +107,7 @@ public:
             // If the synth is paused, do not play the synth
             if ((*state) == paused)
             {
-                SDL_Delay(0);
+                SDL_Delay(1);
                 continue;
             }
             // Fill in audio data
@@ -109,7 +117,7 @@ public:
                 {
                     if (i % 2 == 0) // left
                     {
-                        float pan_volume = abs(synth->panning - 1.);
+                        float pan_volume = 1.f - synth->panning;
                         float one = phase * 2. * PI;
                         // Set sample based on wave form
                         float sample = 0.;
@@ -120,100 +128,89 @@ public:
                         else if (synth->waveform == pulse)
                             sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
                         else if (synth->waveform == sawtooth)
-                            sample = (pan_volume * synth->volume) * (one * 2 - 1);
+                            sample = (pan_volume * synth->volume) * (phase * 2.f - 1.f);
                         else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
                             sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
                         else if (synth->waveform == noise)
                         {
-                            // Initialize a random number generator
-                            std::random_device rd;
-                            std::mt19937 gen(rd());
-                            std::uniform_int_distribution<> distrib(-10000, 10000);
                             // Return value
-                            sample = distrib(gen) / 10000.;
+                            sample = (pan_volume * synth->volume) * (distrib(gen) / 10000.);
                         }
 
                         buffer[i] = sample;
-                    }
-                    if (i % 2 == 1) // right
-                    {
-                        float pan_volume = 1 - abs(synth->panning - 1.);
-                        float one = phase * 2. * PI;
-                        // Set sample based on wave form
-                        float sample = 0.;
-                        if (synth->waveform == sine)
-                            sample = (pan_volume * synth->volume) * sin(one);
-                        else if (synth->waveform == square)
-                            sample = (pan_volume * synth->volume) * (sin(one) > 0 ? 1 : -1);
-                        else if (synth->waveform == pulse)
-                            sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
-                        else if (synth->waveform == sawtooth)
-                            sample = (pan_volume * synth->volume) * (one * 2 - 1);
-                        else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
-                            sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                        else if (synth->waveform == noise)
-                        {
-                            // Initialize a random number generator
-                            std::random_device rd;
-                            std::mt19937 gen(rd());
-                            std::uniform_int_distribution<> distrib(-10000, 10000);
-                            // Return value
-                            sample = distrib(gen) / 10000.;
-                        }
-
-                        buffer[i] = sample;
-                        // Step
-                        phase += synth->freq / spec->freq;
-                        if (phase > 1.)
-                        {
-                            phase -= 1.;
-                        }
-                        // Step panning
-                        if (synth->pan_freq > 0)
-                        {
-                            pan_phase += synth->pan_freq / spec->freq;
-                            synth->panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
-                            if (pan_phase > 1.)
-                                pan_phase -= 1.;
-                        }
-                        // Step pulse width
-                        if (synth->pulse_width_freq > 0)
-                        {
-                            pw_phase += synth->pulse_width_freq / spec->freq;
-                            synth->pulse_width = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
-                            if (pw_phase > 1.)
-                                pw_phase -= 1.;
-                        }
-                        // Step note
-                        if (synth->pitch_freq != 0)
-                        {
-                            double amount = synth->pitch_freq / spec->freq;
-                            synth->freq += amount;
-                        }
-                        // Step volumne
-                        if (synth->volume_freq != 0)
-                        {
-                            double amount = synth->volume_freq / spec->freq;
-                            synth->volume += amount;
-                        }
-                        if (synth->volume < 0)
-                            synth->volume = 0;
                     }
                 }
-                else
+
+                if (i % 2 == 1) // right
                 {
-                    float one = phase * 2. * PI;
-                    float sample = synth->volume * sin(one);
+                    float pan_volume;
+                    if (spec->channels == 2)
+                        pan_volume = synth->panning;
+                    else
+                        pan_volume = 1.f - abs(0.5f - 1.f);
+                    float one = phase * 2.f * PI;
+                    // Set sample based on wave form
+                    float sample = 0.;
+                    if (synth->waveform == sine)
+                        sample = (pan_volume * synth->volume) * sin(one);
+                    else if (synth->waveform == square)
+                        sample = (pan_volume * synth->volume) * (sin(one) > 0 ? 1 : -1);
+                    else if (synth->waveform == pulse)
+                        sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
+                    else if (synth->waveform == sawtooth)
+                        sample = (pan_volume * synth->volume) * (phase * 2.f - 1.f);
+                    else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
+                        sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
+                    else if (synth->waveform == noise)
+                    {
+                        // Return value
+                        sample = (pan_volume * synth->volume) * (distrib(gen) / 10000.);
+                    }
+
                     buffer[i] = sample;
+                    // Step
+                    phase += synth->freq / spec->freq;
                     if (phase > 1.)
+                    {
                         phase -= 1.;
+                    }
+                    // Step panning
+                    if (synth->pan_freq > 0)
+                    {
+                        pan_phase += synth->pan_freq / spec->freq;
+                        synth->panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
+                        if (pan_phase > 1.)
+                            pan_phase -= 1.;
+                    }
+                    // Step pulse width
+                    if (synth->pulse_width_freq > 0)
+                    {
+                        pw_phase += synth->pulse_width_freq / spec->freq;
+                        synth->pulse_width = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
+                        if (pw_phase > 1.)
+                            pw_phase -= 1.;
+                    }
+                    // Step note
+                    if (synth->pitch_freq != 0)
+                    {
+                        double amount = synth->pitch_freq / spec->freq;
+                        synth->freq += amount;
+                    }
+                    // Step volumne
+                    if (synth->volume_freq != 0)
+                    {
+                        double amount = synth->volume_freq / spec->freq;
+                        synth->volume += amount;
+                    }
+                    if (synth->volume < 0)
+                        synth->volume = 0;
                 }
             }
             // Push buffer to stream
-            SDL_PutAudioStreamData(stream, buffer, buffer_size * sizeof(float));
+            SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
             // Yield CPU and prevent overfilling the audio buffer - Note; this came from Copilot, and I added the part of the condition that handles play and pause
-            while (SDL_GetAudioStreamAvailable(stream) > buffer_size && ((*state) == playing || (*state) == paused)) {
-                SDL_Delay(0); // yield without adding latency 
+            while (SDL_GetAudioStreamAvailable(stream) > buffer_bytes && ((*state) == playing || (*state) == paused)) {
+                SDL_Delay(1); // yield without adding latency 
             }
         }
         // End sequence

@@ -258,15 +258,15 @@ void GameInit()
     // Test: Init synth and play it
     synptr2 = new GravityEngine_Synth();
     synptr2->pulse_width_freq = 0.5f;
+    synptr2->panning = 0.0f;
     synptr2->freq = 261.63;
     synptr2->volume = 0;
     synptr2->volume_freq = -10;
-    synptr2->waveform = square;
+    synptr2->waveform = triangle;
     geptr->BindSynthToChannel(synptr2, 0);
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
-    geptr->PlaySoundOnChannel(i, 1, false);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
@@ -284,6 +284,17 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
+    if (geptr->GetKeyState(SDL_SCANCODE_SPACE))
+    {
+        if (geptr->GetChannelState(1) == stopped)
+        {
+            geptr->PlaySoundOnChannel(0, 1, true);
+        }
+    }
+    else
+    {
+        geptr->StopChannel(1);
+    }
 }
 
 // Master post code

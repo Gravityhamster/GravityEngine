@@ -127,6 +127,7 @@ private:
         bool synth_playing = false;
         bool file_playing = false;
         bool file_first_loop = false;
+        long audio_file_read_offset = 0;
 
     public:
 
@@ -146,10 +147,28 @@ private:
         // Feed the looping audio for the sound file
         // GravityEngine_AudioChannel* ac : Pointer to the audio channel to loop
         // bool* is_looping : Pointer to the variable to determine if the channel is still looping
-        static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, bool* file_playing)
+        static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, bool* file_playing, SDL_AudioSpec audio_spec, SDL_AudioDeviceID audio_device_id)
         {
-            while (ac->GetType() == file && ac->GetState() == playing)
-                ac->FeedAudioFileStream();
+
+            // Get sample frames
+            int sample_frames;
+            SDL_GetAudioDeviceFormat(audio_device_id, &audio_spec, &sample_frames);
+            if (audio_spec.channels > 2)
+                audio_spec.channels = 2;
+            // Get buffer size
+            int bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8;
+            int buffer_size = sample_frames * audio_spec.channels * bytes_per_sample;
+
+            while (ac->GetType() == file && (ac->GetState() == playing || ac->GetState() == paused))
+            {
+                // If the synth is paused, do not play the synth
+                if (ac->GetState() == paused)
+                {
+                    SDL_Delay(0);
+                    continue;
+                }
+                ac->FeedAudioFileStream(buffer_size);
+            }
             (*file_playing) = false;
         }
 
@@ -167,7 +186,7 @@ private:
             file_first_loop = true;
             // Start loop thread
             file_playing = true;
-            std::thread lt(GravityEngine_AudioChannel::FeedAudioFileStreamAsync, this, &file_playing);
+            std::thread lt(GravityEngine_AudioChannel::FeedAudioFileStreamAsync, this, &file_playing, audio_spec, audio_device_id);
             lt.detach();
             file_thread = &lt;
             // Attach the audio stream to the channel's audio device
@@ -227,6 +246,8 @@ private:
             SDL_ClearAudioStream(sdl_audio_stream);
             // If this channel was set to loop, set it to stop looping
             looping = false;
+            // Set the audio position back to 0
+            audio_file_read_offset = 0;
         }
 
         // Pause audio
@@ -255,37 +276,38 @@ private:
         }
 
         // Feed the channel with loop audio
-        void FeedAudioFileStream()
+        void FeedAudioFileStream(int buffer_size)
         {
-            // Is this channel truly supposed to loop?
-            if (state == playing)
+            // Only get data while it's needed
+            while (SDL_GetAudioStreamQueued(sdl_audio_stream) < buffer_size)
             {
-                if (looping == true)
+
+                // Get the remaining amount of audio data
+                int remaining = currently_playing_audio->size() - audio_file_read_offset;
+                // Either get the next chunk or get the rest of the audio file
+                int to_write = std::min(buffer_size, remaining);
+
+                // Insert the audio data into the audio stream
+                SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data() + audio_file_read_offset, to_write);
+
+                // Increment the file read offset
+                audio_file_read_offset += to_write;
+
+                // Have we surpassed the audio file input?
+                if (audio_file_read_offset >= currently_playing_audio->size())
                 {
-                    auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
-                    auto size_of_sample = currently_playing_audio->size() * sizeof(Uint8);
-                    // Do not feed if the stream has plenty enough data. 
-                    // Only read if the data in the stream is less than the size of the sample.
-                    if (size_current < size_of_sample)
-                        // Feed the sdl_audio_stream
-                        SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
-                }
-                else
-                {
-                    // Should we feed the stream?
-                    if (file_first_loop == true)
+                    // Are we supposed loop the audio or quit at the end?
+                    if (looping)
+                        audio_file_read_offset = 0; // Go back to start
+                    else
                     {
-                        // Feed the sdl_audio_stream
-                        SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data(), currently_playing_audio->size());
-                        file_first_loop = false;
+                        StopPlayback(); // End the channel audio
+                        break;
                     }
-                    // What is the size of the stream right now?
-                    auto size_current = SDL_GetAudioStreamQueued(sdl_audio_stream);
-                    // If the size 
-                    if (size_current <= 0)
-                        StopPlayback();
                 }
+
             }
+            SDL_Delay(1);
         }
 
         // Get state of channel
@@ -1080,6 +1102,13 @@ public:
     void StopChannel(int channel)
     {
         audio_channels[channel]->StopPlayback();
+    }
+
+    // Get the state of the given channel
+    // int channel : Integer channel index
+    ChannelStates GetChannelState(int channel)
+    {
+        return audio_channels[channel]->GetState();
     }
 
     // Cancel channel's looping status
