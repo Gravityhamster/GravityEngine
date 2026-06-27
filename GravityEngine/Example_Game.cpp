@@ -114,15 +114,15 @@ double BpmToTicklength(int b)
 // Execute tick
 void DoTick()
 {
-    // Offstep tick
     if (ticknumber % tps == 0)
     {
-        synptr2->freq = NoteFreq(40);
+        // Do Step Code
+        synptr2->freq = NoteFreq(48);
         synptr2->volume = 0.25;
     }
-    else
-    {
-    }
+    
+    // Do Sub-step Code
+
     ticknumber++;
 }
 
@@ -267,6 +267,7 @@ void GameInit()
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
+    geptr->PlaySoundOnChannel(0, 1, true);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
@@ -284,17 +285,6 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
-    if (geptr->GetKeyState(SDL_SCANCODE_SPACE))
-    {
-        if (geptr->GetChannelState(1) == stopped)
-        {
-            geptr->PlaySoundOnChannel(0, 1, true);
-        }
-    }
-    else
-    {
-        geptr->StopChannel(1);
-    }
 }
 
 // Master post code

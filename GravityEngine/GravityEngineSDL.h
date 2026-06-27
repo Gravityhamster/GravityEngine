@@ -122,18 +122,18 @@ private:
         ChannelType type = file; // Sound type currently playing
         std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
         bool looping = false; // Loop audio
-        std::thread* synth_thread;
-        std::thread* file_thread;
-        bool synth_playing = false;
-        bool file_playing = false;
-        bool file_first_loop = false;
-        long audio_file_read_offset = 0;
+        std::thread* synth_thread; // CPU thread to run the synth audio generation on
+        std::thread* file_thread; // CPU thread to run the file audio load on
+        bool synth_playing = false; // Flag if synth audio is playing
+        bool file_playing = false; // Flag if file audio is playing
+        bool file_first_loop = false; // First loop of the audio file
+        long audio_file_read_offset = 0; // Read pointer for the audio file load
 
     public:
-
         // -= Methods =-
 
         // Construct audio
+        // SDL_AudioSpec audio_spec : Audio specification for the game engine
         GravityEngine_AudioChannel(SDL_AudioSpec audio_spec)
         {
             // Open the audio device for playback
@@ -276,9 +276,12 @@ private:
         }
 
         // Feed the channel with loop audio
+        // int buffer_size : Size of the channel's audio buffer
         void FeedAudioFileStream(int buffer_size)
         {
-            // Only get data while it's needed
+            // Only get data while it's needed -
+            // Copilot suggested looping while the queue needs data instead of overfilling and 
+            // busy waiting for the audio stream to have less data than the buffer
             while (SDL_GetAudioStreamQueued(sdl_audio_stream) < buffer_size)
             {
 
@@ -287,8 +290,12 @@ private:
                 // Either get the next chunk or get the rest of the audio file
                 int to_write = std::min(buffer_size, remaining);
 
-                // Insert the audio data into the audio stream
-                SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data() + audio_file_read_offset, to_write);
+                // There is no need to write if nothing is going to be written
+                if (to_write >= 0)
+                {
+                    // Insert the audio data into the audio stream
+                    SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data() + audio_file_read_offset, to_write);
+                }
 
                 // Increment the file read offset
                 audio_file_read_offset += to_write;
@@ -301,13 +308,13 @@ private:
                         audio_file_read_offset = 0; // Go back to start
                     else
                     {
-                        StopPlayback(); // End the channel audio
+                        if (SDL_GetAudioStreamAvailable(sdl_audio_stream) <= 0) StopPlayback(); // End the channel audio
                         break;
                     }
                 }
 
             }
-            SDL_Delay(1);
+            SDL_Delay(1); // Yield to CPU
         }
 
         // Get state of channel
@@ -322,7 +329,7 @@ private:
             return type;
         }
 
-        // Destruct audio
+        // Destruct audio channel
         ~GravityEngine_AudioChannel()
         {
             // Stop the playback
