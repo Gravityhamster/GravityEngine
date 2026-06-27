@@ -10,8 +10,7 @@ int cursor_x;
 int cursor_y;
 int channelcount = 64;
 int rowcount = 0xffff;
-int** songgrid; //[0xffff][64];
-int bpm = 295; // Beats per minute
+int bpm = 170; // Beats per minute
 int fps = 60; // Frame rate in hz
 int tps = 6; // Ticks per step
 int ticknumber = 0;
@@ -20,6 +19,19 @@ int song_grid_h;
 int song_grid_w;
 bool running = false;
 std::thread* timing_thread;
+
+// Tracker object concepts
+class chain { int arr[16]; }; // 1w x 16h - List of phrases
+class phrase { int arr[16][8]; }; // 8w x 16h - List of notes
+class instrument {}; // List of sound parameters
+class table { int arr[16][7]; }; // 7w x 16h - List of ticks for sound automation
+
+// Data structures
+int** songgrid; //[0xffff][64];
+std::vector<chain*> chainlist;
+std::vector<phrase*> phraselist;
+std::vector<instrument*> instrumentlist;
+std::vector<table*> tablelist;
 
 // Tracker colors
 color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
@@ -31,13 +43,13 @@ color body_text_b = { {0, 0, 0}, {255, 255, 255} };
 // Song editor menu
 enum menu
 {
-    song,
-    chain,
-    phrase,
-    instrument
+    m_song,
+    m_chain,
+    m_phrase,
+    m_instrument
 };
 
-menu state = song;
+menu state = m_song;
 
 // Object to handle all inputs
 class input : public virtual GravityEngine_Object
@@ -291,7 +303,7 @@ void PreGameLoop()
 void PostGameLoop()
 {
     // Handle input for the song menu
-    if (state == song)
+    if (state == m_song)
     {
         int wcx = cursor_x;
         int wcy = cursor_y;
