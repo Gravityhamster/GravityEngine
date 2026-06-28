@@ -381,7 +381,7 @@ void TrackTicks()
                 break;
 
             // Should we sleep or nah?
-            if (rem > std::chrono::milliseconds(2))
+            if (rem > std::chrono::milliseconds(5))
                 SDL_Delay(1); // Sleep the thread to relieve the CPU
             else
             {
@@ -420,7 +420,7 @@ void GameInit()
     // Test: Init synth and play it
     synptr2 = new GravityEngine_Synth();
     synptr2->pulse_width_freq = 0.5f;
-    synptr2->panning = 0.0f;
+    synptr2->panning = 0.5f;
     synptr2->freq = 261.63;
     synptr2->volume = 0;
     synptr2->volume_freq = -50;

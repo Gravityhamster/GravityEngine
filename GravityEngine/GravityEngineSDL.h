@@ -1398,7 +1398,7 @@ private:
                 break;
 
             // Should we sleep or nah?
-            if (rem > std::chrono::milliseconds(2))
+            if (rem > std::chrono::milliseconds(5))
                 SDL_Delay(1); // Sleep the thread to relieve the CPU
             else
             {
