@@ -17,3 +17,5 @@ GravityTracker is an LSDJ inspired music tracker for PC made in C++ in the Gravi
 - Saving and loading
 - Controller input
 - Linux port? (Or proton compatibility)
+- Consume all GravityEngine modifications back into the character engine branch
+  - Any applicable audio and timing related changes should be consumed into the pixel engine branch
