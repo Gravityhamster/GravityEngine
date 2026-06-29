@@ -3,12 +3,23 @@
 GravityEngine_Core* geptr;
 GravityEngine_Synth* synptr2;
 
+// Editor held modifier
+enum edit_mod
+{
+    left,
+    right,
+    center
+};
+
 // Global variables --
 int ticknumber = 0; // Track tick progress
 int cursor_x; // X location of the user's cursor
 int cursor_y; // Y location of the user's cursor
 int offset_x; // X offset of the editor scroll
 int offset_y; // Y offset of the editor scroll
+int inputholdtimer = 0; // The timer for checking if an input should be considered held-down
+int inputholdthreshold = 15; // Frames til in input should start repeating
+int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
 const int channelcount = 64; // How many audio channels in the song
 int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
 int bpm = 170; // Beats per minute of the song
@@ -19,6 +30,27 @@ int song_grid_h; // Height of the Song Editor UI
 int song_grid_w; // Width of the Song Editor UI
 bool running = false; // Is the song currently playing?
 std::thread* timing_thread; // Thread to play ticks
+edit_mod leftrightcenter = center;
+int copied_chain = -1;
+
+// Find string f in s
+bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
+
+// Remove char from string
+std::string str_remove(std::string s, char c)
+{
+    // https://www.geeksforgeeks.org/dsa/remove-all-occurrences-of-a-character-in-a-string/
+    int j = 0; // Size variable
+    for (int i = 0; i < s.size(); i++)
+    {
+        // Move chars to keep down to the front
+        if (s[i] != c)
+            s[j++] = s[i];
+    }
+    // Truncate to size
+    s.resize(j);
+    return s;
+}
 
 // Tracker object concepts --
 
@@ -95,24 +127,31 @@ class table
 class channelsequencer
 {
     public:
-        int channelnumber = 0;
+        int channelnumber = 0; // Which channel is this sequencer assigned to?
         int chain_ptr = 0; // Int position of the channel in the song
         int phrase_ptr = 0; // Int position of the channel in the chain
         int step_ptr = 0; // Int position of the channel in the phrase
         int tick_ptr = 0; // Int position of the channel in the table
 
+        // Count tick
         void sub_step()
         {
+            // Increment tick in table
             tick_ptr++;
+            // Go back to the 0th tick if we have reached the end of the table
             tick_ptr = tick_ptr % table::len_y;
         }
 
+        // Count step
         void step()
         {
+            // Increment step in phrase
             step_ptr++;
+            // If the step ptr has reached the end of the phrase, go back to the 0th step
             if (step_ptr % phrase::len_y == 0)
             {
                 step_ptr = 0;
+                // Increment the phrase pointer in the chain
                 inc_phrase();
             }
         }
@@ -121,17 +160,25 @@ class channelsequencer
 
         void inc_phrase()
         {
+            // Increment phrase in chain
             phrase_ptr++;
             if (phrase_ptr % chain::length == 0)
             {
                 phrase_ptr = 0;
+                // Increment the chain pointer in the song
                 inc_chain();
             }
         }
 
         void inc_chain()
         {
+            // Increment chain in song
             chain_ptr++;
+            // If the chain ptr has reached the end of the song, go back to the 0th chain
+            if (chain_ptr % rowcount == 0)
+            {
+                chain_ptr = 0;
+            }
         }
 };
 
@@ -164,33 +211,124 @@ menu state = m_song;
 // Object to handle all inputs
 class input : public virtual GravityEngine_Object
 {
+    public:
+
+        // Keycodes for inputs --
+
+        // Keycode for Up button
+        const SDL_Scancode up = SDL_SCANCODE_UP;
+
+        // Keycode for Down button
+        const SDL_Scancode down = SDL_SCANCODE_DOWN;
+
+        // Keycode for Left button
+        const SDL_Scancode left = SDL_SCANCODE_LEFT;
+
+        // Keycode for Right button
+        const SDL_Scancode right = SDL_SCANCODE_RIGHT;
+
+        // Key code for A button
+        const SDL_Scancode a = SDL_SCANCODE_Z;
+
+        // Key code for B button
+        const SDL_Scancode b = SDL_SCANCODE_X;
+
+        // Key code for Start button
+        const SDL_Scancode start = SDL_SCANCODE_RETURN;
+
+        // Key code for Select button
+        const SDL_Scancode select = SDL_SCANCODE_SPACE;
+
+        // Key code for Shift button
+        const SDL_Scancode shift = SDL_SCANCODE_LSHIFT;
+
+        // Get the last keycode pressed
+        SDL_Scancode last_pressed = SDL_SCANCODE_UNKNOWN;
+        bool doubleclick = false;
+        std::string presscode = "0";
+        std::string lastpresscode = "0";
+
     private:
-        SDL_Scancode up = SDL_SCANCODE_UP;
-        bool was_up = false;
-        bool is_up = false;
-        SDL_Scancode down = SDL_SCANCODE_DOWN;
-        bool was_down = false;
-        bool is_down = false;
-        SDL_Scancode left = SDL_SCANCODE_LEFT;
-        bool was_left = false;
-        bool is_left = false;
-        SDL_Scancode right = SDL_SCANCODE_RIGHT;
-        bool was_right = false;
-        bool is_right = false;
+
+        // State variables for keys
+        bool was_up = false; // Button was pressed last frame
+        bool is_up = false; // Button is pressed this frame
+
+        bool was_down = false; // Button was pressed last frame
+        bool is_down = false; // Button is pressed this frame
+
+        bool was_left = false; // Button was pressed last frame
+        bool is_left = false; // Button is pressed this frame
+
+        bool was_right = false; // Button was pressed last frame
+        bool is_right = false; // Button is pressed this frame
+
+        bool was_a = false; // Button was pressed last frame
+        bool is_a = false; // Button is pressed this frame
+
+        bool was_b = false; // Button was pressed last frame
+        bool is_b = false; // Button is pressed this frame
+
+        bool was_start = false; // Button was pressed last frame
+        bool is_start = false; // Button is pressed this frame
+
+        bool was_select = false; // Button was pressed last frame
+        bool is_select = false; // Button is pressed this frame
+
+        bool was_shift = false; // Button was pressed last frame
+        bool is_shift = false; // Button is pressed this frame
 
 	public:
         input() {};
 		~input() {};
 		void begin_step() 
         {
-            was_up = is_up;
-            is_up = geptr->GetKeyState(up);
-            was_down = is_down;
-            is_down = geptr->GetKeyState(down);
-            was_left = is_left;
-            is_left = geptr->GetKeyState(left);
-            was_right = is_right;
-            is_right = geptr->GetKeyState(right);
+            was_up = is_up; // Save last frame
+            is_up = geptr->GetKeyState(up); // Get this frame
+            was_down = is_down; // Save last frame
+            is_down = geptr->GetKeyState(down); // Get this frame
+            was_left = is_left; // Save last frame
+            is_left = geptr->GetKeyState(left); // Get this frame
+            was_right = is_right; // Save last frame
+            is_right = geptr->GetKeyState(right); // Get this frame
+            was_a = is_a; // Save last frame
+            is_a = geptr->GetKeyState(a); // Get this frame
+            was_b = is_b; // Save last frame
+            is_b = geptr->GetKeyState(b); // Get this frame
+            was_start = is_start; // Save last frame
+            is_start = geptr->GetKeyState(start); // Get this frame
+            was_select = is_select; // Save last frame
+            is_select = geptr->GetKeyState(select); // Get this frame
+            was_shift = is_shift; // Save last frame
+            is_shift = geptr->GetKeyState(shift); // Get this frame
+
+            // Handle all double taps
+            std::string temppresscode = 
+                std::to_string(is_up && !was_up) +
+                std::to_string(is_down && !was_down) +
+                std::to_string(is_left && !was_left) +
+                std::to_string(is_right && !was_right) +
+                std::to_string(is_a && !was_a) +
+                std::to_string(is_b && !was_b) +
+                std::to_string(is_start && !was_start) +
+                std::to_string(is_select && !was_select) +
+                std::to_string(is_shift && !was_shift);
+            // Keep a history of inputs
+            if (std::stoi(temppresscode) != 0)
+            {
+                lastpresscode = presscode;
+                presscode = temppresscode;
+            }
+            temppresscode = presscode;
+            // Truncate the presscode down to 1s if the value contains 1s
+            if (str_contains(temppresscode, "1")) temppresscode = str_remove(temppresscode, '0');
+            // If the history is equal and the total number of inputs == 1, then a doubleclick has occured
+            if (lastpresscode == presscode && std::stoi(temppresscode) == 1)
+                doubleclick = true;
+            else
+                doubleclick = false;
+            // // Draw the input buffer
+            // geptr->DrawTextString(10, 1, geptr->background, lastpresscode + " - " + presscode + " - " + std::to_string(doubleclick), primary_text_a);
         };
 		void step() {};
 		void end_step() {};
@@ -210,6 +348,26 @@ class input : public virtual GravityEngine_Object
         bool is_right_pressed() { return is_right && !was_right; }
         bool is_right_down() { return is_right; }
         bool was_right_pressed() { return was_right; }
+
+        bool is_a_pressed() { return is_a && !was_a; }
+        bool is_a_down() { return is_a; }
+        bool was_a_pressed() { return was_a; }
+
+        bool is_b_pressed() { return is_b && !was_b; }
+        bool is_b_down() { return is_b; }
+        bool was_b_pressed() { return was_b; }
+
+        bool is_start_pressed() { return is_start && !was_start; }
+        bool is_start_down() { return is_start; }
+        bool was_start_pressed() { return was_start; }
+
+        bool is_select_pressed() { return is_select && !was_select; }
+        bool is_select_down() { return is_select; }
+        bool was_select_pressed() { return was_select; }
+
+        bool is_shift_pressed() { return is_shift && !was_shift; }
+        bool is_shift_down() { return is_shift; }
+        bool was_shift_pressed() { return was_shift; }
 };
 
 // Input getter
@@ -267,9 +425,6 @@ void DoTick()
     // Increment global song position in ticks --
     ticknumber++;
 }
-
-// Find string f in s
-bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
 
 // Convert i to hex string
 std::string IntToHexString(int i)
@@ -342,16 +497,38 @@ void DrawSongUI(int off_x, int off_y, std::string type)
         {
             for (int x = 0; x < w && x + off_x < channelcount; x++)
             {
+                // Is the cursor currently hovering this cell? Seet color accordingly
+                color thiscolor = (x == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
+                // Get the current song grid value
                 int chain = songgrid[y + off_y][x + off_x];
                 if (chain == -1)
                 {
-                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->background, "----", primary_text_a);
+                    // Draw null chain
+                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->background, "----", thiscolor);
                 }
                 else
                 {
+                    // Draw chain number
                     auto outstr = IntToHexString(chain);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->background, outstr, primary_text_a);
+                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->background, outstr, thiscolor);
+                }
+
+                // Is a modifier key held on the selected cell?
+                if (x == cursor_x && y == cursor_y)
+                {
+                    // Modify right part of the number
+                    if (leftrightcenter == left)
+                    {
+                        geptr->DrawSetColor(5 + x * 5, 3 + y, geptr->background, primary_text_a);
+                        geptr->DrawSetColor(5 + x * 5 + 1, 3 + y, geptr->background, primary_text_a);
+                    }
+                    // Modify left part of the number
+                    else if (leftrightcenter == right)
+                    {
+                        geptr->DrawSetColor(5 + x * 5 + 2, 3 + y, geptr->background, primary_text_a);
+                        geptr->DrawSetColor(5 + x * 5 + 3, 3 + y, geptr->background, primary_text_a);
+                    }
                 }
             }
         }
@@ -391,6 +568,215 @@ void TrackTicks()
     }
 }
 
+// Handle repeating movements
+void HandleMovementRepeaters()
+{
+    // Reset movement repeaters
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed())
+        inputholdtimer = 0;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed())
+        inputholdtimer = 0;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed())
+        inputholdtimer = 0;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed())
+        inputholdtimer = 0;
+
+    // Increment hold timer
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_down())
+        inputholdtimer++;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_down())
+        inputholdtimer++;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_down())
+        inputholdtimer++;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_down())
+        inputholdtimer++;
+    else
+        inputholdtimer = 0;
+}
+
+// Insert at arbitrary location
+template <typename T> void
+InsertAt(std::vector<T*>* vec, int index, T* ptr)
+{
+    // Fill with nulls up to index
+    for (int i = 0; i < index; i++)
+    {
+        if (vec->size() <= i)
+            vec->insert(vec->begin() + i, nullptr);
+    }
+
+    // Insert pointer at index
+    vec->insert(vec->begin() + index, ptr);
+}
+
+// Get at arbitrary location
+template <typename T> T*
+GetAt(std::vector<T*>* vec, int index)
+{
+    // Does this index exist yet in the vec
+    if (vec->size() <= index)
+        return nullptr;
+    // Yes? Then return the value 
+    else
+        return (*vec)[index];
+}
+
+// Get next empty index
+template <typename T> int
+GetNextEmpty(std::vector<T*>* vec)
+{
+    int index = 0;
+    // Iterate through, trying to find the next null or the end of the vector
+    while (index < vec->size())
+    {
+        // If this is an empty cell, return this index
+        if ((*vec)[index] == nullptr)
+            return index;
+        // Inc index
+        index++;
+    }
+    // Returnt he last index
+    return index;
+}
+
+// Handle movement
+void EditorControl()
+{
+    // Handle input for the song menu
+    if (state == m_song)
+    {
+        // Set checker variables
+        int goright = 0;
+        int goleft = 0;
+        int goup = 0;
+        int godown = 0;
+
+        // Move the cursor
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed() ||
+            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_down() &&
+                (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+            goright = 1;
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed() ||
+            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_down() && 
+            (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+            goleft = 1;
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed() ||
+            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_down() &&
+                (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+            goup = 1;
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed() ||
+            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_down() &&
+                (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+            godown = 1;
+        
+        // Modify value
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+        {
+            // If the songgrid value is unfilled, insert 0
+            if (songgrid[cursor_y + offset_y][cursor_x + offset_x] == -1)
+            {
+                if (copied_chain == -1)
+                {
+                    // Set UI reference to Hex0
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0x0000;
+                    // If this chain doesn't exist yet, insert it
+                    if (GetAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x]) == nullptr)
+                        InsertAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x], new chain());
+                }
+                else
+                {
+                    // Set UI reference to copied chain
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = copied_chain;
+                }
+            }
+            // If double click, add a new chain
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+            {
+                // Set UI reference to the next empty
+                songgrid[cursor_y + offset_y][cursor_x + offset_x] = GetNextEmpty(&chainlist);
+                // Add the new chain
+                InsertAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x], new chain());
+                // Copy to clipboard
+                copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+            }
+            else
+            {
+                // Copy to clipboard
+                copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+            }
+        }
+
+        // Edit part
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down() &&
+            dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+            leftrightcenter = right;
+        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            leftrightcenter = left;
+        else
+            leftrightcenter = center;
+
+        // Add the flags given the context --
+
+        // Editing
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        {
+            // Mod the left two digits
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+            {
+                if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x1000;
+                if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x1000;
+                if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0100;
+                if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0100;
+            }
+            // Mod the right two digits
+            else
+            {
+                if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0010;
+                if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0010;
+                if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0001;
+                if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0001;
+            }
+            
+            // Wrap the cell between 0x0000 and 0xFFFF
+            if (songgrid[cursor_y + offset_y][cursor_x + offset_x] < 0)
+                songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0xFFFF + (songgrid[cursor_y + offset_y][cursor_x + offset_x] + 1);
+            if (songgrid[cursor_y + offset_y][cursor_x + offset_x] > 0xFFFF)
+                songgrid[cursor_y + offset_y][cursor_x + offset_x] = (songgrid[cursor_y + offset_y][cursor_x + offset_x]-1) - 0xFFFF;
+
+            // Copy to clipboard
+            copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+        }
+        // Moving
+        else
+        {
+            cursor_x += goright - goleft;
+            cursor_y += godown - goup;
+        }
+
+        // Handle repeating movement from hold presses
+        HandleMovementRepeaters();
+
+        // Move the page
+        if (cursor_y > song_grid_h - 1)
+            offset_y += 1;
+        if (cursor_x > song_grid_w - 1)
+            offset_x += 1;
+        if (cursor_y < 0)
+            offset_y -= 1;
+        if (cursor_x < 0)
+            offset_x -= 1;
+
+        // Clamp the cursor and offsets
+        cursor_x = SDL_clamp(cursor_x, 0, song_grid_w-1);
+        cursor_y = SDL_clamp(cursor_y, 0, song_grid_h-1);
+        offset_x = SDL_clamp(offset_x, 0, channelcount-song_grid_w);
+        offset_y = SDL_clamp(offset_y, 0, rowcount-song_grid_h);
+
+        // Do we want to update the UI?
+        DrawSongUI(offset_x, offset_y, "all");
+    }
+}
+
 // Master pre code
 void GameInit()
 {
@@ -425,11 +811,11 @@ void GameInit()
     synptr2->volume = 0;
     synptr2->volume_freq = -50;
     synptr2->waveform = triangle;
-    geptr->BindSynthToChannel(synptr2, 0);
+    // geptr->BindSynthToChannel(synptr2, 0);
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
-    geptr->PlaySoundOnChannel(0, 1, true);
+    // geptr->PlaySoundOnChannel(0, 1, true);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
@@ -447,32 +833,13 @@ void GameInit()
 // Master pre code
 void PreGameLoop()
 {
+    // Get input and apply to the editor as appropriate
+    EditorControl();
 }
 
 // Master post code
 void PostGameLoop()
 {
-    // Handle input for the song menu
-    if (state == m_song)
-    {
-        int wcx = cursor_x;
-        int wcy = cursor_y;
-
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed())
-            cursor_x++;
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed())
-            cursor_x--;
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed())
-            cursor_y--;
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed())
-            cursor_y++;
-
-        cursor_x = SDL_clamp(cursor_x, 0, channelcount);
-        cursor_y = SDL_clamp(cursor_y, 0, rowcount);
-
-        if (cursor_x != wcx || cursor_y != wcy)
-            DrawSongUI(cursor_x, cursor_y, "all");
-    }
 }
 
 int main()
@@ -489,6 +856,15 @@ int main()
 
     // Cleanup all dynamically allocated data
     delete[] songgrid;
+    // Free all lists
+    for (auto o : chainlist)
+        delete o;
+    for (auto o : phraselist)
+        delete o;
+    for (auto o : instrumentlist)
+        delete o;
+    for (auto o : tablelist)
+        delete o;
     running = false;
 
     // Report success to host

@@ -404,6 +404,7 @@ private:
     std::vector<GravityEngine_Sound*> sounds; // List of all saved sounds
     int channels; // Channel count
     int mouse_wheel_state; // Store the current 
+    SDL_ScaleMode scale_mode = SDL_SCALEMODE_NEAREST; // Global draw layer scale mode
 
     // Gravity Engine Public Attributes
 public:
@@ -671,7 +672,9 @@ public:
 
         // Create the render texture
         render_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, canvas_w * font_w, canvas_h * font_h);
+        SDL_SetTextureScaleMode(render_texture, scale_mode);
         char_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, font_w, font_h);
+        SDL_SetTextureScaleMode(char_texture, scale_mode);
 
         // Create the engine used to write text
         engine = TTF_CreateRendererTextEngine(renderer);
@@ -1183,6 +1186,7 @@ private:
                 minx += 5;
                 // Convert the text surface to a texture
                 auto text_char = SDL_CreateTextureFromSurface(renderer, draw_chars[buf_index]);
+                SDL_SetTextureScaleMode(text_char, scale_mode);
                 // Set the character texture to be the render target
                 SDL_SetRenderTarget(renderer, char_texture);
                 // Draw glyph - Fill background with back color
