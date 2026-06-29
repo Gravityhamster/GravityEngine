@@ -720,31 +720,43 @@ void EditorControl()
         // Editing
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
         {
-            // Mod the left two digits
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+            // Movement keys
+            if (goup || godown || goright || goleft)
             {
-                if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x1000;
-                if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x1000;
-                if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0100;
-                if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0100;
-            }
-            // Mod the right two digits
-            else
-            {
-                if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0010;
-                if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0010;
-                if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0001;
-                if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0001;
-            }
-            
-            // Wrap the cell between 0x0000 and 0xFFFF
-            if (songgrid[cursor_y + offset_y][cursor_x + offset_x] < 0)
-                songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0xFFFF + (songgrid[cursor_y + offset_y][cursor_x + offset_x] + 1);
-            if (songgrid[cursor_y + offset_y][cursor_x + offset_x] > 0xFFFF)
-                songgrid[cursor_y + offset_y][cursor_x + offset_x] = (songgrid[cursor_y + offset_y][cursor_x + offset_x]-1) - 0xFFFF;
+                // Set to 0 if it isn't set
+                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] == -1)
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0x0000;
 
-            // Copy to clipboard
-            copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                // Mod the left two digits
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                {
+                    if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x1000;
+                    if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x1000;
+                    if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0100;
+                    if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0100;
+                }
+                // Mod the right two digits
+                else
+                {
+                    if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0010;
+                    if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0010;
+                    if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0001;
+                    if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0001;
+                }
+
+                // Wrap the cell between 0x0000 and 0xFFFF
+                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] < 0)
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0xFFFF + (songgrid[cursor_y + offset_y][cursor_x + offset_x] + 1);
+                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] > 0xFFFF)
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = (songgrid[cursor_y + offset_y][cursor_x + offset_x] - 1) - 0xFFFF;
+
+                // Copy to clipboard
+                copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+            }
+
+            // Handle deletes
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                songgrid[cursor_y + offset_y][cursor_x + offset_x] = -1;
         }
         // Moving
         else
