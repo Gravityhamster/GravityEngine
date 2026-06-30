@@ -4,6 +4,8 @@ GravityTracker is an LSDJ inspired music tracker for PC made in C++ in the Gravi
 - Chain sequencing
 - Phrase sequencing
 - Step sequencing
+  - FX programming
+  - Live documentation for FX editing
 - Instrument creation
   - Synth instruments
   - Sample instruments
