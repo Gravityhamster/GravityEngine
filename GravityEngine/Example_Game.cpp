@@ -17,6 +17,7 @@ int cursor_x; // X location of the user's cursor
 int cursor_y; // Y location of the user's cursor
 int offset_x; // X offset of the editor scroll
 int offset_y; // Y offset of the editor scroll
+int chain_offset_y; // Y offset when editing the chain
 int inputholdtimer = 0; // The timer for checking if an input should be considered held-down
 int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
@@ -28,10 +29,13 @@ int fps = 60; // Frame rate in hz of the UI
 double ticklength = 0; // Nanoseconds per tick
 int song_grid_h; // Height of the Song Editor UI
 int song_grid_w; // Width of the Song Editor UI
+int chain_grid_h; // Height of the Chain Editor UI
+int chain_grid_w; // Width of the Chain Editor UI
 bool running = false; // Is the song currently playing?
 std::thread* timing_thread; // Thread to play ticks
 edit_mod leftrightcenter = center;
 int copied_chain = -1;
+int copied_phrase = -1;
 int open_chain = -1;
 
 // Find string f in s
@@ -542,8 +546,10 @@ void DrawSongUI(int off_x, int off_y, std::string type)
 // type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
 void DrawChainUI(int off_y, std::string type)
 {
+    // TODO: Should we make offsety?
+
     // Width and height of the screen
-    int h = chain::length;
+    int h = chain_grid_h;
     int w = 1;
 
     // Menu title
@@ -612,17 +618,18 @@ void DrawChainUI(int off_y, std::string type)
             // Is a modifier key held on the selected cell?
             if (y == cursor_y)
             {
+                int trsp_offset = 5*(1 == cursor_x);
                 // Modify right part of the number
                 if (leftrightcenter == left)
                 {
-                    geptr->DrawSetColor(5, 3 + y, geptr->entity, primary_text_a);
-                    geptr->DrawSetColor(6, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(5 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(6 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
                 }
                 // Modify left part of the number
                 else if (leftrightcenter == right)
                 {
-                    geptr->DrawSetColor(7, 3 + y, geptr->entity, primary_text_a);
-                    geptr->DrawSetColor(8, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(7 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(8 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
                 }
             }
         }
@@ -761,6 +768,15 @@ void EditorControl()
             (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
         godown = 1;
 
+    // Edit part
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down() &&
+        dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+        leftrightcenter = right;
+    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        leftrightcenter = left;
+    else
+        leftrightcenter = center;
+
     // Handle input for the song menu
     if (state == m_song && !breakend)
     {
@@ -801,16 +817,7 @@ void EditorControl()
             }
         }
 
-        // Edit part
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down() &&
-            dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
-            leftrightcenter = right;
-        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
-            leftrightcenter = left;
-        else
-            leftrightcenter = center;
-
-        // Add the flags given the context --
+        // Do actions given the context --
 
         // Editing
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
@@ -908,20 +915,169 @@ void EditorControl()
     // Handle input for the chain menu
     if (state == m_chain && !breakend)
     {
+        // Modify value
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+        {
+            // Edit actual phrase
+            if (cursor_x == 0)
+            {
+                // If the chainlist value is unfilled, insert 0
+                if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] == -1)
+                {
+                    if (copied_chain == -1)
+                    {
+                        // Set UI reference to Hex0
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
+                        // If this chain doesn't exist yet, insert it
+                        if (GetAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y]) == nullptr)
+                            InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
+                    }
+                    else
+                    {
+                        // Set UI reference to copied chain
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = copied_chain;
+                    }
+                }
+                // If double click, add a new chain
+                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                {
+                    // Set UI reference to the next empty
+                    chainlist[open_chain]->arr[cursor_y + chain_offset_y] = GetNextEmpty(&phraselist);
+                    // Add the new chain
+                    InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
+                    // Copy to clipboard
+                    copied_chain = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                }
+                else
+                {
+                    // Copy to clipboard
+                    copied_chain = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                }
+            }
+        }
+
+        // Do actions given the context --
+
+        // Editing
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        {
+            // Edit actual chain
+            if (cursor_x == 0)
+            {
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Set to 0 if it isn't set
+                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] == -1)
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
+
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x1000;
+                        if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x1000;
+                        if (goright) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0100;
+                        if (goleft) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0010;
+                        if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0010;
+                        if (goright) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0001;
+                        if (goleft) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0001;
+                    }
+
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] < 0)
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0xFFFF + (chainlist[open_chain]->arr[cursor_y + chain_offset_y] + 1);
+                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] > 0xFFFF)
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = (chainlist[open_chain]->arr[cursor_y + chain_offset_y] - 1) - 0xFFFF;
+
+                    // Copy to clipboard
+                    copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                }
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    chainlist[open_chain]->arr[cursor_y + chain_offset_y] = -1;
+            }
+            // Edit transpose
+            else
+            {
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x1000;
+                        if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x1000;
+                        if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0100;
+                        if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0010;
+                        if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0010;
+                        if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0001;
+                        if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0001;
+                    }
+
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] < 0)
+                        chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] = 0xFFFF + (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] + 1);
+                    if (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] > 0xFFFF)
+                        chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] = (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] - 1) - 0xFFFF;
+                }
+            }
+        }
         // Goto Song Editor
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
         {
             // Go to the left page over
             if (goleft)
             {
-                // Chain
+                // Song
                 state = m_song;
                 breakend = true;
             }
         }
+        // Moving
+        else
+        {
+            cursor_x += goright - goleft;
+            cursor_y += godown - goup;
+        }
+
+        // wrap the cursor and clamp offsets
+        if (cursor_x > chain_grid_w - 1)
+            cursor_x = 0;
+        if (cursor_x < 0)
+            cursor_x = chain_grid_w - 1;
+        if (cursor_y + chain_offset_y > chain::length - 1)
+        {
+            cursor_y = 0;
+            chain_offset_y = 0;
+        }
+        if (cursor_y + chain_offset_y < 0)
+        {
+            cursor_y = chain_grid_h - 1;
+            chain_offset_y = chain::length - chain_grid_h;
+        }
+
+        // Move the page
+        if (cursor_y > chain_grid_h - 1)
+            chain_offset_y += 1;
+        if (cursor_y < 0)
+            chain_offset_y -= 1;
+
+        cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
+        chain_offset_y = SDL_clamp(chain_offset_y, 0, chain::length - chain_grid_h);
 
         // Do we want to update the UI?
-        DrawChainUI(0, "all");
+        DrawChainUI(chain_offset_y, "all");
     }
 
     // Handle repeating movement from hold presses
@@ -934,6 +1090,8 @@ void GameInit()
     // Set song grid w and h
     song_grid_h = geptr->GetCanvasH() - 4;
     song_grid_w = (geptr->GetCanvasW() - 5) / 5;
+    chain_grid_h = 16;
+    chain_grid_w = 2;
 
     // Init channel sequencers
     for (int i = 0; i < channelcount; i++)
