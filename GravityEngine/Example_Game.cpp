@@ -32,6 +32,7 @@ bool running = false; // Is the song currently playing?
 std::thread* timing_thread; // Thread to play ticks
 edit_mod leftrightcenter = center;
 int copied_chain = -1;
+int open_chain = -1;
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
@@ -60,6 +61,7 @@ class chain
     public:
         static const int length = 16;
         int arr[length]; // 1w x 16h - List of phrases
+        int arr_transpose[length]; // 1w x 16h - List of phrases
 
         // Create chain
         chain() 
@@ -67,6 +69,8 @@ class chain
             // Fill the chain with blanks
             for (int x = 0; x < length; x++)
                 arr[x] = -1;
+            for (int x = 0; x < length; x++)
+                arr_transpose[x] = 0x0000;
         };
 
         // Destruct chain
@@ -327,8 +331,6 @@ class input : public virtual GravityEngine_Object
                 doubleclick = true;
             else
                 doubleclick = false;
-            // // Draw the input buffer
-            // geptr->DrawTextString(10, 1, geptr->background, lastpresscode + " - " + presscode + " - " + std::to_string(doubleclick), primary_text_a);
         };
 		void step() {};
 		void end_step() {};
@@ -415,7 +417,7 @@ void DoTick()
         channellist[i].sub_step();
 
     // Debug : Draw channel 0's sequence
-    geptr->DrawTextString(10, 0, geptr->background,
+    geptr->DrawTextString(10, 0, geptr->entity,
         std::to_string(channellist[0].chain_ptr) + " - " +
         std::to_string(channellist[0].phrase_ptr) + " - " +
         std::to_string(channellist[0].step_ptr) + " - " +
@@ -459,7 +461,7 @@ void DrawSongUI(int off_x, int off_y, std::string type)
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
     {
-        geptr->DrawTextString(0, 1, geptr->background, "SONG", primary_text_a);
+        geptr->DrawTextString(0, 1, geptr->entity, "SONG", primary_text_a);
     }
 
     // Row numbers
@@ -473,7 +475,7 @@ void DrawSongUI(int off_x, int off_y, std::string type)
             auto upperstr = IntToHexString(tempint);
 
             upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
-            geptr->DrawTextString(0, 3 + i, geptr->background, upperstr, primary_text_a);
+            geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
         }
     }
 
@@ -485,7 +487,7 @@ void DrawSongUI(int off_x, int off_y, std::string type)
         {
             std::string tempstr = std::to_string(i + off_x);
             tempstr.insert(tempstr.begin(), 2 - tempstr.size(), '0');
-            geptr->DrawTextString(5 + i*5, 2, geptr->background, "CH" + tempstr, header_text_a);
+            geptr->DrawTextString(5 + i*5, 2, geptr->entity, "CH" + tempstr, header_text_a);
         }
     }
 
@@ -497,21 +499,21 @@ void DrawSongUI(int off_x, int off_y, std::string type)
         {
             for (int x = 0; x < w && x + off_x < channelcount; x++)
             {
-                // Is the cursor currently hovering this cell? Seet color accordingly
+                // Is the cursor currently hovering this cell? Set color accordingly
                 color thiscolor = (x == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
                 // Get the current song grid value
                 int chain = songgrid[y + off_y][x + off_x];
                 if (chain == -1)
                 {
                     // Draw null chain
-                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->background, "----", thiscolor);
+                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->entity, "----", thiscolor);
                 }
                 else
                 {
                     // Draw chain number
                     auto outstr = IntToHexString(chain);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->background, outstr, thiscolor);
+                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->entity, outstr, thiscolor);
                 }
 
                 // Is a modifier key held on the selected cell?
@@ -520,15 +522,107 @@ void DrawSongUI(int off_x, int off_y, std::string type)
                     // Modify right part of the number
                     if (leftrightcenter == left)
                     {
-                        geptr->DrawSetColor(5 + x * 5, 3 + y, geptr->background, primary_text_a);
-                        geptr->DrawSetColor(5 + x * 5 + 1, 3 + y, geptr->background, primary_text_a);
+                        geptr->DrawSetColor(5 + x * 5, 3 + y, geptr->entity, primary_text_a);
+                        geptr->DrawSetColor(5 + x * 5 + 1, 3 + y, geptr->entity, primary_text_a);
                     }
                     // Modify left part of the number
                     else if (leftrightcenter == right)
                     {
-                        geptr->DrawSetColor(5 + x * 5 + 2, 3 + y, geptr->background, primary_text_a);
-                        geptr->DrawSetColor(5 + x * 5 + 3, 3 + y, geptr->background, primary_text_a);
+                        geptr->DrawSetColor(5 + x * 5 + 2, 3 + y, geptr->entity, primary_text_a);
+                        geptr->DrawSetColor(5 + x * 5 + 3, 3 + y, geptr->entity, primary_text_a);
                     }
+                }
+            }
+        }
+    }
+}
+
+// Draw Song Editor UI
+// off_y : UI offset on the y axis
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
+void DrawChainUI(int off_y, std::string type)
+{
+    // Width and height of the screen
+    int h = chain::length;
+    int w = 1;
+
+    // Menu title
+    if (str_contains(type, "all") || str_contains(type, "title"))
+    {
+        // Draw chain number
+        auto outstr = IntToHexString(open_chain);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(0, 1, geptr->entity, "CHAIN - " + outstr, primary_text_a);
+    }
+
+    // Row numbers
+    if (str_contains(type, "all") || str_contains(type, "y"))
+    {
+        // Draw the row numbers
+        for (int i = 0; i < h && i + off_y < rowcount; i++)
+        {
+            int tempint = i + off_y;
+
+            auto upperstr = IntToHexString(tempint);
+
+            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+            geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
+        }
+    }
+
+    // Channel headers
+    if (str_contains(type, "all") || str_contains(type, "x"))
+    {
+        // Draw the headers
+        geptr->DrawTextString(5, 2, geptr->entity, "PHSE", header_text_a);
+        geptr->DrawTextString(10, 2, geptr->entity, "TRPS", header_text_a);
+    }
+
+    // Song grid navigator
+    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    {
+        //Draw the song grid
+        for (int y = 0; y < h && y + off_y < rowcount; y++)
+        {
+            // Is the cursor currently hovering this cell? Set color accordingly
+            color thiscolor = (0 == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
+            color thiscolor_t = (1 == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
+
+            // Get the current chain grid value
+            int chain = chainlist[open_chain]->arr[y + off_y];
+            if (chain == -1)
+            {
+                // Draw null chain
+                geptr->DrawTextString(5, 3 + y, geptr->entity, "----", thiscolor);
+            }
+            else
+            {
+                // Draw chain number
+                auto outstr = IntToHexString(chain);
+                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                geptr->DrawTextString(5, 3 + y, geptr->entity, outstr, thiscolor);
+            }
+
+            // Draw chain transposition
+            int chain_trsp = chainlist[open_chain]->arr_transpose[y + off_y];
+            auto outstr = IntToHexString(chain_trsp);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(10, 3 + y, geptr->entity, outstr, thiscolor_t);
+
+            // Is a modifier key held on the selected cell?
+            if (y == cursor_y)
+            {
+                // Modify right part of the number
+                if (leftrightcenter == left)
+                {
+                    geptr->DrawSetColor(5, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(6, 3 + y, geptr->entity, primary_text_a);
+                }
+                // Modify left part of the number
+                else if (leftrightcenter == right)
+                {
+                    geptr->DrawSetColor(7, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(8, 3 + y, geptr->entity, primary_text_a);
                 }
             }
         }
@@ -642,33 +736,34 @@ GetNextEmpty(std::vector<T*>* vec)
 // Handle movement
 void EditorControl()
 {
-    // Handle input for the song menu
-    if (state == m_song)
-    {
-        // Set checker variables
-        int goright = 0;
-        int goleft = 0;
-        int goup = 0;
-        int godown = 0;
+    // Set checker variables
+    bool breakend = false;
+    int goright = 0;
+    int goleft = 0;
+    int goup = 0;
+    int godown = 0;
 
-        // Move the cursor
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed() ||
-            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_down() &&
-                (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
-            goright = 1;
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed() ||
-            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_down() && 
+    // Move the cursor
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed() ||
+        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_down() &&
             (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
-            goleft = 1;
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed() ||
-            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_down() &&
-                (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
-            goup = 1;
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed() ||
-            (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_down() &&
-                (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
-            godown = 1;
-        
+        goright = 1;
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed() ||
+        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_down() &&
+            (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+        goleft = 1;
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed() ||
+        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_down() &&
+            (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+        goup = 1;
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed() ||
+        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_down() &&
+            (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
+        godown = 1;
+
+    // Handle input for the song menu
+    if (state == m_song && !breakend)
+    {
         // Modify value
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
         {
@@ -758,15 +853,37 @@ void EditorControl()
             if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
                 songgrid[cursor_y + offset_y][cursor_x + offset_x] = -1;
         }
+        // Goto Chain Editor
+        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+        {
+            // Go to the next page over
+            if (goright)
+            {
+                // Set open chain
+                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] != -1)
+                    open_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                // If the open_chain is valid
+                if (open_chain != -1)
+                {
+                    // Check if the chain does not exist
+                    if (GetAt(&chainlist, open_chain) == nullptr)
+                    {
+                        InsertAt(&chainlist, open_chain, new chain());
+                    }
+                    // Chain
+                    state = m_chain;
+                    cursor_x = SDL_clamp(cursor_x, 0, 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, chain::length-1);
+                    breakend = true;
+                }
+            }
+        }
         // Moving
         else
         {
             cursor_x += goright - goleft;
             cursor_y += godown - goup;
         }
-
-        // Handle repeating movement from hold presses
-        HandleMovementRepeaters();
 
         // Move the page
         if (cursor_y > song_grid_h - 1)
@@ -787,6 +904,28 @@ void EditorControl()
         // Do we want to update the UI?
         DrawSongUI(offset_x, offset_y, "all");
     }
+
+    // Handle input for the chain menu
+    if (state == m_chain && !breakend)
+    {
+        // Goto Song Editor
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+        {
+            // Go to the left page over
+            if (goleft)
+            {
+                // Chain
+                state = m_song;
+                breakend = true;
+            }
+        }
+
+        // Do we want to update the UI?
+        DrawChainUI(0, "all");
+    }
+
+    // Handle repeating movement from hold presses
+    HandleMovementRepeaters();
 }
 
 // Master pre code
@@ -813,7 +952,10 @@ void GameInit()
     }
 
     // Start song UI
-    DrawSongUI(0, 0, "all");
+    if (state == m_song)
+        DrawSongUI(0, 0, "all");
+    if (state == m_chain)
+        DrawChainUI(0, "all");
 
     // Test: Init synth and play it
     synptr2 = new GravityEngine_Synth();
