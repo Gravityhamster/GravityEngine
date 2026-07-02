@@ -33,10 +33,10 @@ int chain_grid_h; // Height of the Chain Editor UI
 int chain_grid_w; // Width of the Chain Editor UI
 bool running = false; // Is the song currently playing?
 std::thread* timing_thread; // Thread to play ticks
-edit_mod leftrightcenter = center;
-int copied_chain = -1;
-int copied_phrase = -1;
-int open_chain = -1;
+edit_mod leftrightcenter = center; // Editing state for which part of the number we are editing
+int copied_chain = -1; // Clipboard for copying a chain
+int copied_phrase = -1; // Clipboard for copying a phrase
+int open_chain = -1; // Tracking which chain we have open
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
