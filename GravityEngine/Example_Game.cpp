@@ -591,10 +591,10 @@ void DrawChainUI(int off_y, std::string type)
         geptr->DrawTextString(10, 2, geptr->entity, "TRPS", header_text_a);
     }
 
-    // Song grid navigator
+    // Chain grid navigator
     if (str_contains(type, "all") || str_contains(type, "navigator"))
     {
-        //Draw the song grid
+        //Draw the chain grid
         for (int y = 0; y < h && y + off_y < rowcount; y++)
         {
             // Is the cursor currently hovering this cell? Set color accordingly
@@ -643,6 +643,65 @@ void DrawChainUI(int off_y, std::string type)
     }
 }
 
+// Converts an integer to a note string
+// int note : Piano key number
+std::string IntToNoteString(int n)
+{
+    // Get the octave
+    int octave = std::floor(n / 12) + 1;
+    char octave_char = 48 + octave;
+    // Get the note letter
+    int note_int = (n % 12);
+    std::string note_char = "";
+    // Get the note string
+    switch(note_int)
+    {
+        case 0:
+            note_char = "A-";
+            break;
+        case 1:
+            note_char = "A#";
+            break;
+        case 2:
+            note_char = "B-";
+            break;
+        case 3:
+            note_char = "C-";
+            break;
+        case 4:
+            note_char = "C#";
+            break;
+        case 5:
+            note_char = "D-";
+            break;
+        case 6:
+            note_char = "D#";
+            break;
+        case 7:
+            note_char = "E-";
+            break;
+        case 8:
+            note_char = "F-";
+            break;
+        case 9:
+            note_char = "F#";
+            break;
+        case 10:
+            note_char = "G";
+            break;
+        case 11:
+            note_char = "G#";
+            break;
+    }
+
+    // Build string
+    std::string s = "";
+    s += note_char;
+    s += octave_char;
+    // Return string
+    return s;
+}
+
 // Draw Phrase Editor UI
 // off_x : UI offset on the x axis
 // off_y : UI offset on the y axis
@@ -681,11 +740,36 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
     if (str_contains(type, "all") || str_contains(type, "x"))
     {
         // Draw the headers
-        geptr->DrawTextString(5, 2, geptr->entity, "NOTE", header_text_a);
-        geptr->DrawTextString(10, 2, geptr->entity, "ISTR", header_text_a);
-        geptr->DrawTextString(15, 2, geptr->entity, "EFFT1", header_text_a);
-        geptr->DrawTextString(21, 2, geptr->entity, "EFFT2", header_text_a);
-        geptr->DrawTextString(27, 2, geptr->entity, "EFFT3", header_text_a);
+        geptr->DrawTextString(5, 2, geptr->entity, "NTE", header_text_a);
+        geptr->DrawTextString(9, 2, geptr->entity, "ISTR", header_text_a);
+        geptr->DrawTextString(14, 2, geptr->entity, "EFFT1", header_text_a);
+        geptr->DrawTextString(20, 2, geptr->entity, "EFFT2", header_text_a);
+        geptr->DrawTextString(26, 2, geptr->entity, "EFFT3", header_text_a);
+    }
+
+    // Phrase grid navigator
+    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    {
+        //Draw the phrase grid
+        for (int y = 0; y < h && y + off_y < rowcount; y++)
+        {
+            auto thiscolor = primary_text_a;
+
+            // Note -
+            
+            // Get the current phrase grid value
+            int note = phraselist[open_phrase]->arr[y + off_y][0];
+            if (note == -1)
+            {
+                // Draw null note
+                geptr->DrawTextString(5, 3 + y, geptr->entity, "---", thiscolor);
+            }
+            else
+            {
+                // Draw note
+                geptr->DrawTextString(5, 3 + y, geptr->entity, IntToNoteString(note), thiscolor);
+            }
+        }
     }
 }
 
@@ -1266,7 +1350,7 @@ int main()
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
     auto cw = 96 / 2 + 1;
     auto ch = 54 / 2;
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 38), std::max(ch, 28), fps, 1920, 1080, "./GameFont.ttf", channelcount);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 37), std::max(ch, 28), fps, 1920, 1080, "./GameFont.ttf", channelcount);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information

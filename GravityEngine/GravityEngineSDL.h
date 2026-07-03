@@ -698,7 +698,10 @@ public:
         GameLoop(pre_loop_code, post_loop_code);
 
         // -= GAME END =-
-        // Clenup goes here
+        // Sleep the thread to give the program a chance to catch up or finish whatever it was doing before we cutoff all memory
+        SDL_Delay(500);
+
+        // Cleanup goes here
 
         // TTF Quit
         for (int i = 0; i < canvas_w * canvas_h; i++)
