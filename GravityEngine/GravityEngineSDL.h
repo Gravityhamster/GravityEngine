@@ -11,7 +11,6 @@
 #include <unordered_map>
 #include <random>
 
-
 // Color struct (foreground and background)
 // SDL_Color f : Letter color
 // SDL_Color b : Background color

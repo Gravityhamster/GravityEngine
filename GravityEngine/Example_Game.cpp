@@ -18,6 +18,8 @@ int cursor_y; // Y location of the user's cursor
 int offset_x; // X offset of the editor scroll
 int offset_y; // Y offset of the editor scroll
 int chain_offset_y; // Y offset when editing the chain
+int phrase_offset_x; // X offset of the editor scroll
+int phrase_offset_y; // Y offset of the editor scroll
 int inputholdtimer = 0; // The timer for checking if an input should be considered held-down
 int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
@@ -31,12 +33,15 @@ int song_grid_h; // Height of the Song Editor UI
 int song_grid_w; // Width of the Song Editor UI
 int chain_grid_h; // Height of the Chain Editor UI
 int chain_grid_w; // Width of the Chain Editor UI
+int phrase_grid_h; // Height of the Phrase Editor UI
+int phrase_grid_w; // Width of the Phrase Editor UI
 bool running = false; // Is the song currently playing?
 std::thread* timing_thread; // Thread to play ticks
 edit_mod leftrightcenter = center; // Editing state for which part of the number we are editing
 int copied_chain = -1; // Clipboard for copying a chain
 int copied_phrase = -1; // Clipboard for copying a phrase
 int open_chain = -1; // Tracking which chain we have open
+int open_phrase = -1; // Tracking which phrase we have open
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
@@ -202,6 +207,7 @@ channelsequencer channellist[channelcount];
 color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
 color header_text_a = { {255, 255, 255}, {0, 0, 100} };
 color primary_text_b = { {0, 0, 0}, {255, 255, 255} };
+color header_text_b = { {0, 0, 100}, {255, 255, 255} };
 color body_text_a = { {255, 255, 255}, {0, 0, 0} };
 color body_text_b = { {0, 0, 0}, {255, 255, 255} };
 
@@ -211,7 +217,10 @@ enum menu
     m_song,
     m_chain,
     m_phrase,
-    m_instrument
+    m_instrument,
+    m_options,
+    m_table,
+    m_wave
 };
 
 menu state = m_song;
@@ -541,13 +550,11 @@ void DrawSongUI(int off_x, int off_y, std::string type)
     }
 }
 
-// Draw Song Editor UI
+// Draw Chain Editor UI
 // off_y : UI offset on the y axis
 // type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
 void DrawChainUI(int off_y, std::string type)
 {
-    // TODO: Should we make offsety?
-
     // Width and height of the screen
     int h = chain_grid_h;
     int w = 1;
@@ -634,6 +641,72 @@ void DrawChainUI(int off_y, std::string type)
             }
         }
     }
+}
+
+// Draw Phrase Editor UI
+// off_x : UI offset on the x axis
+// off_y : UI offset on the y axis
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
+void DrawPhraseUI(int off_x, int off_y, std::string type)
+{
+    // Width and height of the screen
+    int h = phrase_grid_h;
+    int w = phrase_grid_w;
+
+    // Menu title
+    if (str_contains(type, "all") || str_contains(type, "title"))
+    {
+        // Draw phrase number
+        auto outstr = IntToHexString(open_phrase);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(0, 1, geptr->entity, "PHRASE - " + outstr, primary_text_a);
+    }
+    
+    // Row numbers
+    if (str_contains(type, "all") || str_contains(type, "y"))
+    {
+        // Draw the row numbers
+        for (int i = 0; i < h && i + off_y < rowcount; i++)
+        {
+            int tempint = i + off_y;
+
+            auto upperstr = IntToHexString(tempint);
+
+            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+            geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
+        }
+    }
+
+    // Channel headers
+    if (str_contains(type, "all") || str_contains(type, "x"))
+    {
+        // Draw the headers
+        geptr->DrawTextString(5, 2, geptr->entity, "NOTE", header_text_a);
+        geptr->DrawTextString(10, 2, geptr->entity, "ISTR", header_text_a);
+        geptr->DrawTextString(15, 2, geptr->entity, "EFFT1", header_text_a);
+        geptr->DrawTextString(21, 2, geptr->entity, "EFFT2", header_text_a);
+        geptr->DrawTextString(27, 2, geptr->entity, "EFFT3", header_text_a);
+    }
+}
+
+// Draw the map for where you are in the UI
+void DrawMap()
+{
+    // Draw the map
+    geptr->DrawChar(geptr->GetCanvasW() - 1, geptr->GetCanvasH() - 1, geptr->entity, 'T'); // Table
+    geptr->DrawSetColor(geptr->GetCanvasW() - 1, geptr->GetCanvasH() - 1, geptr->entity, state == m_table ? header_text_b : header_text_a);
+    geptr->DrawChar(geptr->GetCanvasW() - 1, geptr->GetCanvasH() - 2, geptr->entity, 'I'); // Instrument
+    geptr->DrawSetColor(geptr->GetCanvasW() - 1, geptr->GetCanvasH() - 2, geptr->entity, state == m_instrument ? header_text_b : header_text_a);
+    geptr->DrawChar(geptr->GetCanvasW() - 1, geptr->GetCanvasH() - 3, geptr->entity, 'W'); // Wave
+    geptr->DrawSetColor(geptr->GetCanvasW() - 1, geptr->GetCanvasH() - 3, geptr->entity, state == m_wave ? header_text_b : header_text_a);
+    geptr->DrawChar(geptr->GetCanvasW() - 2, geptr->GetCanvasH() - 2, geptr->entity, 'P'); // Phrase
+    geptr->DrawSetColor(geptr->GetCanvasW() - 2, geptr->GetCanvasH() - 2, geptr->entity, state == m_phrase ? header_text_b : header_text_a);
+    geptr->DrawChar(geptr->GetCanvasW() - 3, geptr->GetCanvasH() - 2, geptr->entity, 'C'); // Chain
+    geptr->DrawSetColor(geptr->GetCanvasW() - 3, geptr->GetCanvasH() - 2, geptr->entity, state == m_chain ? header_text_b : header_text_a);
+    geptr->DrawChar(geptr->GetCanvasW() - 4, geptr->GetCanvasH() - 2, geptr->entity, 'S'); // Song
+    geptr->DrawSetColor(geptr->GetCanvasW() - 4, geptr->GetCanvasH() - 2, geptr->entity, state == m_song ? header_text_b : header_text_a);
+    geptr->DrawChar(geptr->GetCanvasW() - 4, geptr->GetCanvasH() - 3, geptr->entity, 'O'); // Options
+    geptr->DrawSetColor(geptr->GetCanvasW() - 4, geptr->GetCanvasH() - 3, geptr->entity, state == m_options ? header_text_b : header_text_a);
 }
 
 // Handle tick hitting - This should be called from a separate thread
@@ -908,7 +981,7 @@ void EditorControl()
         offset_x = SDL_clamp(offset_x, 0, channelcount-song_grid_w);
         offset_y = SDL_clamp(offset_y, 0, rowcount-song_grid_h);
 
-        // Do we want to update the UI?
+        // Update UI
         DrawSongUI(offset_x, offset_y, "all");
     }
 
@@ -1043,6 +1116,28 @@ void EditorControl()
                 state = m_song;
                 breakend = true;
             }
+            // Go to the right page over
+            else if (goright)
+            {
+                // Set open phrase
+                if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] != -1)
+                    open_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                // If the open_chain is valid
+                if (open_phrase != -1)
+                {
+                    // Check if the phrase does not exist
+                    if (GetAt(&phraselist, open_phrase) == nullptr)
+                    {
+                        InsertAt(&phraselist, open_phrase, new phrase());
+                    }
+                    // Chain
+                    state = m_phrase;
+                    cursor_x = SDL_clamp(cursor_x, 0, phrase::len_x - 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, phrase::len_y - 1);
+                    breakend = true;
+                }
+
+            }
         }
         // Moving
         else
@@ -1076,9 +1171,19 @@ void EditorControl()
         cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
         chain_offset_y = SDL_clamp(chain_offset_y, 0, chain::length - chain_grid_h);
 
-        // Do we want to update the UI?
+        // Update UI
         DrawChainUI(chain_offset_y, "all");
     }
+
+    // Handle input for the phrase menu
+    if (state == m_phrase && !breakend)
+    {
+        // Update UI
+        DrawPhraseUI(phrase_offset_x, phrase_offset_y, "all");
+    }
+
+    // Draw the map for where you are in the UI
+    DrawMap();
 
     // Handle repeating movement from hold presses
     HandleMovementRepeaters();
@@ -1089,8 +1194,10 @@ void GameInit()
 {
     // Set song grid w and h
     song_grid_h = geptr->GetCanvasH() - 4;
-    song_grid_w = (geptr->GetCanvasW() - 5) / 5;
-    chain_grid_h = 16;
+    song_grid_w = (geptr->GetCanvasW() - 8) / 5;
+    phrase_grid_h = std::min(16, geptr->GetCanvasH() - 4);
+    phrase_grid_w = 8; // 4 + 1 + 4 + 1 + 1 + 4 + 1 + 1 + 4 + 1 + 1 + 4 = 27
+    chain_grid_h = std::min(16, geptr->GetCanvasH() - 4);
     chain_grid_w = 2;
 
     // Init channel sequencers
@@ -1157,7 +1264,9 @@ void PostGameLoop()
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", 96/2, 54/2, fps, 1920, 1080, "./GameFont.ttf", channelcount);
+    auto cw = 96 / 2 + 1;
+    auto ch = 54 / 2;
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 38), std::max(ch, 28), fps, 1920, 1080, "./GameFont.ttf", channelcount);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information
