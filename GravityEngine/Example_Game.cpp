@@ -18,7 +18,6 @@ int cursor_y; // Y location of the user's cursor
 int offset_x; // X offset of the editor scroll
 int offset_y; // Y offset of the editor scroll
 int chain_offset_y; // Y offset when editing the chain
-int phrase_offset_x; // X offset of the editor scroll
 int phrase_offset_y; // Y offset of the editor scroll
 int inputholdtimer = 0; // The timer for checking if an input should be considered held-down
 int inputholdthreshold = 15; // Frames til in input should start repeating
@@ -41,12 +40,15 @@ edit_mod leftrightcenter = center; // Editing state for which part of the number
 int copied_chain = -1; // Clipboard for copying a chain
 int copied_phrase = -1; // Clipboard for copying a phrase
 int copied_note = -9999; // Clipboard for copying a note
+int copied_instr = -1; // Clipboard for copying an instrument
+int copied_effect = -1; // Clipboard for copying an instrument
+int copied_effect_param = -1; // Clipboard for copying an instrument
 int open_chain = -1; // Tracking which chain we have open
 int open_phrase = -1; // Tracking which phrase we have open
 int open_instrument = -1; // Tracking which instrument we have open
-char fx[] = {'I', 'M', 'I', 'S', 'U', 'R', 'I', 'S', 'A'}; // List of effects
-int min_note = -12;
-int max_note = 107;
+char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
+int min_note = -12; // Minimum note that can be inserted
+int max_note = 107; // Maximum note that can be inserted
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
@@ -708,10 +710,9 @@ std::string IntToNoteString(int n)
 }
 
 // Draw Phrase Editor UI
-// off_x : UI offset on the x axis
 // off_y : UI offset on the y axis
 // type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
-void DrawPhraseUI(int off_x, int off_y, std::string type)
+void DrawPhraseUI(int off_y, std::string type)
 {
     // Width and height of the screen
     int h = phrase_grid_h;
@@ -810,7 +811,7 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
 
             // Get the current phrase grid value
             int effect1 = phraselist[open_phrase]->arr[y + off_y][2];
-            if (instr == -1)
+            if (effect1 == -1)
             {
                 // Draw null effect
                 geptr->DrawTextString(14, 3 + y, geptr->entity, "-", thiscolor);
@@ -818,7 +819,9 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
             else
             {
                 // Draw effect char
-                geptr->DrawTextString(14, 3 + y, geptr->entity, std::to_string(fx[effect1]), thiscolor);
+                std::string outchr = "";
+                outchr += fx[effect1];
+                geptr->DrawTextString(14, 3 + y, geptr->entity, outchr, thiscolor);
             }
 
             // FX1 Param -
@@ -826,7 +829,7 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
 
             // Get the current phrase grid value
             int effect1_param = phraselist[open_phrase]->arr[y + off_y][3];
-            if (instr == -1)
+            if (effect1_param == -1)
             {
                 // Draw null parameter
                 geptr->DrawTextString(15, 3 + y, geptr->entity, "----", thiscolor);
@@ -856,8 +859,8 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
             thiscolor = cursor_y == y && cursor_x == 4 ? header_text_b : header_text_a;
 
             // Get the current phrase grid value
-            int effect2 = phraselist[open_phrase]->arr[y + off_y][2];
-            if (instr == -1)
+            int effect2 = phraselist[open_phrase]->arr[y + off_y][4];
+            if (effect2 == -1)
             {
                 // Draw null effect
                 geptr->DrawTextString(20, 3 + y, geptr->entity, "-", thiscolor);
@@ -865,15 +868,17 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
             else
             {
                 // Draw effect char
-                geptr->DrawTextString(20, 3 + y, geptr->entity, std::to_string(fx[effect2]), thiscolor);
+                std::string outchr = "";
+                outchr += fx[effect2];
+                geptr->DrawTextString(20, 3 + y, geptr->entity, outchr, thiscolor);
             }
 
             // FX2 Param -
             thiscolor = cursor_y == y && cursor_x == 5 ? primary_text_b : primary_text_a;
 
             // Get the current phrase grid value
-            int effect2_param = phraselist[open_phrase]->arr[y + off_y][3];
-            if (instr == -1)
+            int effect2_param = phraselist[open_phrase]->arr[y + off_y][5];
+            if (effect2_param == -1)
             {
                 // Draw null parameter
                 geptr->DrawTextString(21, 3 + y, geptr->entity, "----", thiscolor);
@@ -903,8 +908,8 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
             thiscolor = cursor_y == y && cursor_x == 6 ? header_text_b : header_text_a;
 
             // Get the current phrase grid value
-            int effect3 = phraselist[open_phrase]->arr[y + off_y][2];
-            if (instr == -1)
+            int effect3 = phraselist[open_phrase]->arr[y + off_y][6];
+            if (effect3 == -1)
             {
                 // Draw null effect
                 geptr->DrawTextString(26, 3 + y, geptr->entity, "-", thiscolor);
@@ -912,15 +917,17 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
             else
             {
                 // Draw effect char
-                geptr->DrawTextString(26, 3 + y, geptr->entity, std::to_string(fx[effect3]), thiscolor);
+                std::string outchr = "";
+                outchr += fx[effect3];
+                geptr->DrawTextString(26, 3 + y, geptr->entity, outchr, thiscolor);
             }
 
             // FX3 Param -
             thiscolor = cursor_y == y && cursor_x == 7 ? primary_text_b : primary_text_a;
 
             // Get the current phrase grid value
-            int effect3_param = phraselist[open_phrase]->arr[y + off_y][3];
-            if (instr == -1)
+            int effect3_param = phraselist[open_phrase]->arr[y + off_y][7];
+            if (effect3_param == -1)
             {
                 // Draw null parameter
                 geptr->DrawTextString(27, 3 + y, geptr->entity, "----", thiscolor);
@@ -1158,10 +1165,6 @@ void EditorControl()
             // Movement keys
             if (goup || godown || goright || goleft)
             {
-                // Set to 0 if it isn't set
-                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] == -1)
-                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0x0000;
-
                 // Mod the left two digits
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
                 {
@@ -1261,7 +1264,7 @@ void EditorControl()
                     {
                         // Set UI reference to Hex0
                         chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
-                        // If this chain doesn't exist yet, insert it
+                        // If this phrase doesn't exist yet, insert it
                         if (GetAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y]) == nullptr)
                             InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
                     }
@@ -1276,7 +1279,7 @@ void EditorControl()
                 {
                     // Set UI reference to the next empty
                     chainlist[open_chain]->arr[cursor_y + chain_offset_y] = GetNextEmpty(&phraselist);
-                    // Add the new chain
+                    // Add the new phrase
                     InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
                     // Copy to clipboard
                     copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
@@ -1300,10 +1303,6 @@ void EditorControl()
                 // Movement keys
                 if (goup || godown || goright || goleft)
                 {
-                    // Set to 0 if it isn't set
-                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] == -1)
-                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
-
                     // Mod the left two digits
                     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
                     {
@@ -1443,71 +1442,41 @@ void EditorControl()
         // Modify value
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
         {
-            // Edit note
-            if (cursor_x == 0)
+            // Edit instr
+            if (cursor_x == 1)
             {
-                // If the phraselist value is unfilled, insert C-4
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999)
+                // If the phraselist value is unfilled, insert 0
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
                 {
-                    if (copied_note == -9999)
+                    if (copied_instr == -1)
                     {
-                        // Set note reference to C-4
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = 39;
+                        // Set UI reference to Hex0
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0x0000;
+                        // If this instrument doesn't exist yet, insert it
+                        if (GetAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x]) == nullptr)
+                            InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x], new instrument());
                     }
                     else
                     {
-                        // Set UI reference to copied phrase
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note;
+                        // Set UI reference to copied instrument
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_instr;
                     }
+                }
+                // If double click, add a new instrument
+                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                {
+                    // Set UI reference to the next empty
+                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = GetNextEmpty(&instrumentlist);
+                    // Add the new instrument
+                    InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x], new instrument());
+                    // Copy to clipboard
+                    copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x];
                 }
                 else
                 {
                     // Copy to clipboard
-                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+                    copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x];
                 }
-            }
-
-
-            // Edit instr
-            if (cursor_x == 1)
-            {
-
-            }
-
-            // Edit fx1
-            if (cursor_x == 2)
-            {
-
-            }
-
-            // Edit fx1 param
-            if (cursor_x == 3)
-            {
-
-            }
-
-            // Edit fx2
-            if (cursor_x == 4)
-            {
-
-            }
-
-            // Edit fx2 param
-            if (cursor_x == 5)
-            {
-
-            }
-
-            // Edit fx3
-            if (cursor_x == 6)
-            {
-
-            }
-
-            // Edit fx3 param
-            if (cursor_x == 7)
-            {
-
             }
         }
 
@@ -1519,28 +1488,28 @@ void EditorControl()
             // Edit note
             if (cursor_x == 0)
             {
+                // Set to C-4 if it isn't set
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999)
+                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
+
                 // Movement keys
                 if (goup || godown || goright || goleft)
                 {
-                    // Set to C-4 if it isn't set
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = 39;
-
                     // Edit note pitch
                     if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 12;
                     if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 12;
                     if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 1;
                     if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 1;
 
-                    // Wrap the cell between 0x0000 and 0xFFFF
+                    // Wrap the cell between min_note and max_note
                     if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] < min_note)
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = max_note + ((phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - min_note) + 1);
                     if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] > max_note)
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = min_note + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - 1) - max_note;
-
-                    // Copy to clipboard
-                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
                 }
+
+                // Copy to clipboard
+                copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1550,43 +1519,112 @@ void EditorControl()
             // Edit instr
             if (cursor_x == 1)
             {
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
+                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
+                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0100;
+                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0010;
+                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0010;
+                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0001;
+                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0001;
+                    }
 
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0xFFFF + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > 0xFFFF)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - 0xFFFF;
+
+                    // Copy to clipboard
+                    copied_instr = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+                }
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
             }
 
-            // Edit fx1
-            if (cursor_x == 2)
+            // Edit fx1,2,3
+            if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
             {
+                // Set to 0 if it isn't set
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
+                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
 
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 5;
+                    if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 5;
+                    if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 1;
+                    if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 1;
+
+                    // Wrap the cell between 0 and effect list length
+                    int effect_list_len = (sizeof(fx) / sizeof(fx[0])) - 1;
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = effect_list_len + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > effect_list_len)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - effect_list_len;
+                }
+
+                // Copy to clipboard
+                copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
             }
 
-            // Edit fx1 param
-            if (cursor_x == 3)
+            // Edit fx1,2,3 param
+            if (cursor_x == 3 || cursor_x == 5 || cursor_x == 7)
             {
+                // Set to 0 if it isn't set
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
+                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
 
-            }
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
+                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
+                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0100;
+                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0010;
+                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0010;
+                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0001;
+                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0001;
+                    }
 
-            // Edit fx2
-            if (cursor_x == 4)
-            {
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0xFFFF + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > 0xFFFF)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - 0xFFFF;
+                }
 
-            }
+                // Copy to clipboard
+                copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
-            // Edit fx2 param
-            if (cursor_x == 5)
-            {
-
-            }
-
-            // Edit fx3
-            if (cursor_x == 6)
-            {
-
-            }
-
-            // Edit fx3 param
-            if (cursor_x == 7)
-            {
-
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
             }
         }
         // Goto page
@@ -1656,7 +1694,7 @@ void EditorControl()
         phrase_offset_y = SDL_clamp(phrase_offset_y, 0, phrase::len_y - phrase_grid_h);
 
         // Update UI
-        DrawPhraseUI(phrase_offset_x, phrase_offset_y, "all");
+        DrawPhraseUI(phrase_offset_y, "all");
     }
 
     // Draw the map for where you are in the UI
