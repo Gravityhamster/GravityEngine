@@ -40,8 +40,13 @@ std::thread* timing_thread; // Thread to play ticks
 edit_mod leftrightcenter = center; // Editing state for which part of the number we are editing
 int copied_chain = -1; // Clipboard for copying a chain
 int copied_phrase = -1; // Clipboard for copying a phrase
+int copied_note = -9999; // Clipboard for copying a note
 int open_chain = -1; // Tracking which chain we have open
 int open_phrase = -1; // Tracking which phrase we have open
+int open_instrument = -1; // Tracking which instrument we have open
+char fx[] = {'I', 'M', 'I', 'S', 'U', 'R', 'I', 'S', 'A'}; // List of effects
+int min_note = -12;
+int max_note = 107;
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
@@ -100,7 +105,7 @@ class phrase
             // Fill the chain with blanks
             for (int y = 0; y < len_y; y++)
                 for (int x = 0; x < len_x; x++)
-                    arr[y][x] = -1;
+                    arr[y][x] = x == 0 ? -9999 : -1;
         };
 
         // Destruct phrase
@@ -648,10 +653,10 @@ void DrawChainUI(int off_y, std::string type)
 std::string IntToNoteString(int n)
 {
     // Get the octave
-    int octave = std::floor(n / 12) + 1;
+    int octave = (n >= 0 ? std::floor(n / 12) + 1 : 0);
     char octave_char = 48 + octave;
     // Get the note letter
-    int note_int = (n % 12);
+    int note_int = (n >= 0 ? n : n + 12) % 12;
     std::string note_char = "";
     // Get the note string
     switch(note_int)
@@ -687,7 +692,7 @@ std::string IntToNoteString(int n)
             note_char = "F#";
             break;
         case 10:
-            note_char = "G";
+            note_char = "G-";
             break;
         case 11:
             note_char = "G#";
@@ -753,13 +758,12 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
         //Draw the phrase grid
         for (int y = 0; y < h && y + off_y < rowcount; y++)
         {
-            auto thiscolor = primary_text_a;
-
             // Note -
+            auto thiscolor = cursor_y == y && cursor_x == 0 ? primary_text_b : primary_text_a;
             
             // Get the current phrase grid value
             int note = phraselist[open_phrase]->arr[y + off_y][0];
-            if (note == -1)
+            if (note == -9999)
             {
                 // Draw null note
                 geptr->DrawTextString(5, 3 + y, geptr->entity, "---", thiscolor);
@@ -768,6 +772,178 @@ void DrawPhraseUI(int off_x, int off_y, std::string type)
             {
                 // Draw note
                 geptr->DrawTextString(5, 3 + y, geptr->entity, IntToNoteString(note), thiscolor);
+            }
+
+            // Instrument -
+            thiscolor = cursor_y == y && cursor_x == 1 ? primary_text_b : primary_text_a;
+
+            // Get the current phrase grid value
+            int instr = phraselist[open_phrase]->arr[y + off_y][1];
+            if (instr == -1)
+            {
+                // Draw null instrument
+                geptr->DrawTextString(9, 3 + y, geptr->entity, "----", thiscolor);
+            }
+            else
+            {
+                // Draw instrument number
+                auto outstr = IntToHexString(instr);
+                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                geptr->DrawTextString(9, 3 + y, geptr->entity, outstr, thiscolor);
+            }
+
+            // Modify right part of the number
+            if (leftrightcenter == left)
+            {
+                geptr->DrawSetColor(9, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(10, 3 + y, geptr->entity, primary_text_a);
+            }
+            // Modify left part of the number
+            else if (leftrightcenter == right)
+            {
+                geptr->DrawSetColor(11, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(12, 3 + y, geptr->entity, primary_text_a);
+            }
+
+            // FX1 -
+            thiscolor = cursor_y == y && cursor_x == 2 ? header_text_b : header_text_a;
+
+            // Get the current phrase grid value
+            int effect1 = phraselist[open_phrase]->arr[y + off_y][2];
+            if (instr == -1)
+            {
+                // Draw null effect
+                geptr->DrawTextString(14, 3 + y, geptr->entity, "-", thiscolor);
+            }
+            else
+            {
+                // Draw effect char
+                geptr->DrawTextString(14, 3 + y, geptr->entity, std::to_string(fx[effect1]), thiscolor);
+            }
+
+            // FX1 Param -
+            thiscolor = cursor_y == y && cursor_x == 3 ? primary_text_b : primary_text_a;
+
+            // Get the current phrase grid value
+            int effect1_param = phraselist[open_phrase]->arr[y + off_y][3];
+            if (instr == -1)
+            {
+                // Draw null parameter
+                geptr->DrawTextString(15, 3 + y, geptr->entity, "----", thiscolor);
+            }
+            else
+            {
+                // Draw effect parameter
+                auto outstr = IntToHexString(effect1_param);
+                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                geptr->DrawTextString(15, 3 + y, geptr->entity, outstr, thiscolor);
+            }
+
+            // Modify right part of the number
+            if (leftrightcenter == left)
+            {
+                geptr->DrawSetColor(15, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(16, 3 + y, geptr->entity, primary_text_a);
+            }
+            // Modify left part of the number
+            else if (leftrightcenter == right)
+            {
+                geptr->DrawSetColor(17, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(18, 3 + y, geptr->entity, primary_text_a);
+            }
+
+            // FX2 -
+            thiscolor = cursor_y == y && cursor_x == 4 ? header_text_b : header_text_a;
+
+            // Get the current phrase grid value
+            int effect2 = phraselist[open_phrase]->arr[y + off_y][2];
+            if (instr == -1)
+            {
+                // Draw null effect
+                geptr->DrawTextString(20, 3 + y, geptr->entity, "-", thiscolor);
+            }
+            else
+            {
+                // Draw effect char
+                geptr->DrawTextString(20, 3 + y, geptr->entity, std::to_string(fx[effect2]), thiscolor);
+            }
+
+            // FX2 Param -
+            thiscolor = cursor_y == y && cursor_x == 5 ? primary_text_b : primary_text_a;
+
+            // Get the current phrase grid value
+            int effect2_param = phraselist[open_phrase]->arr[y + off_y][3];
+            if (instr == -1)
+            {
+                // Draw null parameter
+                geptr->DrawTextString(21, 3 + y, geptr->entity, "----", thiscolor);
+            }
+            else
+            {
+                // Draw effect parameter
+                auto outstr = IntToHexString(effect2_param);
+                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                geptr->DrawTextString(21, 3 + y, geptr->entity, outstr, thiscolor);
+            }
+
+            // Modify right part of the number
+            if (leftrightcenter == left)
+            {
+                geptr->DrawSetColor(21, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(22, 3 + y, geptr->entity, primary_text_a);
+            }
+            // Modify left part of the number
+            else if (leftrightcenter == right)
+            {
+                geptr->DrawSetColor(23, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(24, 3 + y, geptr->entity, primary_text_a);
+            }
+
+            // FX3 -
+            thiscolor = cursor_y == y && cursor_x == 6 ? header_text_b : header_text_a;
+
+            // Get the current phrase grid value
+            int effect3 = phraselist[open_phrase]->arr[y + off_y][2];
+            if (instr == -1)
+            {
+                // Draw null effect
+                geptr->DrawTextString(26, 3 + y, geptr->entity, "-", thiscolor);
+            }
+            else
+            {
+                // Draw effect char
+                geptr->DrawTextString(26, 3 + y, geptr->entity, std::to_string(fx[effect3]), thiscolor);
+            }
+
+            // FX3 Param -
+            thiscolor = cursor_y == y && cursor_x == 7 ? primary_text_b : primary_text_a;
+
+            // Get the current phrase grid value
+            int effect3_param = phraselist[open_phrase]->arr[y + off_y][3];
+            if (instr == -1)
+            {
+                // Draw null parameter
+                geptr->DrawTextString(27, 3 + y, geptr->entity, "----", thiscolor);
+            }
+            else
+            {
+                // Draw effect parameter
+                auto outstr = IntToHexString(effect3_param);
+                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                geptr->DrawTextString(27, 3 + y, geptr->entity, outstr, thiscolor);
+            }
+
+            // Modify right part of the number
+            if (leftrightcenter == left)
+            {
+                geptr->DrawSetColor(27, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(28, 3 + y, geptr->entity, primary_text_a);
+            }
+            // Modify left part of the number
+            else if (leftrightcenter == right)
+            {
+                geptr->DrawSetColor(29, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(30, 3 + y, geptr->entity, primary_text_a);
             }
         }
     }
@@ -1017,7 +1193,7 @@ void EditorControl()
             if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
                 songgrid[cursor_y + offset_y][cursor_x + offset_x] = -1;
         }
-        // Goto Chain Editor
+        // Goto page
         else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
         {
             // Go to the next page over
@@ -1036,8 +1212,8 @@ void EditorControl()
                     }
                     // Chain
                     state = m_chain;
-                    cursor_x = SDL_clamp(cursor_x, 0, 1);
-                    cursor_y = SDL_clamp(cursor_y, 0, chain::length-1);
+                    cursor_x = SDL_clamp(cursor_x, 0, chain_grid_w-1);
+                    cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h-1);
                     breakend = true;
                 }
             }
@@ -1081,7 +1257,7 @@ void EditorControl()
                 // If the chainlist value is unfilled, insert 0
                 if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] == -1)
                 {
-                    if (copied_chain == -1)
+                    if (copied_phrase == -1)
                     {
                         // Set UI reference to Hex0
                         chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
@@ -1092,7 +1268,7 @@ void EditorControl()
                     else
                     {
                         // Set UI reference to copied chain
-                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = copied_chain;
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = copied_phrase;
                     }
                 }
                 // If double click, add a new chain
@@ -1103,12 +1279,12 @@ void EditorControl()
                     // Add the new chain
                     InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
                     // Copy to clipboard
-                    copied_chain = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                    copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
                 }
                 else
                 {
                     // Copy to clipboard
-                    copied_chain = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                    copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
                 }
             }
         }
@@ -1190,7 +1366,7 @@ void EditorControl()
                 }
             }
         }
-        // Goto Song Editor
+        // Goto page
         else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
         {
             // Go to the left page over
@@ -1198,6 +1374,8 @@ void EditorControl()
             {
                 // Song
                 state = m_song;
+                cursor_x = SDL_clamp(cursor_x, 0, song_grid_w - 1);
+                cursor_y = SDL_clamp(cursor_y, 0, song_grid_h - 1);
                 breakend = true;
             }
             // Go to the right page over
@@ -1216,8 +1394,8 @@ void EditorControl()
                     }
                     // Chain
                     state = m_phrase;
-                    cursor_x = SDL_clamp(cursor_x, 0, phrase::len_x - 1);
-                    cursor_y = SDL_clamp(cursor_y, 0, phrase::len_y - 1);
+                    cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
                     breakend = true;
                 }
 
@@ -1262,6 +1440,221 @@ void EditorControl()
     // Handle input for the phrase menu
     if (state == m_phrase && !breakend)
     {
+        // Modify value
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+        {
+            // Edit note
+            if (cursor_x == 0)
+            {
+                // If the phraselist value is unfilled, insert C-4
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999)
+                {
+                    if (copied_note == -9999)
+                    {
+                        // Set note reference to C-4
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = 39;
+                    }
+                    else
+                    {
+                        // Set UI reference to copied phrase
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note;
+                    }
+                }
+                else
+                {
+                    // Copy to clipboard
+                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+                }
+            }
+
+
+            // Edit instr
+            if (cursor_x == 1)
+            {
+
+            }
+
+            // Edit fx1
+            if (cursor_x == 2)
+            {
+
+            }
+
+            // Edit fx1 param
+            if (cursor_x == 3)
+            {
+
+            }
+
+            // Edit fx2
+            if (cursor_x == 4)
+            {
+
+            }
+
+            // Edit fx2 param
+            if (cursor_x == 5)
+            {
+
+            }
+
+            // Edit fx3
+            if (cursor_x == 6)
+            {
+
+            }
+
+            // Edit fx3 param
+            if (cursor_x == 7)
+            {
+
+            }
+        }
+
+        // Do actions given the context --
+
+        // Editing
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        {
+            // Edit note
+            if (cursor_x == 0)
+            {
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Set to C-4 if it isn't set
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = 39;
+
+                    // Edit note pitch
+                    if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 12;
+                    if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 12;
+                    if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 1;
+                    if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 1;
+
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] < min_note)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = max_note + ((phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - min_note) + 1);
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] > max_note)
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = min_note + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - 1) - max_note;
+
+                    // Copy to clipboard
+                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+                }
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = -9999;
+            }
+            
+            // Edit instr
+            if (cursor_x == 1)
+            {
+
+            }
+
+            // Edit fx1
+            if (cursor_x == 2)
+            {
+
+            }
+
+            // Edit fx1 param
+            if (cursor_x == 3)
+            {
+
+            }
+
+            // Edit fx2
+            if (cursor_x == 4)
+            {
+
+            }
+
+            // Edit fx2 param
+            if (cursor_x == 5)
+            {
+
+            }
+
+            // Edit fx3
+            if (cursor_x == 6)
+            {
+
+            }
+
+            // Edit fx3 param
+            if (cursor_x == 7)
+            {
+
+            }
+        }
+        // Goto page
+        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+        {
+            // Go to the left page over
+            if (goleft)
+            {
+                // Set open chain
+                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] != -1)
+                {
+                    open_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                    cursor_x = SDL_clamp(cursor_x, 0, song_grid_w - 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, song_grid_h - 1);
+                }
+                // If the open_chain is valid
+                if (open_chain != -1)
+                {
+                    // Check if the chain does not exist
+                    if (GetAt(&chainlist, open_chain) == nullptr)
+                    {
+                        InsertAt(&chainlist, open_chain, new chain());
+                    }
+                    // Chain
+                    state = m_chain;
+                    cursor_x = SDL_clamp(cursor_x, 0, chain_grid_w - 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
+                    breakend = true;
+                }
+            }
+            // Go to the right page over
+            else if (goright)
+            {
+                // TODO : Goto instrument menu
+            }
+        }
+        // Moving
+        else
+        {
+            cursor_x += goright - goleft;
+            cursor_y += godown - goup;
+        }
+
+        // wrap the cursor and clamp offsets
+        if (cursor_x > phrase_grid_w - 1)
+            cursor_x = 0;
+        if (cursor_x < 0)
+            cursor_x = phrase_grid_w - 1;
+        if (cursor_y + phrase_offset_y > phrase::len_y - 1)
+        {
+            cursor_y = 0;
+            phrase_offset_y = 0;
+        }
+        if (cursor_y + phrase_offset_y < 0)
+        {
+            cursor_y = phrase_grid_h - 1;
+            phrase_offset_y = phrase::len_y - phrase_grid_h;
+        }
+
+        // Move the page
+        if (cursor_y > phrase_grid_h - 1)
+            phrase_offset_y += 1;
+        if (cursor_y < 0)
+            phrase_offset_y -= 1;
+
+        cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
+        phrase_offset_y = SDL_clamp(phrase_offset_y, 0, phrase::len_y - phrase_grid_h);
+
         // Update UI
         DrawPhraseUI(phrase_offset_x, phrase_offset_y, "all");
     }
@@ -1276,11 +1669,11 @@ void EditorControl()
 // Master pre code
 void GameInit()
 {
-    // Set song grid w and h
+    // Set UI grid w and h
     song_grid_h = geptr->GetCanvasH() - 4;
     song_grid_w = (geptr->GetCanvasW() - 8) / 5;
     phrase_grid_h = std::min(16, geptr->GetCanvasH() - 4);
-    phrase_grid_w = 8; // 4 + 1 + 4 + 1 + 1 + 4 + 1 + 1 + 4 + 1 + 1 + 4 = 27
+    phrase_grid_w = 8;
     chain_grid_h = std::min(16, geptr->GetCanvasH() - 4);
     chain_grid_w = 2;
 
