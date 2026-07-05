@@ -193,7 +193,8 @@ void PlayStep(int channelnumber, int chain_ptr, int phrase_ptr, int step_ptr)
     // If no note is present, no need to play
     if (f != -9999)
     {
-        // TODO: Implement instrument parameters            
+        // TODO: Implement instrument parameters
+        // TODO: Sub-step on preview so that we can preview the table commands as well
         synptr2->pulse_width = 0.5f;
         synptr2->panning = 0.5f;
         synptr2->freq = NoteFreq(f);
