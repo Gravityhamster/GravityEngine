@@ -11,6 +11,14 @@ enum edit_mod
     center
 };
 
+// Playing type
+enum playing_type
+{
+    pt_song,
+    pt_chain,
+    pt_phrase
+};
+
 // Global variables --
 int ticknumber = 0; // Track tick progress
 int cursor_x; // X location of the user's cursor
