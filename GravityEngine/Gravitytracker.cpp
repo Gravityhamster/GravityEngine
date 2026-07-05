@@ -16,7 +16,9 @@ enum playing_type
 {
     pt_song,
     pt_chain,
-    pt_phrase
+    pt_phrase,
+    pt_chain_all,
+    pt_phrase_all
 };
 
 // Global variables --
@@ -51,12 +53,17 @@ int copied_note = -9999; // Clipboard for copying a note
 int copied_instr = -1; // Clipboard for copying an instrument
 int copied_effect = -1; // Clipboard for copying an instrument
 int copied_effect_param = -1; // Clipboard for copying an instrument
+int open_channel = -1; // Track which channel we've opened on
 int open_chain = -1; // Tracking which chain we have open
+int open_chain_index = 0; // Index of chain in the song
 int open_phrase = -1; // Tracking which phrase we have open
+int open_phrase_index = 0; // Index of phrase in the chain in the song
 int open_instrument = -1; // Tracking which instrument we have open
 char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
 int max_note = 107; // Maximum note that can be inserted
+bool pause_song = true; // Pause the song progression
+playing_type play_context = pt_song; // What type of play are we doing
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
@@ -151,42 +158,87 @@ class table
         ~table() {};
 };
 
+// Data structures --
+int** songgrid; //[0xffff][64];
+std::vector<chain*> chainlist;
+std::vector<phrase*> phraselist;
+std::vector<instrument*> instrumentlist;
+std::vector<table*> tablelist;
+
+// Tracker colors --
+color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
+color header_text_a = { {255, 255, 255}, {0, 0, 100} };
+color primary_text_b = { {0, 0, 0}, {255, 255, 255} };
+color header_text_b = { {0, 0, 100}, {255, 255, 255} };
+color body_text_a = { {255, 255, 255}, {0, 0, 0} };
+color body_text_b = { {0, 0, 0}, {255, 255, 255} };
+
+// Get note freq
+double NoteFreq(int n)
+{
+    // https://superglobalcalculator.com/calculators/music/piano-key-frequency/
+    return 440.0 * pow(2.0, (n - 49.0) / 12.0);
+}
+
 // ChannelSequencer - Track position of the channel in time in the song
 class channelsequencer
 {
-    public:
-        int channelnumber = 0; // Which channel is this sequencer assigned to?
-        int chain_ptr = 0; // Int position of the channel in the song
-        int phrase_ptr = 0; // Int position of the channel in the chain
-        int step_ptr = 0; // Int position of the channel in the phrase
-        int tick_ptr = 0; // Int position of the channel in the table
+public:
+    int channelnumber = -1; // Which channel is this sequencer assigned to?
+    int chain_ptr = 0; // Int position of the channel in the song
+    int phrase_ptr = 0; // Int position of the channel in the chain
+    int step_ptr = 0; // Int position of the channel in the phrase
+    int tick_ptr = 0; // Int position of the channel in the table
 
-        // Count tick
-        void sub_step()
-        {
-            // Increment tick in table
-            tick_ptr++;
-            // Go back to the 0th tick if we have reached the end of the table
-            tick_ptr = tick_ptr % table::len_y;
-        }
+    // Count tick
+    void sub_step()
+    {
+        // TODO : Substep-level effects
 
-        // Count step
-        void step()
+        // Increment tick in table
+        tick_ptr++;
+        // Go back to the 0th tick if we have reached the end of the table
+        tick_ptr = tick_ptr % table::len_y;
+    }
+
+    // Count step
+    void step()
+    {
+        // TODO : Play note and step-level effects
+
+        // Test: Play synth
+        if ((play_context == pt_phrase || play_context == pt_phrase) && open_channel == channelnumber)
         {
-            // Increment step in phrase
-            step_ptr++;
-            // If the step ptr has reached the end of the phrase, go back to the 0th step
-            if (step_ptr % phrase::len_y == 0)
+            auto f = phraselist[chainlist[songgrid[chain_ptr][channelnumber]]->arr[phrase_ptr]]->arr[step_ptr][0];
+            if (f != -9999)
             {
-                step_ptr = 0;
-                // Increment the phrase pointer in the chain
-                inc_phrase();
+                synptr2->pulse_width = 0.5f;
+                synptr2->panning = 0.5f;
+                synptr2->freq = NoteFreq(f);
+                synptr2->volume = 1.0f;
+                synptr2->volume_freq = -5;
+                synptr2->waveform = triangle;
+                geptr->BindSynthToChannel(synptr2, 0);
             }
         }
 
-    private:
+        // Increment step in phrase
+        step_ptr++;
+        // If the step ptr has reached the end of the phrase, go back to the 0th step
+        if (step_ptr % phrase::len_y == 0)
+        {
+            step_ptr = 0;
+            // Increment the phrase pointer in the chain
+            inc_phrase();
+        }
+    }
 
-        void inc_phrase()
+private:
+
+    void inc_phrase()
+    {
+        // If we are playing only the phrase, we don't want to increment
+        if (play_context != pt_phrase && play_context != pt_phrase_all)
         {
             // Increment phrase in chain
             phrase_ptr++;
@@ -197,8 +249,13 @@ class channelsequencer
                 inc_chain();
             }
         }
+    }
 
-        void inc_chain()
+    void inc_chain()
+    {
+        // If we are playing only the chain, we don't want to increment
+        // We don't need to check phrase because this function is only called from phrase
+        if (play_context != pt_chain && play_context != pt_chain_all)
         {
             // Increment chain in song
             chain_ptr++;
@@ -208,23 +265,11 @@ class channelsequencer
                 chain_ptr = 0;
             }
         }
+    }
 };
 
-// Data structures --
-int** songgrid; //[0xffff][64];
-std::vector<chain*> chainlist;
-std::vector<phrase*> phraselist;
-std::vector<instrument*> instrumentlist;
-std::vector<table*> tablelist;
+// Channel sequencer variable
 channelsequencer channellist[channelcount];
-
-// Tracker colors --
-color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
-color header_text_a = { {255, 255, 255}, {0, 0, 100} };
-color primary_text_b = { {0, 0, 0}, {255, 255, 255} };
-color header_text_b = { {0, 0, 100}, {255, 255, 255} };
-color body_text_a = { {255, 255, 255}, {0, 0, 0} };
-color body_text_b = { {0, 0, 0}, {255, 255, 255} };
 
 // Song editor menu
 enum menu
@@ -403,13 +448,6 @@ class input : public virtual GravityEngine_Object
 // Input getter
 int inputgetter;
 
-// Get note freq
-double NoteFreq(int n)
-{
-    // https://superglobalcalculator.com/calculators/music/piano-key-frequency/
-    return 440.0 * pow(2.0, (n - 49.0) / 12.0);
-}
-
 // Beats-per-minute to Tick length in nanoseconds
 // b : bpm
 double BpmToTicklength(int b)
@@ -429,10 +467,6 @@ void DoTick()
 {
     if (ticknumber % tps == 0)
     {
-        // Do Step Code --
-        synptr2->freq = NoteFreq(48);
-        synptr2->volume = 1;
-
         // Step the channel sequencers
         for (int i = 0; i < channelcount; i++)
             channellist[i].step();
@@ -443,14 +477,6 @@ void DoTick()
     // Tick the channel sequencers
     for (int i = 0; i < channelcount; i++)
         channellist[i].sub_step();
-
-    // Debug : Draw channel 0's sequence
-    geptr->DrawTextString(10, 0, geptr->entity,
-        std::to_string(channellist[0].chain_ptr) + " - " +
-        std::to_string(channellist[0].phrase_ptr) + " - " +
-        std::to_string(channellist[0].step_ptr) + " - " +
-        std::to_string(channellist[0].tick_ptr) + "    ",
-        primary_text_a);
 
     // Increment global song position in ticks --
     ticknumber++;
@@ -719,12 +745,17 @@ std::string IntToNoteString(int n)
 
 // Draw Phrase Editor UI
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, ptr]
 void DrawPhraseUI(int off_y, std::string type)
 {
     // Width and height of the screen
     int h = phrase_grid_h;
     int w = phrase_grid_w;
+
+    // Song position pointer
+    if (str_contains(type, "all") || str_contains(type, "ptr"))
+        if (open_phrase_index == channellist[open_channel].phrase_ptr && open_chain_index == channellist[open_channel].chain_ptr && pause_song == false)
+            geptr->DrawTextString(4, 3 + channellist[open_channel].step_ptr, geptr->entity, ">", primary_text_a);
 
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
@@ -993,7 +1024,10 @@ void TrackTicks()
     while (running == true)
     {
         // Execute tick
-        DoTick();
+        if (pause_song == false)
+            DoTick();
+        else
+            next = std::chrono::steady_clock::now();
 
         // Sync timing
         next += std::chrono::nanoseconds((int64_t)ticklength);
@@ -1097,6 +1131,12 @@ void EditorControl()
     int goleft = 0;
     int goup = 0;
     int godown = 0;
+    bool willpause = false;
+
+    // Handle play button
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == false)
+        // Pause the song playback
+        willpause = true;
 
     // Move the cursor
     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed() ||
@@ -1210,9 +1250,15 @@ void EditorControl()
             // Go to the next page over
             if (goright)
             {
+                // Set open audio channel
+                open_channel = cursor_x + offset_x;
                 // Set open chain
                 if (songgrid[cursor_y + offset_y][cursor_x + offset_x] != -1)
+                {
                     open_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                    // Set open chain index
+                    open_chain_index = cursor_y + offset_y;
+                }
                 // If the open_chain is valid
                 if (open_chain != -1)
                 {
@@ -1390,7 +1436,11 @@ void EditorControl()
             {
                 // Set open phrase
                 if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] != -1)
+                {
                     open_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                    // Set open phrase index
+                    open_phrase_index = cursor_y + chain_offset_y;
+                }
                 // If the open_chain is valid
                 if (open_phrase != -1)
                 {
@@ -1447,6 +1497,20 @@ void EditorControl()
     // Handle input for the phrase menu
     if (state == m_phrase && !breakend)
     {
+        // Handle play button
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+        {
+            // Set the song ptr position for only this channel
+            channellist[open_channel].chain_ptr = open_chain_index;
+            channellist[open_channel].phrase_ptr = open_phrase_index;
+            channellist[open_channel].step_ptr = 0; // cursor_y + phrase_offset_y;
+            channellist[open_channel].tick_ptr = 0;
+            // Set the scope of play to only this phrase
+            play_context = pt_phrase;
+            // Unpause the song playback
+            pause_song = false;
+        }
+
         // Modify value
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
         {
@@ -1497,7 +1561,7 @@ void EditorControl()
             if (cursor_x == 0)
             {
                 // Set to C-4 if it isn't set
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999)
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
                     phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
 
                 // Movement keys
@@ -1517,7 +1581,8 @@ void EditorControl()
                 }
 
                 // Copy to clipboard
-                copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1566,7 +1631,7 @@ void EditorControl()
             if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
             {
                 // Set to 0 if it isn't set
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
                     phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
 
                 // Movement keys
@@ -1586,7 +1651,8 @@ void EditorControl()
                 }
 
                 // Copy to clipboard
-                copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1597,7 +1663,7 @@ void EditorControl()
             if (cursor_x == 3 || cursor_x == 5 || cursor_x == 7)
             {
                 // Set to 0 if it isn't set
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
+                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
                     phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
 
                 // Movement keys
@@ -1628,7 +1694,8 @@ void EditorControl()
                 }
 
                 // Copy to clipboard
-                copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1710,6 +1777,9 @@ void EditorControl()
 
     // Handle repeating movement from hold presses
     HandleMovementRepeaters();
+
+    // If we want to pause then pause
+    if (willpause) pause_song = willpause;
 }
 
 // Master pre code
@@ -1725,7 +1795,7 @@ void GameInit()
 
     // Init channel sequencers
     for (int i = 0; i < channelcount; i++)
-        channellist->channelnumber = i;
+        channellist[i].channelnumber = i;
 
     // Init song phrase list
     songgrid = new int* [rowcount];
@@ -1777,6 +1847,14 @@ void PreGameLoop()
 {
     // Get input and apply to the editor as appropriate
     EditorControl();
+
+    // Debug : Draw channel 0's sequence
+    geptr->DrawTextString(10, 0, geptr->entity,
+        std::to_string(channellist[0].chain_ptr) + " - " +
+        std::to_string(channellist[0].phrase_ptr) + " - " +
+        std::to_string(channellist[0].step_ptr) + " - " +
+        std::to_string(channellist[0].tick_ptr) + "    ",
+        primary_text_a);
 }
 
 // Master post code

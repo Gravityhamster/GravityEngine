@@ -21,7 +21,6 @@
   <ItemGroup>
     <ClInclude Include="GravityEngineSDL.h" />
     <ClInclude Include="GravitySynthSDL.h" />
-    <ClInclude Include="types.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Gravitytracker.cpp" />
