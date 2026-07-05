@@ -34,7 +34,7 @@ int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
 const int channelcount = 64; // How many audio channels in the song
 int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
-int bpm = 170; // Beats per minute of the song
+int bpm = 295; // 170; // Beats per minute of the song
 int tps = 6; // Ticks per step of the song
 int fps = 60; // Frame rate in hz of the UI
 double ticklength = 0; // Nanoseconds per tick
@@ -58,6 +58,7 @@ int open_chain = -1; // Tracking which chain we have open
 int open_chain_index = 0; // Index of chain in the song
 int open_phrase = -1; // Tracking which phrase we have open
 int open_phrase_index = 0; // Index of phrase in the chain in the song
+// TODO: Add and implement playing versions of the open varables to prevent crashing when navigating away from a playing phrase
 int open_instrument = -1; // Tracking which instrument we have open
 char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
@@ -180,6 +181,29 @@ double NoteFreq(int n)
     return 440.0 * pow(2.0, (n - 49.0) / 12.0);
 }
 
+// Play step
+// channelnumber : The particular channel to play the step on
+// chain_ptr : Song progress index
+// phrase_ptr : Chain progress index
+// step_ptr : Phrase progress index
+void PlayStep(int channelnumber, int chain_ptr, int phrase_ptr, int step_ptr)
+{
+    // Get frequency to play
+    auto f = phraselist[chainlist[songgrid[chain_ptr][channelnumber]]->arr[phrase_ptr]]->arr[step_ptr][0];
+    // If no note is present, no need to play
+    if (f != -9999)
+    {
+        // TODO: Implement instrument parameters            
+        synptr2->pulse_width = 0.5f;
+        synptr2->panning = 0.5f;
+        synptr2->freq = NoteFreq(f);
+        synptr2->volume = 1.0f;
+        synptr2->volume_freq = -5;
+        synptr2->waveform = square;
+        geptr->BindSynthToChannel(synptr2, 0);
+    }
+}
+
 // ChannelSequencer - Track position of the channel in time in the song
 class channelsequencer
 {
@@ -206,20 +230,10 @@ public:
     {
         // TODO : Play note and step-level effects
 
-        // Test: Play synth
-        if ((play_context == pt_phrase || play_context == pt_phrase) && open_channel == channelnumber)
+        // Play context within this local phrase
+        if ((play_context == pt_phrase || play_context == pt_phrase_all) && open_channel == channelnumber)
         {
-            auto f = phraselist[chainlist[songgrid[chain_ptr][channelnumber]]->arr[phrase_ptr]]->arr[step_ptr][0];
-            if (f != -9999)
-            {
-                synptr2->pulse_width = 0.5f;
-                synptr2->panning = 0.5f;
-                synptr2->freq = NoteFreq(f);
-                synptr2->volume = 1.0f;
-                synptr2->volume_freq = -5;
-                synptr2->waveform = triangle;
-                geptr->BindSynthToChannel(synptr2, 0);
-            }
+            PlayStep(channelnumber, chain_ptr, phrase_ptr, step_ptr);
         }
 
         // Increment step in phrase
@@ -410,39 +424,39 @@ class input : public virtual GravityEngine_Object
 
         bool is_up_pressed() { return is_up && !was_up; }
         bool is_up_down() { return is_up; }
-        bool was_up_pressed() { return was_up; }
+        bool is_up_released() { return was_up && !is_up; }
 
         bool is_down_pressed() { return is_down && !was_down; }
         bool is_down_down() { return is_down; }
-        bool was_down_pressed() { return was_down; }
+        bool is_down_released() { return was_down && !is_down; }
 
         bool is_left_pressed() { return is_left && !was_left; }
         bool is_left_down() { return is_left; }
-        bool was_left_pressed() { return was_left; }
+        bool is_left_released() { return was_left && !is_left; }
 
         bool is_right_pressed() { return is_right && !was_right; }
         bool is_right_down() { return is_right; }
-        bool was_right_pressed() { return was_right; }
+        bool is_right_released() { return was_right && !is_right; }
 
         bool is_a_pressed() { return is_a && !was_a; }
         bool is_a_down() { return is_a; }
-        bool was_a_pressed() { return was_a; }
+        bool is_a_released() { return was_a && !is_a; }
 
         bool is_b_pressed() { return is_b && !was_b; }
         bool is_b_down() { return is_b; }
-        bool was_b_pressed() { return was_b; }
+        bool is_b_released() { return was_b && !is_b; }
 
         bool is_start_pressed() { return is_start && !was_start; }
         bool is_start_down() { return is_start; }
-        bool was_start_pressed() { return was_start; }
+        bool is_start_released() { return was_start && !is_start; }
 
         bool is_select_pressed() { return is_select && !was_select; }
         bool is_select_down() { return is_select; }
-        bool was_select_pressed() { return was_select; }
+        bool is_select_released() { return was_select && !is_select; }
 
         bool is_shift_pressed() { return is_shift && !was_shift; }
         bool is_shift_down() { return is_shift; }
-        bool was_shift_pressed() { return was_shift; }
+        bool is_shift_released() { return was_shift && !is_shift; }
 };
 
 // Input getter
@@ -1581,8 +1595,11 @@ void EditorControl()
                 }
 
                 // Copy to clipboard
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+                copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+
+                // Preview note
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft)
+                    PlayStep(open_channel, open_chain, open_phrase, cursor_y + phrase_offset_y);
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1651,8 +1668,7 @@ void EditorControl()
                 }
 
                 // Copy to clipboard
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                    copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+                copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1694,8 +1710,7 @@ void EditorControl()
                 }
 
                 // Copy to clipboard
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                    copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+                copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -1742,6 +1757,10 @@ void EditorControl()
             cursor_x += goright - goleft;
             cursor_y += godown - goup;
         }
+
+        // Step previewing
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
+            geptr->StopChannel(open_channel);
 
         // wrap the cursor and clamp offsets
         if (cursor_x > phrase_grid_w - 1)
