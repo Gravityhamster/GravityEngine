@@ -12,6 +12,8 @@
 
 #define PI 3.141592f
 
+// TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
+
 // Enum to define the current playback state of a sound channel
 enum ChannelStates
 {
