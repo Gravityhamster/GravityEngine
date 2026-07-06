@@ -58,7 +58,11 @@ int open_chain = -1; // Tracking which chain we have open
 int open_chain_index = 0; // Index of chain in the song
 int open_phrase = -1; // Tracking which phrase we have open
 int open_phrase_index = 0; // Index of phrase in the chain in the song
-// TODO: Add and implement playing versions of the open varables to prevent crashing when navigating away from a playing phrase
+int playing_channel = -1; // Track which channel we're playing
+int playing_chain = -1; // Tracking which chain we are playing
+int playing_chain_index = -1; // Index of the chain in the song we are playing
+int playing_phrase = -1; // Tracking which phrase we are playing
+int playing_phrase_index = -1; // Index of phrase in the chain in the song we are playing
 int open_instrument = -1; // Tracking which instrument we have open
 char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
@@ -181,15 +185,15 @@ double NoteFreq(int n)
     return 440.0 * pow(2.0, (n - 49.0) / 12.0);
 }
 
-// Play step
+// Play step phrase
 // channelnumber : The particular channel to play the step on
 // chain_ptr : Song progress index
 // phrase_ptr : Chain progress index
 // step_ptr : Phrase progress index
-void PlayStep(int channelnumber, int chain_ptr, int phrase_ptr, int step_ptr)
+void PlayStepPhrase(int channel_index, int phrase_ptr, int step_ptr)
 {
     // Get frequency to play
-    auto f = phraselist[chainlist[songgrid[chain_ptr][channelnumber]]->arr[phrase_ptr]]->arr[step_ptr][0];
+    auto f = phraselist[phrase_ptr]->arr[step_ptr][0];
     // If no note is present, no need to play
     if (f != -9999)
     {
@@ -201,7 +205,7 @@ void PlayStep(int channelnumber, int chain_ptr, int phrase_ptr, int step_ptr)
         synptr2->volume = 1.0f;
         synptr2->volume_freq = -5;
         synptr2->waveform = square;
-        geptr->BindSynthToChannel(synptr2, 0);
+        geptr->BindSynthToChannel(synptr2, channel_index);
     }
 }
 
@@ -232,9 +236,9 @@ public:
         // TODO : Play note and step-level effects
 
         // Play context within this local phrase
-        if ((play_context == pt_phrase || play_context == pt_phrase_all) && open_channel == channelnumber)
+        if ((play_context == pt_phrase || play_context == pt_phrase_all) && playing_channel == channelnumber)
         {
-            PlayStep(channelnumber, chain_ptr, phrase_ptr, step_ptr);
+            PlayStepPhrase(channelnumber, playing_phrase, step_ptr);
         }
 
         // Increment step in phrase
@@ -1516,10 +1520,12 @@ void EditorControl()
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
         {
             // Set the song ptr position for only this channel
-            channellist[open_channel].chain_ptr = open_chain_index;
-            channellist[open_channel].phrase_ptr = open_phrase_index;
-            channellist[open_channel].step_ptr = 0; // cursor_y + phrase_offset_y;
-            channellist[open_channel].tick_ptr = 0;
+            playing_channel = open_channel;
+            channellist[playing_channel].chain_ptr = open_chain_index;
+            channellist[playing_channel].phrase_ptr = open_phrase_index;
+            playing_phrase = open_phrase_index;
+            channellist[playing_channel].step_ptr = 0; // cursor_y + phrase_offset_y;
+            channellist[playing_channel].tick_ptr = 0;
             // Set the scope of play to only this phrase
             play_context = pt_phrase;
             // Unpause the song playback
@@ -1600,7 +1606,7 @@ void EditorControl()
 
                 // Preview note
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft)
-                    PlayStep(open_channel, open_chain, open_phrase, cursor_y + phrase_offset_y);
+                    PlayStepPhrase(open_channel, open_phrase, cursor_y + phrase_offset_y);
 
                 // Handle deletes
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
