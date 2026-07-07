@@ -68,6 +68,7 @@ char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
 int max_note = 107; // Maximum note that can be inserted
 bool pause_song = true; // Pause the song progression
+bool play_thread = false; // Play thread check flag
 playing_type play_context = pt_song; // What type of play are we doing
 
 // Find string f in s
@@ -773,8 +774,13 @@ void DrawPhraseUI(int off_y, std::string type)
 
     // Song position pointer
     if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (open_phrase_index == channellist[open_channel].phrase_ptr && open_chain_index == channellist[open_channel].chain_ptr && pause_song == false)
-            geptr->DrawTextString(4, 3 + channellist[open_channel].step_ptr, geptr->entity, ">", primary_text_a);
+        if (open_phrase_index == playing_phrase_index && 
+            open_phrase == playing_phrase && 
+            open_chain_index == playing_chain_index &&
+            open_chain == playing_chain && 
+            open_channel == playing_channel &&
+            pause_song == false)
+            geptr->DrawTextString(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, ">", primary_text_a);
 
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
@@ -1040,6 +1046,9 @@ void TrackTicks()
     // The next time is defined by starting at the current time
     auto next = std::chrono::steady_clock::now();
 
+    // Mark that the thread is running
+    play_thread = true;
+
     while (running == true)
     {
         // Execute tick
@@ -1068,6 +1077,9 @@ void TrackTicks()
             }        
         }
     }
+
+    // Mark that the thread is not running
+    play_thread = false;
 }
 
 // Handle repeating movements
@@ -1139,6 +1151,13 @@ GetNextEmpty(std::vector<T*>* vec)
     }
     // Returnt he last index
     return index;
+}
+
+// Stop all audio playback
+void StopAllChannels()
+{
+    for (int i = 0; i < channelcount; i++)
+        geptr->StopChannel(i);
 }
 
 // Handle movement
@@ -1519,11 +1538,15 @@ void EditorControl()
         // Handle play button
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
         {
+            StopAllChannels();
             // Set the song ptr position for only this channel
             playing_channel = open_channel;
             channellist[playing_channel].chain_ptr = open_chain_index;
+            playing_chain = open_chain;
+            playing_chain_index = open_chain_index;
             channellist[playing_channel].phrase_ptr = open_phrase_index;
-            playing_phrase = open_phrase_index;
+            playing_phrase = open_phrase;
+            playing_phrase_index = open_phrase_index;
             channellist[playing_channel].step_ptr = 0; // cursor_y + phrase_offset_y;
             channellist[playing_channel].tick_ptr = 0;
             // Set the scope of play to only this phrase
@@ -1767,7 +1790,9 @@ void EditorControl()
 
         // Step previewing
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
-            geptr->StopChannel(open_channel);
+        {
+            StopAllChannels();
+        }
 
         // wrap the cursor and clamp offsets
         if (cursor_x > phrase_grid_w - 1)
@@ -1805,7 +1830,13 @@ void EditorControl()
     HandleMovementRepeaters();
 
     // If we want to pause then pause
-    if (willpause) pause_song = willpause;
+    if (willpause)
+    {
+        // Stop audio
+        StopAllChannels();
+        // Pause song
+        pause_song = willpause;
+    }
 }
 
 // Master pre code
@@ -1842,18 +1873,19 @@ void GameInit()
         DrawChainUI(0, "all");
 
     // Test: Init synth and play it
+    // TODO: Make a synth for every channel
     synptr2 = new GravityEngine_Synth();
-    synptr2->pulse_width_freq = 0.5f;
-    synptr2->panning = 0.5f;
-    synptr2->freq = 261.63;
-    synptr2->volume = 0;
-    synptr2->volume_freq = -50;
-    synptr2->waveform = triangle;
+    // synptr2->pulse_width_freq = 0.5f;
+    // synptr2->panning = 0.5f;
+    // synptr2->freq = 261.63;
+    // synptr2->volume = 0;
+    // synptr2->volume_freq = -50;
+    // synptr2->waveform = triangle;
     // geptr->BindSynthToChannel(synptr2, 0);
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
-    // geptr->PlaySoundOnChannel(0, 1, true);
+    //geptr->PlaySoundOnChannel(0, 1, true);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
@@ -1874,6 +1906,7 @@ void PreGameLoop()
     // Get input and apply to the editor as appropriate
     EditorControl();
 
+
     // Debug : Draw channel 0's sequence
     geptr->DrawTextString(10, 0, geptr->entity,
         std::to_string(channellist[0].chain_ptr) + " - " +
@@ -1888,6 +1921,14 @@ void PostGameLoop()
 {
 }
 
+// Master exit game code
+void ExitGameLoop()
+{
+    // Stop playing
+    running = false;
+    while (play_thread) {};
+}
+
 int main()
 {
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
@@ -1900,7 +1941,7 @@ int main()
     geptr = &ge_inst; // Set the pointer to the console engine class
 
     // Start game loop
-    ge_inst.Start(&GameInit, &PreGameLoop, &PostGameLoop);
+    ge_inst.Start(&GameInit, &PreGameLoop, &PostGameLoop, &ExitGameLoop);
 
     // Cleanup all dynamically allocated data
     delete[] songgrid;

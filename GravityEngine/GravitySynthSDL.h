@@ -74,7 +74,6 @@ public:
     // float vibrato_freq = 0; -- Not yet implemented
     // float vibrato_amp = 0; -- Not yet implemented
     int sample_frames;
-    float* audio_data;
     SynthWaveForm waveform = sine;
 
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
@@ -85,7 +84,7 @@ public:
     // SDL_AudioDeviceID dev : Device the audio will play on
     // ChannelStates* state : Current state of the channel
     // bool* synth_playing : Flag to indicate the thread has successfully finished
-    static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, ChannelStates* state, bool* synth_playing)
+    static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* synth_playing)
     {
         // Crop panning
         synth->panning = std::clamp<float>(synth->panning, 0.f, 1.f);

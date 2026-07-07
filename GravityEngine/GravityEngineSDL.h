@@ -117,14 +117,14 @@ private:
         // -= Attributes =-
         SDL_AudioStream* sdl_audio_stream = nullptr; // SDL audio streaming object
         SDL_AudioDeviceID audio_device_id; // SDL audio playback device object
-        ChannelStates state = uninit; // Playback state of this audio channel
+        std::atomic<ChannelStates> state = uninit; // Playback state of this audio channel
         ChannelType type = file; // Sound type currently playing
         std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
         bool looping = false; // Loop audio
-        std::thread* synth_thread; // CPU thread to run the synth audio generation on
-        std::thread* file_thread; // CPU thread to run the file audio load on
-        bool synth_playing = false; // Flag if synth audio is playing
-        bool file_playing = false; // Flag if file audio is playing
+        std::thread* synth_thread = nullptr; // CPU thread to run the synth audio generation on
+        std::thread* file_thread = nullptr; // CPU thread to run the file audio load on
+        std::atomic<bool> synth_playing = false; // Flag if synth audio is playing
+        std::atomic<bool> file_playing = false; // Flag if file audio is playing
         bool file_first_loop = false; // First loop of the audio file
         long audio_file_read_offset = 0; // Read pointer for the audio file load
 
@@ -146,7 +146,7 @@ private:
         // Feed the looping audio for the sound file
         // GravityEngine_AudioChannel* ac : Pointer to the audio channel to loop
         // bool* is_looping : Pointer to the variable to determine if the channel is still looping
-        static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, bool* file_playing, SDL_AudioSpec audio_spec, SDL_AudioDeviceID audio_device_id)
+        static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, std::atomic<bool>* file_playing, SDL_AudioSpec audio_spec, SDL_AudioDeviceID audio_device_id)
         {
 
             // Get sample frames
@@ -644,7 +644,8 @@ public:
     // void (*init_game)() : Custom game initialization function
     // void (*pre_loop_code)() : Custom global begin-step function
     // void (*post_loop_code)() : Custom global end-step function
-    SDL_AppResult Start(void (*init_game)() = nullptr, void (*pre_loop_code)() = nullptr, void (*post_loop_code)() = nullptr)
+    // void (*exit_game_loop_code)() : Custom global exit-game function
+    SDL_AppResult Start(void (*init_game)() = nullptr, void (*pre_loop_code)() = nullptr, void (*post_loop_code)() = nullptr, void (*exit_game_loop_code)() = nullptr)
     {
         // Game is running now
         game_running = true;
@@ -695,7 +696,7 @@ public:
             init_game();
 
         // Call game loop
-        GameLoop(pre_loop_code, post_loop_code);
+        GameLoop(pre_loop_code, post_loop_code, exit_game_loop_code);
 
         // -= GAME END =-
         // Sleep the thread to give the program a chance to catch up or finish whatever it was doing before we cutoff all memory
@@ -1419,7 +1420,8 @@ private:
     // Game loop
     // void (*pre_loop_code)() : Custom global begin-step function
     // void (*post_loop_code)() : Custom global end-step function
-    void GameLoop(void (*pre_loop_code)(), void (*post_loop_code)())
+    // void (*exit_game_loop_code)() : Custom global exit-game function
+    void GameLoop(void (*pre_loop_code)(), void (*post_loop_code)(), void (*exit_game_loop_code)())
     {
         // Init timing stuff
         gobal_start_time = std::chrono::steady_clock::now();
@@ -1456,6 +1458,9 @@ private:
             // Ensure frame-rate stays within requested FPS
             SyncFrameStep();
         }
+
+        // Run custom end game script
+        exit_game_loop_code();
     }
 };
 
