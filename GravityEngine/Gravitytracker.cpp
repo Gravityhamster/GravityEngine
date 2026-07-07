@@ -59,10 +59,6 @@ int open_chain_index = 0; // Index of chain in the song
 int open_phrase = -1; // Tracking which phrase we have open
 int open_phrase_index = 0; // Index of phrase in the chain in the song
 int playing_channel = -1; // Track which channel we're playing
-int playing_chain = -1; // Tracking which chain we are playing
-int playing_chain_index = -1; // Index of the chain in the song we are playing
-int playing_phrase = -1; // Tracking which phrase we are playing
-int playing_phrase_index = -1; // Index of phrase in the chain in the song we are playing
 int open_instrument = -1; // Tracking which instrument we have open
 char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
@@ -219,6 +215,8 @@ public:
     int phrase_ptr = 0; // Int position of the channel in the chain
     int step_ptr = 0; // Int position of the channel in the phrase
     int tick_ptr = 0; // Int position of the channel in the table
+    int playing_chain = -1;
+    int playing_phrase = -1;
 
     // Count tick
     void sub_step()
@@ -774,10 +772,10 @@ void DrawPhraseUI(int off_y, std::string type)
 
     // Song position pointer
     if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (open_phrase_index == playing_phrase_index && 
-            open_phrase == playing_phrase && 
-            open_chain_index == playing_chain_index &&
-            open_chain == playing_chain && 
+        if (open_phrase_index == channellist[playing_channel].phrase_ptr &&
+            open_phrase == channellist[playing_channel].playing_phrase &&
+            open_chain_index == channellist[playing_channel].chain_ptr &&
+            open_chain == channellist[playing_channel].playing_chain &&
             open_channel == playing_channel &&
             pause_song == false)
             geptr->DrawTextString(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, ">", primary_text_a);
@@ -1542,11 +1540,9 @@ void EditorControl()
             // Set the song ptr position for only this channel
             playing_channel = open_channel;
             channellist[playing_channel].chain_ptr = open_chain_index;
-            playing_chain = open_chain;
-            playing_chain_index = open_chain_index;
+            channellist[playing_channel].playing_chain = open_chain;
             channellist[playing_channel].phrase_ptr = open_phrase_index;
-            playing_phrase = open_phrase;
-            playing_phrase_index = open_phrase_index;
+            channellist[playing_channel].playing_phrase = open_phrase;
             channellist[playing_channel].step_ptr = 0; // cursor_y + phrase_offset_y;
             channellist[playing_channel].tick_ptr = 0;
             // Set the scope of play to only this phrase
