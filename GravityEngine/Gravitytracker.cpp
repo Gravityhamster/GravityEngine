@@ -175,6 +175,55 @@ color header_text_b = { {0, 0, 100}, {255, 255, 255} };
 color body_text_a = { {255, 255, 255}, {0, 0, 0} };
 color body_text_b = { {0, 0, 0}, {255, 255, 255} };
 
+
+// Insert at arbitrary location
+template <typename T> void
+InsertAt(std::vector<T*>* vec, int index, T* ptr)
+{
+    // Fill with nulls up to index
+    for (int i = 0; i < index; i++)
+    {
+        if (vec->size() <= i)
+            vec->insert(vec->begin() + i, nullptr);
+    }
+
+    // Insert pointer at index
+    if (vec->size() <= index)
+        vec->insert(vec->begin() + index, ptr);
+    else
+        (*vec)[index] = ptr;
+}
+
+// Get at arbitrary location
+template <typename T> T*
+GetAt(std::vector<T*>* vec, int index)
+{
+    // Does this index exist yet in the vec
+    if (vec->size() <= index)
+        return nullptr;
+    // Yes? Then return the value 
+    else
+        return (*vec)[index];
+}
+
+// Get next empty index
+template <typename T> int
+GetNextEmpty(std::vector<T*>* vec)
+{
+    int index = 0;
+    // Iterate through, trying to find the next null or the end of the vector
+    while (index < vec->size())
+    {
+        // If this is an empty cell, return this index
+        if ((*vec)[index] == nullptr)
+            return index;
+        // Inc index
+        index++;
+    }
+    // Returnt he last index
+    return index;
+}
+
 // Get note freq
 double NoteFreq(int n)
 {
@@ -184,13 +233,12 @@ double NoteFreq(int n)
 
 // Play step phrase
 // channelnumber : The particular channel to play the step on
-// chain_ptr : Song progress index
-// phrase_ptr : Chain progress index
+// playing_phrase : Phrase to play
 // step_ptr : Phrase progress index
-void PlayStepPhrase(int channel_index, int phrase_ptr, int step_ptr)
+void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 {
     // Get frequency to play
-    auto f = phraselist[phrase_ptr]->arr[step_ptr][0];
+    auto f = phraselist[playing_phrase]->arr[step_ptr][0];
     // If no note is present, no need to play
     if (f != -9999)
     {
@@ -199,11 +247,24 @@ void PlayStepPhrase(int channel_index, int phrase_ptr, int step_ptr)
         synptr2->pulse_width = 0.5f;
         synptr2->panning = 0.5f;
         synptr2->freq = NoteFreq(f);
-        synptr2->volume = 1.0f;
+        synptr2->volume = 0.125f;
         synptr2->volume_freq = -5;
         synptr2->waveform = square;
         geptr->BindSynthToChannel(synptr2, channel_index);
     }
+}
+
+// Play step chain
+// channelnumber : The particular channel to play the step on
+// playing_chain : Chain to play
+// phrase_ptr : Chain progress index
+// step_ptr : Phrase progress index
+void PlayStepChain(int channel_index, int playing_chain, int phrase_ptr, int step_ptr)
+{
+    // Play the step at this chain position
+    auto play_phrase = chainlist[playing_chain]->arr[phrase_ptr];
+    if (play_phrase != -1 && GetAt(&phraselist, play_phrase) != nullptr)
+        PlayStepPhrase(channel_index, play_phrase, step_ptr);
 }
 
 // ChannelSequencer - Track position of the channel in time in the song
@@ -232,12 +293,16 @@ public:
     // Count step
     void step()
     {
-        // TODO : Play note and step-level effects
+        // TODO : Play step and sub-step-level effects
 
         // Play context within this local phrase
-        if ((play_context == pt_phrase || play_context == pt_phrase_all) && playing_channel == channelnumber)
+        if ((play_context == pt_phrase && playing_channel == channelnumber) || play_context == pt_phrase_all)
         {
             PlayStepPhrase(channelnumber, playing_phrase, step_ptr);
+        }
+        if ((play_context == pt_chain && playing_channel == channelnumber) || play_context == pt_chain_all)
+        {
+            PlayStepChain(channelnumber, playing_chain, phrase_ptr, step_ptr);
         }
 
         // Increment step in phrase
@@ -265,6 +330,21 @@ private:
                 phrase_ptr = 0;
                 // Increment the chain pointer in the song
                 inc_chain();
+            }
+            else
+            {
+                // Check if the channel is checking a valid chain
+                auto play_chain = GetAt(&chainlist, songgrid[chain_ptr][channelnumber]);
+                if (play_chain != nullptr)
+                {
+                    // If the channel is currently on a null phrase, go back to start
+                    if (play_chain->arr[phrase_ptr] == -1)
+                    {
+                        phrase_ptr = 0;
+                        // Increment the chain pointer in the song
+                        inc_chain();
+                    }
+                }
             }
         }
     }
@@ -618,6 +698,13 @@ void DrawChainUI(int off_y, std::string type)
     int h = chain_grid_h;
     int w = 1;
 
+    // Song position pointer
+    if (str_contains(type, "all") || str_contains(type, "ptr"))
+        if (open_chain_index == channellist[playing_channel].chain_ptr &&
+            open_channel == playing_channel &&
+            pause_song == false)
+            geptr->DrawTextString(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, ">", primary_text_a);
+
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
     {
@@ -773,9 +860,7 @@ void DrawPhraseUI(int off_y, std::string type)
     // Song position pointer
     if (str_contains(type, "all") || str_contains(type, "ptr"))
         if (open_phrase_index == channellist[playing_channel].phrase_ptr &&
-            open_phrase == channellist[playing_channel].playing_phrase &&
             open_chain_index == channellist[playing_channel].chain_ptr &&
-            open_chain == channellist[playing_channel].playing_chain &&
             open_channel == playing_channel &&
             pause_song == false)
             geptr->DrawTextString(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, ">", primary_text_a);
@@ -1106,51 +1191,6 @@ void HandleMovementRepeaters()
         inputholdtimer = 0;
 }
 
-// Insert at arbitrary location
-template <typename T> void
-InsertAt(std::vector<T*>* vec, int index, T* ptr)
-{
-    // Fill with nulls up to index
-    for (int i = 0; i < index; i++)
-    {
-        if (vec->size() <= i)
-            vec->insert(vec->begin() + i, nullptr);
-    }
-
-    // Insert pointer at index
-    vec->insert(vec->begin() + index, ptr);
-}
-
-// Get at arbitrary location
-template <typename T> T*
-GetAt(std::vector<T*>* vec, int index)
-{
-    // Does this index exist yet in the vec
-    if (vec->size() <= index)
-        return nullptr;
-    // Yes? Then return the value 
-    else
-        return (*vec)[index];
-}
-
-// Get next empty index
-template <typename T> int
-GetNextEmpty(std::vector<T*>* vec)
-{
-    int index = 0;
-    // Iterate through, trying to find the next null or the end of the vector
-    while (index < vec->size())
-    {
-        // If this is an empty cell, return this index
-        if ((*vec)[index] == nullptr)
-            return index;
-        // Inc index
-        index++;
-    }
-    // Returnt he last index
-    return index;
-}
-
 // Stop all audio playback
 void StopAllChannels()
 {
@@ -1341,6 +1381,24 @@ void EditorControl()
     // Handle input for the chain menu
     if (state == m_chain && !breakend)
     {
+        // Handle play button
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+        {
+            StopAllChannels();
+            // Set the song ptr position for only this channel
+            playing_channel = open_channel;
+            channellist[playing_channel].chain_ptr = open_chain_index;
+            channellist[playing_channel].playing_chain = open_chain;
+            channellist[playing_channel].phrase_ptr = cursor_y + chain_offset_y;
+            channellist[playing_channel].playing_phrase = -1;
+            channellist[playing_channel].step_ptr = 0;
+            channellist[playing_channel].tick_ptr = 0;
+            // Set the scope of play to only this phrase
+            play_context = pt_chain;
+            // Unpause the song playback
+            pause_song = false;
+        }
+
         // Modify value
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
         {
@@ -1749,13 +1807,6 @@ void EditorControl()
             // Go to the left page over
             if (goleft)
             {
-                // Set open chain
-                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] != -1)
-                {
-                    open_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
-                    cursor_x = SDL_clamp(cursor_x, 0, song_grid_w - 1);
-                    cursor_y = SDL_clamp(cursor_y, 0, song_grid_h - 1);
-                }
                 // If the open_chain is valid
                 if (open_chain != -1)
                 {
