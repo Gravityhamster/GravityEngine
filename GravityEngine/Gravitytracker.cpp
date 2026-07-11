@@ -33,7 +33,7 @@ int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
 const int channelcount = 64; // How many audio channels in the song
 int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
-int bpm = 295; // 170; // Beats per minute of the song
+int bpm = 155; // 170; // Beats per minute of the song
 int tps = 6; // Ticks per step of the song
 int fps = 60; // Frame rate in hz of the UI
 double ticklength = 0; // Nanoseconds per tick
@@ -228,7 +228,7 @@ GetNextEmpty(std::vector<T*>* vec)
 double NoteFreq(int n)
 {
     // https://superglobalcalculator.com/calculators/music/piano-key-frequency/
-    return 440.0 * pow(2.0, (n - 49.0) / 12.0);
+    return 440.0 * pow(2.0, ((n+1) - 49.0) / 12.0);
 }
 
 // Play step phrase
@@ -248,7 +248,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         synthlist[channel_index]->panning = 0.5f;
         synthlist[channel_index]->freq = NoteFreq(f);
         synthlist[channel_index]->volume = 0.125f;
-        synthlist[channel_index]->volume_freq = -5;
+        synthlist[channel_index]->volume_freq = -0.5;
         synthlist[channel_index]->waveform = square;
         geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
     }
@@ -925,7 +925,7 @@ void DrawChainUI(int off_y, std::string type)
 std::string IntToNoteString(int n)
 {
     // Get the octave
-    int octave = (n >= 0 ? std::floor(n / 12) + 1 : 0);
+    int octave = ((n-3) >= 0 ? std::floor((n-3) / 12) + 1 : 0);
     char octave_char = 48 + octave;
     // Get the note letter
     int note_int = (n >= 0 ? n : n + 12) % 12;
