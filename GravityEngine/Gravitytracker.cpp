@@ -309,6 +309,63 @@ int DeepCopyPhrase(int phrase_index)
     }
 }
 
+// Shallow Copy Chain
+// chain_index : The ID of the chain
+int ShallowCopyChain(int chain_index)
+{
+    // Try get the chain 
+    auto chain_to_copy = GetAt(&chainlist, chain_index);
+
+    // If the chain exists, recreate it and return the new index
+    if (chain_to_copy != nullptr)
+    {
+        // Create new
+        chain* target_chain = new chain();
+        // Copy the chain
+        for (int i = 0; i < chain::length; i++)
+        {
+            // Copy values
+            target_chain->arr[i] = chain_to_copy->arr[i];
+            target_chain->arr_transpose[i] = chain_to_copy->arr_transpose[i];
+        }
+        // Insert the chain into the chainlist
+        auto n = GetNextEmpty(&chainlist);
+        InsertAt(&chainlist, n, target_chain);
+        // Return the location of the new chain
+        return n;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+// Deep Copy Chain
+// chain_index : The ID of the chain
+int DeepCopyChain(int chain_index)
+{
+    // First Shallow Copy the Chain
+    int r = ShallowCopyChain(chain_index);
+
+    // Check return value
+    if (r != -1)
+    {
+        // Clone the phrases within the chain
+        for (int i = 0; i < chain::length; i++)
+        {
+            // Only clone if the index exists
+            if (GetAt(&phraselist, chainlist[r]->arr[i]) != nullptr)
+                chainlist[r]->arr[i] = DeepCopyPhrase(chainlist[r]->arr[i]);
+            // Insert new if not empty but not exist
+            else if (chainlist[r]->arr[i] != -1)
+                chainlist[r]->arr[i] = GetNextEmpty(&phraselist);
+        }
+    }
+
+    // Return the chain index
+    return r;
+}
+
 // ChannelSequencer - Track position of the channel in time in the song
 class channelsequencer
 {
@@ -1443,154 +1500,171 @@ void EditorControl()
     // Handle input for the song menu
     if (state == m_song && !breakend)
     {
-        // Handle play button
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+
+        // Handle deep copy input logic
+        GetDeepCopyInputs();
+
+        // If we have a successful deep copy, do it
+        if (do_deep_copy == 2 && GetAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x]) != nullptr)
         {
-            StopAllChannels();
-            // Should play flag
-            bool dont_play = true;
-            // Set the song ptr position for only this channel
-            for (int i = 0; i < channelcount; i++)
-                dont_play = channellist[i].init_song_play(cursor_y + offset_y) && dont_play;
-            // Should we play or not?
-            if (dont_play == false)
-            {
-                // Set the scope of play to only this phrase
-                play_context = pt_song;
-                // Unpause the song playback
-                pause_song = false;
-            }
+            // Deep copy the phrase and replace it here in the chain
+            songgrid[cursor_y + offset_y][cursor_x + offset_x] = DeepCopyChain(songgrid[cursor_y + offset_y][cursor_x + offset_x]);
         }
-
-        // Modify value
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-        {
-            // If the songgrid value is unfilled, insert 0
-            if (songgrid[cursor_y + offset_y][cursor_x + offset_x] == -1)
-            {
-                if (copied_chain == -1)
-                {
-                    // Set UI reference to Hex0
-                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0x0000;
-                    // If this chain doesn't exist yet, insert it
-                    if (GetAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x]) == nullptr)
-                        InsertAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x], new chain());
-                }
-                else
-                {
-                    // Set UI reference to copied chain
-                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = copied_chain;
-                }
-            }
-            // If double click, add a new chain
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
-            {
-                // Set UI reference to the next empty
-                songgrid[cursor_y + offset_y][cursor_x + offset_x] = GetNextEmpty(&chainlist);
-                // Add the new chain
-                InsertAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x], new chain());
-                // Copy to clipboard
-                copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
-            }
-            else
-            {
-                // Copy to clipboard
-                copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
-            }
-        }
-
-        // Do actions given the context --
-
-        // Editing
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
-        {
-            // Movement keys
-            if (goup || godown || goright || goleft)
-            {
-                // Mod the left two digits
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
-                {
-                    if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x1000;
-                    if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x1000;
-                    if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0100;
-                    if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0100;
-                }
-                // Mod the right two digits
-                else
-                {
-                    if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0010;
-                    if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0010;
-                    if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0001;
-                    if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0001;
-                }
-
-                // Wrap the cell between 0x0000 and 0xFFFF
-                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] < 0)
-                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0xFFFF + (songgrid[cursor_y + offset_y][cursor_x + offset_x] + 1);
-                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] > 0xFFFF)
-                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = (songgrid[cursor_y + offset_y][cursor_x + offset_x] - 1) - 0xFFFF;
-
-                // Copy to clipboard
-                copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
-            }
-
-            // Handle deletes
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
-                songgrid[cursor_y + offset_y][cursor_x + offset_x] = -1;
-        }
-        // Goto page
-        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
-        {
-            // Go to the next page over
-            if (goright)
-            {
-                // Set open audio channel
-                open_channel = cursor_x + offset_x;
-                // Set open chain
-                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] != -1)
-                {
-                    open_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
-                    // Set open chain index
-                    open_chain_index = cursor_y + offset_y;
-                }
-                // If the open_chain is valid
-                if (open_chain != -1)
-                {
-                    // Check if the chain does not exist
-                    if (GetAt(&chainlist, open_chain) == nullptr)
-                    {
-                        InsertAt(&chainlist, open_chain, new chain());
-                    }
-                    // Chain
-                    state = m_chain;
-                    cursor_x = SDL_clamp(cursor_x, 0, chain_grid_w-1);
-                    cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h-1);
-                    breakend = true;
-                }
-            }
-        }
-        // Moving
         else
         {
-            cursor_x += goright - goleft;
-            cursor_y += godown - goup;
+            // Handle play button
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+            {
+                StopAllChannels();
+                // Should play flag
+                bool dont_play = true;
+                // Set the song ptr position for only this channel
+                for (int i = 0; i < channelcount; i++)
+                    dont_play = channellist[i].init_song_play(cursor_y + offset_y) && dont_play;
+                // Should we play or not?
+                if (dont_play == false)
+                {
+                    // Set the scope of play to only this phrase
+                    play_context = pt_song;
+                    // Unpause the song playback
+                    pause_song = false;
+                }
+            }
+
+            // Modify value
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            {
+                // If the songgrid value is unfilled, insert 0
+                if (songgrid[cursor_y + offset_y][cursor_x + offset_x] == -1)
+                {
+                    if (copied_chain == -1)
+                    {
+                        // Set UI reference to Hex0
+                        songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0x0000;
+                        // If this chain doesn't exist yet, insert it
+                        if (GetAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x]) == nullptr)
+                            InsertAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x], new chain());
+                    }
+                    else
+                    {
+                        // Set UI reference to copied chain
+                        songgrid[cursor_y + offset_y][cursor_x + offset_x] = copied_chain;
+                    }
+                }
+                // If double click, add a new chain
+                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                {
+                    // Set UI reference to the next empty
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = GetNextEmpty(&chainlist);
+                    // Add the new chain
+                    InsertAt(&chainlist, songgrid[cursor_y + offset_y][cursor_x + offset_x], new chain());
+                    // Copy to clipboard
+                    copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                }
+                else
+                {
+                    // Copy to clipboard
+                    copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                }
+            }
+
+            // Do actions given the context --
+
+            // Editing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            {
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x1000;
+                        if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x1000;
+                        if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0100;
+                        if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0010;
+                        if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0010;
+                        if (goright) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x0001;
+                        if (goleft) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x0001;
+                    }
+
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (songgrid[cursor_y + offset_y][cursor_x + offset_x] < 0)
+                        songgrid[cursor_y + offset_y][cursor_x + offset_x] = 0xFFFF + (songgrid[cursor_y + offset_y][cursor_x + offset_x] + 1);
+                    if (songgrid[cursor_y + offset_y][cursor_x + offset_x] > 0xFFFF)
+                        songgrid[cursor_y + offset_y][cursor_x + offset_x] = (songgrid[cursor_y + offset_y][cursor_x + offset_x] - 1) - 0xFFFF;
+
+                    // Copy to clipboard
+                    copied_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                }
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    songgrid[cursor_y + offset_y][cursor_x + offset_x] = -1;
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            {
+                // Go to the next page over
+                if (goright)
+                {
+                    // Set open audio channel
+                    open_channel = cursor_x + offset_x;
+                    // Set open chain
+                    if (songgrid[cursor_y + offset_y][cursor_x + offset_x] != -1)
+                    {
+                        open_chain = songgrid[cursor_y + offset_y][cursor_x + offset_x];
+                        // Set open chain index
+                        open_chain_index = cursor_y + offset_y;
+                    }
+                    // If the open_chain is valid
+                    if (open_chain != -1)
+                    {
+                        // Check if the chain does not exist
+                        if (GetAt(&chainlist, open_chain) == nullptr)
+                        {
+                            InsertAt(&chainlist, open_chain, new chain());
+                        }
+                        // Chain
+                        state = m_chain;
+                        cursor_x = SDL_clamp(cursor_x, 0, chain_grid_w-1);
+                        cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h-1);
+                        breakend = true;
+                    }
+                }
+            }
+            // Moving
+            else
+            {
+                cursor_x += goright - goleft;
+                cursor_y += godown - goup;
+            }
+
+            // Move the page
+            if (cursor_y > song_grid_h - 1)
+                offset_y += 1;
+            if (cursor_x > song_grid_w - 1)
+                offset_x += 1;
+            if (cursor_y < 0)
+                offset_y -= 1;
+            if (cursor_x < 0)
+                offset_x -= 1;
+
+            // Clamp the cursor and offsets
+            cursor_x = SDL_clamp(cursor_x, 0, song_grid_w-1);
+            cursor_y = SDL_clamp(cursor_y, 0, song_grid_h-1);
+            offset_x = SDL_clamp(offset_x, 0, channelcount-song_grid_w);
+            offset_y = SDL_clamp(offset_y, 0, rowcount-song_grid_h);
         }
 
-        // Move the page
-        if (cursor_y > song_grid_h - 1)
-            offset_y += 1;
-        if (cursor_x > song_grid_w - 1)
-            offset_x += 1;
-        if (cursor_y < 0)
-            offset_y -= 1;
-        if (cursor_x < 0)
-            offset_x -= 1;
-
-        // Clamp the cursor and offsets
-        cursor_x = SDL_clamp(cursor_x, 0, song_grid_w-1);
-        cursor_y = SDL_clamp(cursor_y, 0, song_grid_h-1);
-        offset_x = SDL_clamp(offset_x, 0, channelcount-song_grid_w);
-        offset_y = SDL_clamp(offset_y, 0, rowcount-song_grid_h);
+        // Reset deep copy action flag
+        if (do_deep_copy == 2)
+            do_deep_copy = 0;
 
         // Update UI
         DrawSongUI(offset_x, offset_y, "all");
