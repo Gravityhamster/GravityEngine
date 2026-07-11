@@ -35,31 +35,18 @@ enum SynthWaveForm
     noise
 };
 
-/*
 // Enum to define the type of filter applied to audio channel
 enum FilterType
 {
     lowpass,
     highpass,
     bandpass,
-    comb
+    none
 };
-
-// Structure to define a filter for the audio channels
-struct GravityEngine_Filter
-{
-    FilterType type;
-    float frequency;
-    float slope;
-    float resonance;
-    float bandpass_plateu;
-};
-*/
 
 // Template for synth objects
 class GravityEngine_Synth
 {
-
 public:
     std::atomic<float> freq = 50.0;
     std::atomic<float> volume = 1;
@@ -75,6 +62,19 @@ public:
     // float vibrato_amp = 0; -- Not yet implemented
     int sample_frames;
     SynthWaveForm waveform = sine;
+    FilterType filter = lowpass;
+
+    // Filter - COPILOT
+    float cutoff = 0.25f; // 0.0 - 1.0
+    float resonance = 0.5f; // 0.0 - 1.0
+
+    // Filter state - COPILOT
+    float lp_l = 0.0f;
+    float bp_l = 0.0f;
+    float hp_l = 0.0f;
+    float lp_r = 0.0f;
+    float bp_r = 0.0f;
+    float hp_r = 0.0f;
 
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
     // It simply generates a waveform. Never call this indepentently please. Use BindSynthToChannel in the engine instead.
@@ -138,7 +138,18 @@ public:
                             sample = (pan_volume * synth->volume) * (distrib(gen) / 10000.);
                         }
 
-                        buffer[i] = sample;
+                        // Apply filter - COPILOT
+                        float cutoff_hz = synth->cutoff * (spec->freq * 0.5f);
+                        float f = 2.0f * sinf(PI * cutoff_hz / spec->freq);
+                        float q = synth->resonance;
+                        synth->hp_l = sample - synth->lp_l - q * synth->bp_l;
+                        synth->bp_l = synth->bp_l + f * synth->hp_l;
+                        synth->lp_l = synth->lp_l + f * synth->bp_l;
+                        
+                        // Get filtered value based on the type of filter
+                        float filtered = (synth->filter == lowpass ? synth->lp_l : (synth->filter == highpass ? synth->hp_l : (synth->filter == bandpass ? synth->bp_l : sample)));
+
+                        buffer[i] = filtered;
                     }
                 }
 
@@ -168,7 +179,19 @@ public:
                         sample = (pan_volume * synth->volume) * (distrib(gen) / 10000.);
                     }
 
-                    buffer[i] = sample;
+                    // Apply filter - COPILOT
+                    float cutoff_hz = synth->cutoff * (spec->freq * 0.5f);
+                    float f = 2.0f * sinf(PI * cutoff_hz / spec->freq);
+                    float q = synth->resonance;
+                    synth->hp_r = sample - synth->lp_r - q * synth->bp_r;
+                    synth->bp_r = synth->bp_r + f * synth->hp_r;
+                    synth->lp_r = synth->lp_r + f * synth->bp_r;
+
+                    // Get filtered value based on the type of filter
+                    float filtered = (synth->filter == lowpass ? synth->lp_r : (synth->filter == highpass ? synth->hp_r : (synth->filter == bandpass ? synth->bp_r : sample)));
+
+                    buffer[i] = filtered;
+
                     // Step
                     phase += synth->freq / spec->freq;
                     if (phase > 1.)

@@ -136,7 +136,13 @@ class instrument
 {
     public:
         // Audio parameters
-        ChannelType type;
+        ChannelType type; // Synth or Sample
+        float freq_offset = 0.f; // Add to freq
+        float volume = 1.f; // Volume
+        float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
+        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave)
+        float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
+        SynthWaveForm waveform = sine; // Synth wave type (Only for synth channel type)
 };
 
 // Tables - List of modulations for the currently playing instrument
@@ -246,11 +252,12 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
         synthlist[channel_index]->pulse_width = 0.5f;
+        synthlist[channel_index]->pulse_width_freq = 1.0f;
         synthlist[channel_index]->panning = 0.5f;
         synthlist[channel_index]->freq = NoteFreq(f);
         synthlist[channel_index]->volume = 0.125f;
         synthlist[channel_index]->volume_freq = -0.5;
-        synthlist[channel_index]->waveform = square;
+        synthlist[channel_index]->waveform = pulse;
         geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
     }
 }
