@@ -64,6 +64,7 @@ int min_note = -12; // Minimum note that can be inserted
 int max_note = 107; // Maximum note that can be inserted
 bool pause_song = true; // Pause the song progression
 bool play_thread = false; // Play thread check flag
+int do_deep_copy = 0; // Track progress for deep copy
 playing_type play_context = pt_song; // What type of play are we doing
 
 // Find string f in s
@@ -278,6 +279,34 @@ void PlayStepSong(int channel_index, int chain_ptr, int phrase_ptr, int step_ptr
     auto play_chain = songgrid[chain_ptr][channel_index];
     if (play_chain != -1 && GetAt(&chainlist, play_chain) != nullptr)
         PlayStepChain(channel_index, play_chain, phrase_ptr, step_ptr);
+}
+
+// Deep Copy Phrase
+// phrase_index : The ID of the phrase
+int DeepCopyPhrase(int phrase_index)
+{
+    // Try get the phrase 
+    auto phrase_to_copy = GetAt(&phraselist, phrase_index);
+
+    // If the phrase exists, recreate it and return the new index
+    if (phrase_to_copy != nullptr)
+    {
+        // Create new
+        phrase* target_phrase = new phrase();
+        // Copy the phrase
+        for (int i = 0; i < phrase::len_x; i++)
+            for (int q = 0; q < phrase::len_y; q++)
+                target_phrase->arr[q][i] = phrase_to_copy->arr[q][i];
+        // Insert the phrase into the phraselist
+        auto n = GetNextEmpty(&phraselist);
+        InsertAt(&phraselist, n, target_phrase);
+        // Return the location of the new phrase
+        return n;
+    }
+    else
+    {
+        return -1;
+    }
 }
 
 // ChannelSequencer - Track position of the channel in time in the song
@@ -1334,6 +1363,40 @@ void StopAllChannels()
         geptr->StopChannel(i);
 }
 
+// Handle deep copy inputs
+void GetDeepCopyInputs()
+{
+    // Handle copy
+    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+    {
+        // If a is pressed after b, then increase
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() && do_deep_copy == 1)
+        {
+            do_deep_copy = 2;
+        }
+        // If b is pressed again, reset
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed() && do_deep_copy == 1)
+        {
+            do_deep_copy = 0;
+        }
+        // If b is pressed start checking for deep copy
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed() && do_deep_copy == 0)
+        {
+            do_deep_copy = 1;
+        }
+        // If anything else is pressed, reset
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->presscode != "000000000" &&
+            dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->presscode != "000010000" &&
+            dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->presscode != "000001000")
+            do_deep_copy = 0;
+    }
+    else
+    {
+        // Reset deep copy tracker
+        do_deep_copy = 0;
+    }
+}
+
 // Handle movement
 void EditorControl()
 {
@@ -1536,208 +1599,224 @@ void EditorControl()
     // Handle input for the chain menu
     if (state == m_chain && !breakend)
     {
-        // Handle play button
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+        // Handle deep copy input logic
+        GetDeepCopyInputs();
+
+        // If we have a successful deep copy, do it
+        if (do_deep_copy == 2 && GetAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y]) != nullptr)
         {
-            StopAllChannels();
-            // Set the song ptr position for only this channel
-            playing_channel = open_channel;
-            channellist[playing_channel].chain_ptr = open_chain_index;
-            channellist[playing_channel].playing_chain = open_chain;
-            channellist[playing_channel].phrase_ptr = cursor_y + chain_offset_y;
-            channellist[playing_channel].playing_phrase = -1;
-            channellist[playing_channel].step_ptr = 0;
-            channellist[playing_channel].tick_ptr = 0;
-            // Set the scope of play to only this phrase
-            play_context = pt_chain;
-            // Unpause the song playback
-            pause_song = false;
+            // Deep copy the phrase and replace it here in the chain
+            chainlist[open_chain]->arr[cursor_y + chain_offset_y] = DeepCopyPhrase(chainlist[open_chain]->arr[cursor_y + chain_offset_y]);
         }
-
-        // Modify value
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-        {
-            // Edit actual phrase
-            if (cursor_x == 0)
-            {
-                // If the chainlist value is unfilled, insert 0
-                if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] == -1)
-                {
-                    if (copied_phrase == -1)
-                    {
-                        // Set UI reference to Hex0
-                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
-                        // If this phrase doesn't exist yet, insert it
-                        if (GetAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y]) == nullptr)
-                            InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
-                    }
-                    else
-                    {
-                        // Set UI reference to copied chain
-                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = copied_phrase;
-                    }
-                }
-                // If double click, add a new chain
-                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
-                {
-                    // Set UI reference to the next empty
-                    chainlist[open_chain]->arr[cursor_y + chain_offset_y] = GetNextEmpty(&phraselist);
-                    // Add the new phrase
-                    InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
-                    // Copy to clipboard
-                    copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
-                }
-                else
-                {
-                    // Copy to clipboard
-                    copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
-                }
-            }
-        }
-
-        // Do actions given the context --
-
-        // Editing
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
-        {
-            // Edit actual chain
-            if (cursor_x == 0)
-            {
-                // Movement keys
-                if (goup || godown || goright || goleft)
-                {
-                    // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
-                    {
-                        if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x1000;
-                        if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x1000;
-                        if (goright) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0100;
-                        if (goleft) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0100;
-                    }
-                    // Mod the right two digits
-                    else
-                    {
-                        if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0010;
-                        if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0010;
-                        if (goright) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0001;
-                        if (goleft) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0001;
-                    }
-
-                    // Wrap the cell between 0x0000 and 0xFFFF
-                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] < 0)
-                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0xFFFF + (chainlist[open_chain]->arr[cursor_y + chain_offset_y] + 1);
-                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] > 0xFFFF)
-                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = (chainlist[open_chain]->arr[cursor_y + chain_offset_y] - 1) - 0xFFFF;
-
-                    // Copy to clipboard
-                    copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
-                }
-
-                // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
-                    chainlist[open_chain]->arr[cursor_y + chain_offset_y] = -1;
-            }
-            // Edit transpose
-            else
-            {
-                // Movement keys
-                if (goup || godown || goright || goleft)
-                {
-                    // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
-                    {
-                        if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x1000;
-                        if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x1000;
-                        if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0100;
-                        if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0100;
-                    }
-                    // Mod the right two digits
-                    else
-                    {
-                        if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0010;
-                        if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0010;
-                        if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0001;
-                        if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0001;
-                    }
-
-                    // Wrap the cell between 0x0000 and 0xFFFF
-                    if (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] < 0)
-                        chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] = 0xFFFF + (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] + 1);
-                    if (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] > 0xFFFF)
-                        chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] = (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] - 1) - 0xFFFF;
-                }
-            }
-        }
-        // Goto page
-        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
-        {
-            // Go to the left page over
-            if (goleft)
-            {
-                // Song
-                state = m_song;
-                cursor_x = SDL_clamp(cursor_x, 0, song_grid_w - 1);
-                cursor_y = SDL_clamp(cursor_y, 0, song_grid_h - 1);
-                breakend = true;
-            }
-            // Go to the right page over
-            else if (goright)
-            {
-                // Set open phrase
-                if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] != -1)
-                {
-                    open_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
-                    // Set open phrase index
-                    open_phrase_index = cursor_y + chain_offset_y;
-                }
-                // If the open_chain is valid
-                if (open_phrase != -1)
-                {
-                    // Check if the phrase does not exist
-                    if (GetAt(&phraselist, open_phrase) == nullptr)
-                    {
-                        InsertAt(&phraselist, open_phrase, new phrase());
-                    }
-                    // Chain
-                    state = m_phrase;
-                    cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
-                    cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
-                    breakend = true;
-                }
-
-            }
-        }
-        // Moving
         else
         {
-            cursor_x += goright - goleft;
-            cursor_y += godown - goup;
+            // Handle play button
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+            {
+                StopAllChannels();
+                // Set the song ptr position for only this channel
+                playing_channel = open_channel;
+                channellist[playing_channel].chain_ptr = open_chain_index;
+                channellist[playing_channel].playing_chain = open_chain;
+                channellist[playing_channel].phrase_ptr = cursor_y + chain_offset_y;
+                channellist[playing_channel].playing_phrase = -1;
+                channellist[playing_channel].step_ptr = 0;
+                channellist[playing_channel].tick_ptr = 0;
+                // Set the scope of play to only this phrase
+                play_context = pt_chain;
+                // Unpause the song playback
+                pause_song = false;
+            }
+
+            // Modify value
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            {
+                // Edit actual phrase
+                if (cursor_x == 0)
+                {
+                    // If the chainlist value is unfilled, insert 0
+                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] == -1)
+                    {
+                        if (copied_phrase == -1)
+                        {
+                            // Set UI reference to Hex0
+                            chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0x0000;
+                            // If this phrase doesn't exist yet, insert it
+                            if (GetAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y]) == nullptr)
+                                InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
+                        }
+                        else
+                        {
+                            // Set UI reference to copied chain
+                            chainlist[open_chain]->arr[cursor_y + chain_offset_y] = copied_phrase;
+                        }
+                    }
+                    // If double click, add a new chain
+                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                    {
+                        // Set UI reference to the next empty
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = GetNextEmpty(&phraselist);
+                        // Add the new phrase
+                        InsertAt(&phraselist, chainlist[open_chain]->arr[cursor_y + chain_offset_y], new phrase());
+                        // Copy to clipboard
+                        copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                    }
+                    else
+                    {
+                        // Copy to clipboard
+                        copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                    }
+                }
+            }
+
+            // Do actions given the context --
+
+            // Editing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            {
+                // Edit actual chain
+                if (cursor_x == 0)
+                {
+                    // Movement keys
+                    if (goup || godown || goright || goleft)
+                    {
+                        // Mod the left two digits
+                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        {
+                            if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x1000;
+                            if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x1000;
+                            if (goright) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0100;
+                            if (goleft) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0100;
+                        }
+                        // Mod the right two digits
+                        else
+                        {
+                            if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0010;
+                            if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0010;
+                            if (goright) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x0001;
+                            if (goleft) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x0001;
+                        }
+
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] < 0)
+                            chainlist[open_chain]->arr[cursor_y + chain_offset_y] = 0xFFFF + (chainlist[open_chain]->arr[cursor_y + chain_offset_y] + 1);
+                        if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] > 0xFFFF)
+                            chainlist[open_chain]->arr[cursor_y + chain_offset_y] = (chainlist[open_chain]->arr[cursor_y + chain_offset_y] - 1) - 0xFFFF;
+
+                        // Copy to clipboard
+                        copied_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                    }
+
+                    // Handle deletes
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                        chainlist[open_chain]->arr[cursor_y + chain_offset_y] = -1;
+                }
+                // Edit transpose
+                else
+                {
+                    // Movement keys
+                    if (goup || godown || goright || goleft)
+                    {
+                        // Mod the left two digits
+                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        {
+                            if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x1000;
+                            if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x1000;
+                            if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0100;
+                            if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0100;
+                        }
+                        // Mod the right two digits
+                        else
+                        {
+                            if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0010;
+                            if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0010;
+                            if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0001;
+                            if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0001;
+                        }
+
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] < 0)
+                            chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] = 0xFFFF + (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] + 1);
+                        if (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] > 0xFFFF)
+                            chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] = (chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] - 1) - 0xFFFF;
+                    }
+                }
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            {
+                // Go to the left page over
+                if (goleft)
+                {
+                    // Song
+                    state = m_song;
+                    cursor_x = SDL_clamp(cursor_x, 0, song_grid_w - 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, song_grid_h - 1);
+                    breakend = true;
+                }
+                // Go to the right page over
+                else if (goright)
+                {
+                    // Set open phrase
+                    if (chainlist[open_chain]->arr[cursor_y + chain_offset_y] != -1)
+                    {
+                        open_phrase = chainlist[open_chain]->arr[cursor_y + chain_offset_y];
+                        // Set open phrase index
+                        open_phrase_index = cursor_y + chain_offset_y;
+                    }
+                    // If the open_chain is valid
+                    if (open_phrase != -1)
+                    {
+                        // Check if the phrase does not exist
+                        if (GetAt(&phraselist, open_phrase) == nullptr)
+                        {
+                            InsertAt(&phraselist, open_phrase, new phrase());
+                        }
+                        // Chain
+                        state = m_phrase;
+                        cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
+                        breakend = true;
+                    }
+
+                }
+            }
+            // Moving
+            else
+            {
+                cursor_x += goright - goleft;
+                cursor_y += godown - goup;
+            }
+
+            // wrap the cursor and clamp offsets
+            if (cursor_x > chain_grid_w - 1)
+                cursor_x = 0;
+            if (cursor_x < 0)
+                cursor_x = chain_grid_w - 1;
+            if (cursor_y + chain_offset_y > chain::length - 1)
+            {
+                cursor_y = 0;
+                chain_offset_y = 0;
+            }
+            if (cursor_y + chain_offset_y < 0)
+            {
+                cursor_y = chain_grid_h - 1;
+                chain_offset_y = chain::length - chain_grid_h;
+            }
+
+            // Move the page
+            if (cursor_y > chain_grid_h - 1)
+                chain_offset_y += 1;
+            if (cursor_y < 0)
+                chain_offset_y -= 1;
+
+            cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
+            chain_offset_y = SDL_clamp(chain_offset_y, 0, chain::length - chain_grid_h);
         }
 
-        // wrap the cursor and clamp offsets
-        if (cursor_x > chain_grid_w - 1)
-            cursor_x = 0;
-        if (cursor_x < 0)
-            cursor_x = chain_grid_w - 1;
-        if (cursor_y + chain_offset_y > chain::length - 1)
-        {
-            cursor_y = 0;
-            chain_offset_y = 0;
-        }
-        if (cursor_y + chain_offset_y < 0)
-        {
-            cursor_y = chain_grid_h - 1;
-            chain_offset_y = chain::length - chain_grid_h;
-        }
-
-        // Move the page
-        if (cursor_y > chain_grid_h - 1)
-            chain_offset_y += 1;
-        if (cursor_y < 0)
-            chain_offset_y -= 1;
-
-        cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
-        chain_offset_y = SDL_clamp(chain_offset_y, 0, chain::length - chain_grid_h);
+        // Reset deep copy action flag
+        if (do_deep_copy == 2)
+            do_deep_copy = 0;
 
         // Update UI
         DrawChainUI(chain_offset_y, "all");
@@ -1996,20 +2075,30 @@ void EditorControl()
             StopAllChannels();
         }
 
+        // Next and last phrase
+        auto next_phrase_index = (open_phrase_index + 1) % chain::length;
+        auto next_phrase = GetAt(&phraselist, chainlist[open_chain]->arr[next_phrase_index]);
+        auto last_phrase_index = (open_phrase_index - 1 < 0 ? chain::length - 1 : open_phrase_index - 1) % chain::length;
+        auto last_phrase = GetAt(&phraselist, chainlist[open_chain]->arr[last_phrase_index]);
+
         // wrap the cursor and clamp offsets
         if (cursor_x > phrase_grid_w - 1)
             cursor_x = 0;
         if (cursor_x < 0)
             cursor_x = phrase_grid_w - 1;
-        if (cursor_y + phrase_offset_y > phrase::len_y - 1)
+        if (cursor_y + phrase_offset_y > phrase::len_y - 1 && next_phrase != nullptr)
         {
             cursor_y = 0;
             phrase_offset_y = 0;
+            open_phrase = chainlist[open_chain]->arr[next_phrase_index];
+            open_phrase_index = next_phrase_index;
         }
-        if (cursor_y + phrase_offset_y < 0)
+        if (cursor_y + phrase_offset_y < 0 && last_phrase != nullptr)
         {
             cursor_y = phrase_grid_h - 1;
             phrase_offset_y = phrase::len_y - phrase_grid_h;
+            open_phrase = chainlist[open_chain]->arr[last_phrase_index];
+            open_phrase_index = last_phrase_index;
         }
 
         // Move the page
@@ -2109,7 +2198,8 @@ void PreGameLoop()
         std::to_string(channellist[1].chain_ptr) + " - " +
         std::to_string(channellist[1].phrase_ptr) + " - " +
         std::to_string(channellist[1].step_ptr) + " - " +
-        std::to_string(channellist[1].tick_ptr) + "    ",
+        std::to_string(channellist[1].tick_ptr) + " " + 
+        std::to_string(do_deep_copy) + "   ",
         primary_text_a);
 }
 
