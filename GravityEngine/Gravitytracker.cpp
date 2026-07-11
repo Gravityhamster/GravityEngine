@@ -267,21 +267,39 @@ void PlayStepChain(int channel_index, int playing_chain, int phrase_ptr, int ste
         PlayStepPhrase(channel_index, play_phrase, step_ptr);
 }
 
+// Play step song
+// channelnumber : The particular channel to play the step on
+// chain_ptr : Song progress index
+// phrase_ptr : Chain progress index
+// step_ptr : Phrase progress index
+void PlayStepSong(int channel_index, int chain_ptr, int phrase_ptr, int step_ptr)
+{
+    // Play the step at this song position
+    auto play_chain = songgrid[chain_ptr][channel_index];
+    if (play_chain != -1 && GetAt(&chainlist, play_chain) != nullptr)
+        PlayStepChain(channel_index, play_chain, phrase_ptr, step_ptr);
+}
+
 // ChannelSequencer - Track position of the channel in time in the song
 class channelsequencer
 {
 public:
-    int channelnumber = -1; // Which channel is this sequencer assigned to?
-    int chain_ptr = 0; // Int position of the channel in the song
-    int phrase_ptr = 0; // Int position of the channel in the chain
-    int step_ptr = 0; // Int position of the channel in the phrase
-    int tick_ptr = 0; // Int position of the channel in the table
-    int playing_chain = -1;
-    int playing_phrase = -1;
+    std::atomic<int> channelnumber = -1; // Which channel is this sequencer assigned to?
+    std::atomic<int> chain_ptr = 0; // Int position of the channel in the song
+    std::atomic<int> phrase_ptr = 0; // Int position of the channel in the chain
+    std::atomic<int> step_ptr = 0; // Int position of the channel in the phrase
+    std::atomic<int> tick_ptr = 0; // Int position of the channel in the table
+    std::atomic<int> playing_chain = -1;
+    std::atomic<int> playing_phrase = -1;
+    std::atomic<bool> cant_play = false;
 
     // Count tick
     void sub_step()
     {
+        // If channel is in a locked state, do not play in the song context
+        if (cant_play == true && play_context == pt_song)
+            return;
+
         // TODO : Substep-level effects
 
         // Increment tick in table
@@ -293,6 +311,9 @@ public:
     // Count step
     void step()
     {
+        if (cant_play == true && play_context == pt_song)
+            return;
+        
         // TODO : Play step and sub-step-level effects
 
         // Play context within this local phrase
@@ -304,6 +325,10 @@ public:
         {
             PlayStepChain(channelnumber, playing_chain, phrase_ptr, step_ptr);
         }
+        if (play_context == pt_song && !cant_play)
+        {
+            PlayStepSong(channelnumber, chain_ptr, phrase_ptr, step_ptr);
+        }
 
         // Increment step in phrase
         step_ptr++;
@@ -314,6 +339,45 @@ public:
             // Increment the phrase pointer in the chain
             inc_phrase();
         }
+    }
+
+    // Prepare for playing the song
+    // int start_point : Where to start in the channel's chain list
+    bool init_song_play(int start_point)
+    {
+        chain_ptr = start_point;
+        phrase_ptr = 0;
+        step_ptr = 0;
+        tick_ptr = 0;
+
+        // Keep moving back til we get to a valid play point to play at
+        do
+        {
+            if (chain_ptr > 0 && cant_play)
+                chain_ptr--;
+            // Report for now that we can play
+            cant_play = false;
+            // Is there a channel reference here?
+            if (songgrid[chain_ptr][channelnumber] == -1)
+                cant_play = true;
+            else
+            {
+                // Does the chain exist
+                auto c = GetAt(&chainlist, songgrid[chain_ptr][channelnumber]);
+                if (c == nullptr)
+                    cant_play = true;
+                else
+                {
+                    // Is there a phrase here?
+                    auto p = GetAt(&phraselist, c->arr[phrase_ptr]);
+                    if (p == nullptr)
+                        cant_play = true;
+                }
+            }
+        } while (chain_ptr > 0 && cant_play);
+
+        // Report that this channel needs to sit out
+        return cant_play;
     }
 
 private:
@@ -361,6 +425,52 @@ private:
             if (chain_ptr % rowcount == 0)
             {
                 chain_ptr = 0;
+            }
+
+            // If we are on an empty chain or phrase, move up til we find the beginning of the list of consecutive chains
+            bool need_to_go_back = false;
+            // Check if the channel is checking a valid chain
+            {
+                auto play_chain = GetAt(&chainlist, songgrid[chain_ptr][channelnumber]);
+                if (play_chain != nullptr)
+                {
+                    auto play_phrase = GetAt(&phraselist, play_chain->arr[phrase_ptr]);
+                    if (play_phrase == nullptr)
+                        need_to_go_back = true;
+                }
+                else
+                {
+                    need_to_go_back = true;
+                }
+            }
+
+            // If we need to go back...
+            if (need_to_go_back)
+            {
+                // Go back a step
+                chain_ptr--;
+                // Keep going back every step until we have made it to the beginning or we have found the last blank
+                while (need_to_go_back && chain_ptr != -1)
+                {
+                    // Check if the chain is valid
+                    auto play_chain = GetAt(&chainlist, songgrid[chain_ptr][channelnumber]);
+                    if (play_chain != nullptr)
+                    {
+                        // Check if the phrase is valid
+                        auto play_phrase = GetAt(&phraselist, play_chain->arr[phrase_ptr]);
+                        if (play_phrase == nullptr)
+                            need_to_go_back = false; // Valid
+                    }
+                    else
+                    {
+                        need_to_go_back = false; // Valid
+                    }
+                    // If not valid, check next chain back
+                    if (need_to_go_back) 
+                        chain_ptr--;
+                }
+                // Get back to the start
+                chain_ptr++;
             }
         }
     }
@@ -610,6 +720,20 @@ void DrawSongUI(int off_x, int off_y, std::string type)
     int h = song_grid_h;
     int w = song_grid_w;
 
+    // Song position pointer
+    if (str_contains(type, "all") || str_contains(type, "ptr"))
+        if (play_context == pt_song &&
+            pause_song == false)
+        {
+            // Loop through all visible channels
+            for (int x = 0; x < w && x + off_x < channelcount; x++)
+            {
+                // Only draw if the channel has reported that it is allowed to play
+                if (channellist[x + off_x].cant_play == false)
+                    geptr->DrawTextString(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, ">", primary_text_a);
+            }
+        }
+
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
     {
@@ -701,7 +825,8 @@ void DrawChainUI(int off_y, std::string type)
     // Song position pointer
     if (str_contains(type, "all") || str_contains(type, "ptr"))
         if (open_chain_index == channellist[playing_channel].chain_ptr &&
-            open_channel == playing_channel &&
+            open_channel == playing_channel && 
+            play_context != pt_phrase && play_context != pt_phrase_all &&
             pause_song == false)
             geptr->DrawTextString(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, ">", primary_text_a);
 
@@ -1244,6 +1369,25 @@ void EditorControl()
     // Handle input for the song menu
     if (state == m_song && !breakend)
     {
+        // Handle play button
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+        {
+            StopAllChannels();
+            // Should play flag
+            bool dont_play = true;
+            // Set the song ptr position for only this channel
+            for (int i = 0; i < channelcount; i++)
+                dont_play = channellist[i].init_song_play(cursor_y + offset_y) && dont_play;
+            // Should we play or not?
+            if (dont_play == false)
+            {
+                // Set the scope of play to only this phrase
+                play_context = pt_song;
+                // Unpause the song playback
+                pause_song = false;
+            }
+        }
+
         // Modify value
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
         {
@@ -1601,7 +1745,7 @@ void EditorControl()
             channellist[playing_channel].playing_chain = open_chain;
             channellist[playing_channel].phrase_ptr = open_phrase_index;
             channellist[playing_channel].playing_phrase = open_phrase;
-            channellist[playing_channel].step_ptr = 0; // cursor_y + phrase_offset_y;
+            channellist[playing_channel].step_ptr = 0;
             channellist[playing_channel].tick_ptr = 0;
             // Set the scope of play to only this phrase
             play_context = pt_phrase;
@@ -1953,13 +2097,16 @@ void PreGameLoop()
     // Get input and apply to the editor as appropriate
     EditorControl();
 
-
     // Debug : Draw channel 0's sequence
     geptr->DrawTextString(10, 0, geptr->entity,
         std::to_string(channellist[0].chain_ptr) + " - " +
         std::to_string(channellist[0].phrase_ptr) + " - " +
         std::to_string(channellist[0].step_ptr) + " - " +
-        std::to_string(channellist[0].tick_ptr) + "    ",
+        std::to_string(channellist[0].tick_ptr) + "   " + 
+        std::to_string(channellist[1].chain_ptr) + " - " +
+        std::to_string(channellist[1].phrase_ptr) + " - " +
+        std::to_string(channellist[1].step_ptr) + " - " +
+        std::to_string(channellist[1].tick_ptr) + "    ",
         primary_text_a);
 }
 
