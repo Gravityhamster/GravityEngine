@@ -1,7 +1,6 @@
 #include "GravityEngineSDL.h"
 
 GravityEngine_Core* geptr;
-GravityEngine_Synth* synptr2;
 
 // Editor held modifier
 enum edit_mod
@@ -166,6 +165,7 @@ std::vector<chain*> chainlist;
 std::vector<phrase*> phraselist;
 std::vector<instrument*> instrumentlist;
 std::vector<table*> tablelist;
+GravityEngine_Synth* synthlist[channelcount];
 
 // Tracker colors --
 color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
@@ -244,13 +244,13 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
     {
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
-        synptr2->pulse_width = 0.5f;
-        synptr2->panning = 0.5f;
-        synptr2->freq = NoteFreq(f);
-        synptr2->volume = 0.125f;
-        synptr2->volume_freq = -5;
-        synptr2->waveform = square;
-        geptr->BindSynthToChannel(synptr2, channel_index);
+        synthlist[channel_index]->pulse_width = 0.5f;
+        synthlist[channel_index]->panning = 0.5f;
+        synthlist[channel_index]->freq = NoteFreq(f);
+        synthlist[channel_index]->volume = 0.125f;
+        synthlist[channel_index]->volume_freq = -5;
+        synthlist[channel_index]->waveform = square;
+        geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
     }
 }
 
@@ -730,7 +730,10 @@ void DrawSongUI(int off_x, int off_y, std::string type)
             {
                 // Only draw if the channel has reported that it is allowed to play
                 if (channellist[x + off_x].cant_play == false)
-                    geptr->DrawTextString(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, ">", primary_text_a);
+                {
+                    geptr->DrawChar(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, '>');
+                    geptr->DrawSetColor(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, primary_text_a);
+                }
             }
         }
 
@@ -824,11 +827,14 @@ void DrawChainUI(int off_y, std::string type)
 
     // Song position pointer
     if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (open_chain_index == channellist[playing_channel].chain_ptr &&
-            open_channel == playing_channel && 
+        if (((open_channel == playing_channel && open_chain_index == channellist[playing_channel].chain_ptr)
+            || (channellist[open_channel].chain_ptr == open_chain_index && channellist[open_channel].cant_play == false && play_context == pt_song)) && 
             play_context != pt_phrase && play_context != pt_phrase_all &&
             pause_song == false)
-            geptr->DrawTextString(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, ">", primary_text_a);
+        {
+            geptr->DrawChar(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, '>');
+            geptr->DrawSetColor(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, primary_text_a);
+        }
 
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
@@ -984,11 +990,16 @@ void DrawPhraseUI(int off_y, std::string type)
 
     // Song position pointer
     if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (open_phrase_index == channellist[playing_channel].phrase_ptr &&
-            open_chain_index == channellist[playing_channel].chain_ptr &&
-            open_channel == playing_channel &&
+        if (((open_phrase_index == channellist[playing_channel].phrase_ptr &&
+            open_chain_index == channellist[playing_channel].chain_ptr && open_channel == playing_channel) ||
+            (channellist[open_channel].phrase_ptr == open_phrase_index && channellist[open_channel].chain_ptr == open_chain_index && 
+            channellist[open_channel].cant_play == false && play_context == pt_song)
+            ) &&
             pause_song == false)
-            geptr->DrawTextString(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, ">", primary_text_a);
+        {
+            geptr->DrawChar(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, '>');
+            geptr->DrawSetColor(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, primary_text_a);
+        }
 
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
@@ -2043,7 +2054,10 @@ void GameInit()
 
     // Init channel sequencers
     for (int i = 0; i < channelcount; i++)
+    {
         channellist[i].channelnumber = i;
+        synthlist[i] = new GravityEngine_Synth();
+    }
 
     // Init song phrase list
     songgrid = new int* [rowcount];
@@ -2062,17 +2076,6 @@ void GameInit()
         DrawSongUI(0, 0, "all");
     if (state == m_chain)
         DrawChainUI(0, "all");
-
-    // Test: Init synth and play it
-    // TODO: Make a synth for every channel
-    synptr2 = new GravityEngine_Synth();
-    // synptr2->pulse_width_freq = 0.5f;
-    // synptr2->panning = 0.5f;
-    // synptr2->freq = 261.63;
-    // synptr2->volume = 0;
-    // synptr2->volume_freq = -50;
-    // synptr2->waveform = triangle;
-    // geptr->BindSynthToChannel(synptr2, 0);
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
