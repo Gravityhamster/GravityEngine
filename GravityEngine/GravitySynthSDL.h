@@ -119,11 +119,11 @@ public:
             }
 
             // Get the available stream
-            int threshold_samples = synth->sample_frames * 2;
-            int available_samples = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
+            int threshold_frames = synth->sample_frames * 2;
+            int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
 
             // Check available data
-            if (available_samples < threshold_samples)
+            if (available_frames < threshold_frames)
             {
                 // Fill in audio data
                 for (int frame = 0; frame < synth->sample_frames; frame++)
@@ -147,8 +147,8 @@ public:
                         sample = (distrib(gen) / 10000.);
 
                     // Apply panning volume and global volume
-                    auto left_pan = spec->channels == 2 ? (1.f - synth->panning) : 1 - abs(0.5 - synth->panning); // TODO: Test
-                    auto right_pan = (synth->panning);
+                    float left_pan = spec->channels == 2 ? (1.f - synth->panning) : 1 - abs(0.5 - synth->panning);
+                    float right_pan = synth->panning;
                     auto left_sample = left_pan * (synth->volume) * sample;
                     auto right_sample = right_pan * (synth->volume) * sample;
 
@@ -183,10 +183,7 @@ public:
                     }
 
                     // Step - Depending on the channel count, multiply to the pitch
-                    if (spec->channels == 1) // TODO: Test
-                        phase += (synth->freq * 2) / spec->freq;
-                    else
-                        phase += synth->freq / spec->freq;
+                    phase += synth->freq / spec->freq;
                     // Normalize phase
                     if (phase > 1.)
                     {
@@ -214,7 +211,7 @@ public:
         if (pan_freq > 0)
         {
             pan_phase += pan_freq / 100;
-            panning = (sin(pan_freq * 2. * PI) / 2) + 0.5;
+            panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
             if (pan_phase > 1.)
                 pan_phase -= 1.;
         }
