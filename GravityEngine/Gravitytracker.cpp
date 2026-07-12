@@ -137,12 +137,22 @@ class instrument
     public:
         // Audio parameters
         ChannelType type; // Synth or Sample
+
+        // Synth parameters
         float freq_offset = 0.f; // Add to freq
         float volume = 1.f; // Volume
         float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
-        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave)
+        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave Synth)
         float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
-        SynthWaveForm waveform = sine; // Synth wave type (Only for synth channel type)
+        float volume_freq = 0.0; // Linear volume sweep (positive up, negative down)
+        float pan_freq = 0.0; // Ping-pong pan frequency
+        float pulse_width_freq = 0.0; // Ping-pong pulse-width pan frequency (Only for Pulse Wave Synth)
+        SynthWaveForm waveform = sine; // Synth wave type
+        float cutoff = 0.0f; // Filter cutoff
+        float resonance = 0.0f; // Filter resonance
+        FilterType filter = none;
+
+        // Sample parameters
 };
 
 // Tables - List of modulations for the currently playing instrument
@@ -252,7 +262,6 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
         synthlist[channel_index]->pulse_width = 0.5f;
-        synthlist[channel_index]->pulse_width_freq = 1.0f;
         synthlist[channel_index]->panning = 0.5f;
         synthlist[channel_index]->freq = NoteFreq(f);
         synthlist[channel_index]->volume = 0.125f;
@@ -806,7 +815,7 @@ std::string IntToHexString(int i)
 // Draw Song Editor UI
 // off_x : UI offset on the x axis
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
 void DrawSongUI(int off_x, int off_y, std::string type)
 {
     // Width and height of the screen
@@ -911,7 +920,7 @@ void DrawSongUI(int off_x, int off_y, std::string type)
 
 // Draw Chain Editor UI
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator]
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
 void DrawChainUI(int off_y, std::string type)
 {
     // Width and height of the screen
@@ -1074,7 +1083,7 @@ std::string IntToNoteString(int n)
 
 // Draw Phrase Editor UI
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, ptr]
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
 void DrawPhraseUI(int off_y, std::string type)
 {
     // Width and height of the screen
@@ -1329,6 +1338,20 @@ void DrawPhraseUI(int off_y, std::string type)
                 geptr->DrawSetColor(30, 3 + y, geptr->entity, primary_text_a);
             }
         }
+    }
+}
+
+// Draw Instrument Editor UI
+// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
+void DrawInstrumentUI(std::string type)
+{
+    // Menu title
+    if (str_contains(type, "all") || str_contains(type, "title"))
+    {
+        // Draw chain number
+        auto outstr = IntToHexString(open_instrument);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(0, 1, geptr->entity, "INSTR - " + outstr, primary_text_a);
     }
 }
 
@@ -2140,7 +2163,25 @@ void EditorControl()
             // Go to the right page over
             else if (goright)
             {
-                // TODO : Goto instrument menu
+                // Set open instrument
+                if (phraselist[open_phrase]->arr[cursor_y + chain_offset_y][1] != -1)
+                {
+                    open_instrument = phraselist[open_phrase]->arr[cursor_y + chain_offset_y][1];
+                }
+                // If the open_instrument is valid
+                if (open_instrument != -1)
+                {
+                    // Check if the instrument does not exist
+                    if (GetAt(&instrumentlist, open_instrument) == nullptr)
+                    {
+                        InsertAt(&instrumentlist, open_instrument, new instrument());
+                    }
+                    // Chain
+                    state = m_instrument;
+                    cursor_x = SDL_clamp(cursor_x, 0, 1); // TODO: Implement instrument menu width
+                    cursor_y = SDL_clamp(cursor_y, 0, 1); // TODO: Implement instrument menu height
+                    breakend = true;
+                }
             }
         }
         // Moving
@@ -2193,6 +2234,13 @@ void EditorControl()
 
         // Update UI
         DrawPhraseUI(phrase_offset_y, "all");
+    }
+
+    // Handle input for the song menu
+    if (state == m_instrument && !breakend)
+    {
+        // Update UI
+        DrawInstrumentUI("all");
     }
 
     // Draw the map for where you are in the UI

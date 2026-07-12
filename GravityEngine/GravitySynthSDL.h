@@ -48,6 +48,8 @@ enum FilterType
 class GravityEngine_Synth
 {
 public:
+
+    // Synth parameters
     std::atomic<float> freq = 50.0;
     std::atomic<float> volume = 1;
     std::atomic<float> panning = 0.5;
@@ -62,11 +64,11 @@ public:
     // float vibrato_amp = 0; -- Not yet implemented
     int sample_frames;
     SynthWaveForm waveform = sine;
-    FilterType filter = lowpass;
+    FilterType filter = none;
 
     // Filter - COPILOT
-    float cutoff = 0.25f; // 0.0 - 1.0
-    float resonance = 0.5f; // 0.0 - 1.0
+    float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
+    float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
 
     // Filter state - COPILOT
     float lp_l = 0.0f;
