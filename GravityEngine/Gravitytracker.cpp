@@ -33,7 +33,7 @@ int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
 const int channelcount = 64; // How many audio channels in the song
 int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
-int bpm = 155; // 170; // Beats per minute of the song
+int bpm = 295; // 170; // Beats per minute of the song
 int tps = 6; // Ticks per step of the song
 int fps = 60; // Frame rate in hz of the UI
 double ticklength = 0; // Nanoseconds per tick
@@ -121,7 +121,7 @@ class phrase
         // Create pharse
         phrase()
         {
-            // Fill the chain with blanks
+            // Fill the phrase with blanks
             for (int y = 0; y < len_y; y++)
                 for (int x = 0; x < len_x; x++)
                     arr[y][x] = x == 0 ? -9999 : -1;
@@ -262,6 +262,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
         synthlist[channel_index]->pulse_width = 0.5f;
+        synthlist[channel_index]->pulse_width_freq = 0.5f;
         synthlist[channel_index]->panning = 0.5f;
         synthlist[channel_index]->freq = NoteFreq(f);
         synthlist[channel_index]->volume = 0.125f;
@@ -779,17 +780,20 @@ void DoTick()
     {
         // Step the channel sequencers
         for (int i = 0; i < channelcount; i++)
-            channellist[i].step();
+            if (!pause_song) channellist[i].step();
     }
     
     // Do Sub-step Code --
 
     // Tick the channel sequencers
     for (int i = 0; i < channelcount; i++)
-        channellist[i].sub_step();
+    {
+        if (!pause_song) channellist[i].sub_step();
+        synthlist[i]->SynthAutomation();
+    }
 
     // Increment global song position in ticks --
-    ticknumber++;
+    if (!pause_song) ticknumber++;
 }
 
 // Convert i to hex string
@@ -1348,10 +1352,17 @@ void DrawInstrumentUI(std::string type)
     // Menu title
     if (str_contains(type, "all") || str_contains(type, "title"))
     {
-        // Draw chain number
+        // Draw instrument number
         auto outstr = IntToHexString(open_instrument);
         outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
         geptr->DrawTextString(0, 1, geptr->entity, "INSTR - " + outstr, primary_text_a);
+    }
+
+    // Editor body
+    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    {
+        // Draw instrument options
+
     }
 }
 
@@ -1387,10 +1398,10 @@ void TrackTicks()
     while (running == true)
     {
         // Execute tick
-        if (pause_song == false)
+        //if (pause_song == false)
             DoTick();
-        else
-            next = std::chrono::steady_clock::now();
+        //else
+        //    next = std::chrono::steady_clock::now();
 
         // Sync timing
         next += std::chrono::nanoseconds((int64_t)ticklength);

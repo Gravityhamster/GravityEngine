@@ -662,9 +662,10 @@ public:
         SDL_CreateWindowAndRenderer(game_title, canvas_w * font_w, canvas_h * font_h, SDL_window_props, &window, &renderer);
 
         // Load the audio spec
-        auto dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
-        SDL_GetAudioDeviceFormat(dev, &global_audio_spec, nullptr);
-        SDL_CloseAudioDevice(dev);
+        // auto dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
+        // SDL_GetAudioDeviceFormat(dev, &global_audio_spec, nullptr);
+        // SDL_CloseAudioDevice(dev);
+        global_audio_spec = { SDL_AUDIO_F32LE,1,48000 }; // Will hardcoding the audio spec cause issues?
 
         // Initialize all audio channels
         for (int i = 0; i < channels; i++)

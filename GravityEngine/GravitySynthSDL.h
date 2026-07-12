@@ -78,6 +78,10 @@ public:
     float bp_r = 0.0f;
     float hp_r = 0.0f;
 
+    // Other state variables
+    float pan_phase = 0.f;
+    float pw_phase = 0.f;
+
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
     // It simply generates a waveform. Never call this indepentently please. Use BindSynthToChannel in the engine instead.
     // GravityEngine_Synth* synth : Synth object reference
@@ -92,107 +96,89 @@ public:
         synth->panning = std::clamp<float>(synth->panning, 0.f, 1.f);
         // Get sample frames
         SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
-        if (spec->channels > 2)
-            spec->channels = 2;
         // Initialize a random number generator
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> distrib(-10000, 10000);
         // Get buffer size
-        int buffer_size = synth->sample_frames * spec->channels;
-        int buffer_bytes = buffer_size * sizeof(float);
-        float* buffer = (float*)SDL_malloc(buffer_size * sizeof(float));
+        int buffer_frames = synth->sample_frames;
+        int buffer_samples = buffer_frames * spec->channels;
+        int buffer_bytes = buffer_samples * sizeof(float);
+        float* buffer = (float*)SDL_malloc(buffer_bytes);
         float phase = 0.;
         float pan_phase = synth->panning;
         float pw_phase = synth->pulse_width;
         // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
+
             // If the synth is paused, do not play the synth
             if ((*state) == paused)
             {
-                SDL_Delay(1);
+                std::this_thread::yield();
                 continue;
             }
-            // Fill in audio data
-            for (int i = 0; i < buffer_size; i++)
+
+            // Get the available stream
+            int threshold_samples = synth->sample_frames * 2;
+            int available_samples = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
+
+            // Check available data
+            if (available_samples < threshold_samples)
             {
-                if (spec->channels == 2)
+                // Fill in audio data
+                for (int frame = 0; frame < synth->sample_frames; frame++)
                 {
-                    if (i % 2 == 0) // left
-                    {
-                        float pan_volume = 1.f - synth->panning;
-                        float one = phase * 2. * PI;
-                        // Set sample based on wave form
-                        float sample = 0.;
-                        if (synth->waveform == sine)
-                            sample = (pan_volume * synth->volume) * sin(one);
-                        else if (synth->waveform == square)
-                            sample = (pan_volume * synth->volume) * (sin(one) > 0 ? 1 : -1);
-                        else if (synth->waveform == pulse)
-                            sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
-                        else if (synth->waveform == sawtooth)
-                            sample = (pan_volume * synth->volume) * (phase * 2.f - 1.f);
-                        else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
-                            sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                        else if (synth->waveform == noise)
-                        {
-                            // Return value
-                            sample = (pan_volume * synth->volume) * (distrib(gen) / 10000.);
-                        }
+                    // Get oscillator one value
+                    float one = phase * 2. * PI;
 
-                        // Apply filter - COPILOT
-                        float cutoff_hz = synth->cutoff * (spec->freq * 0.5f);
-                        float f = 2.0f * sinf(PI * cutoff_hz / spec->freq);
-                        float q = synth->resonance;
-                        synth->hp_l = sample - synth->lp_l - q * synth->bp_l;
-                        synth->bp_l = synth->bp_l + f * synth->hp_l;
-                        synth->lp_l = synth->lp_l + f * synth->bp_l;
-                        
-                        // Get filtered value based on the type of filter
-                        float filtered = (synth->filter == lowpass ? synth->lp_l : (synth->filter == highpass ? synth->hp_l : (synth->filter == bandpass ? synth->bp_l : sample)));
-
-                        buffer[i] = filtered;
-                    }
-                }
-
-                if (i % 2 == 1) // right
-                {
-                    float pan_volume;
-                    if (spec->channels == 2)
-                        pan_volume = synth->panning;
-                    else
-                        pan_volume = 1.f - abs(0.5f - 1.f);
-                    float one = phase * 2.f * PI;
                     // Set sample based on wave form
                     float sample = 0.;
                     if (synth->waveform == sine)
-                        sample = (pan_volume * synth->volume) * sin(one);
+                        sample = sin(one);
                     else if (synth->waveform == square)
-                        sample = (pan_volume * synth->volume) * (sin(one) > 0 ? 1 : -1);
+                        sample = (sin(one) > 0 ? 1 : -1);
                     else if (synth->waveform == pulse)
-                        sample = (pan_volume * synth->volume) * (sin(one) > synth->pulse_width ? 1 : -1);
+                        sample = (sin(one) > synth->pulse_width ? 1 : -1);
                     else if (synth->waveform == sawtooth)
-                        sample = (pan_volume * synth->volume) * (phase * 2.f - 1.f);
+                        sample = (phase * 2.f - 1.f);
                     else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
-                        sample = (pan_volume * synth->volume) * (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
+                        sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
                     else if (synth->waveform == noise)
-                    {
-                        // Return value
-                        sample = (pan_volume * synth->volume) * (distrib(gen) / 10000.);
-                    }
+                        sample = (distrib(gen) / 10000.);
+
+                    // Apply panning volume and global volume
+                    auto left_sample = (1.f - synth->panning) * (synth->volume) * sample;
+                    auto right_sample = (synth->panning) * (synth->volume) * sample;
 
                     // Apply filter - COPILOT
                     float cutoff_hz = synth->cutoff * (spec->freq * 0.5f);
                     float f = 2.0f * sinf(PI * cutoff_hz / spec->freq);
                     float q = synth->resonance;
-                    synth->hp_r = sample - synth->lp_r - q * synth->bp_r;
+
+                    // Calculate left filter
+                    synth->hp_l = left_sample - synth->lp_l - q * synth->bp_l;
+                    synth->bp_l = synth->bp_l + f * synth->hp_l;
+                    synth->lp_l = synth->lp_l + f * synth->bp_l;
+
+                    // Get filtered value based on the type of filter
+                    float filtered_left = (synth->filter == lowpass ? synth->lp_l : (synth->filter == highpass ? synth->hp_l : (synth->filter == bandpass ? synth->bp_l : left_sample)));
+
+                    // Calculate right filter
+                    synth->hp_r = right_sample - synth->lp_r - q * synth->bp_r;
                     synth->bp_r = synth->bp_r + f * synth->hp_r;
                     synth->lp_r = synth->lp_r + f * synth->bp_r;
 
                     // Get filtered value based on the type of filter
-                    float filtered = (synth->filter == lowpass ? synth->lp_r : (synth->filter == highpass ? synth->hp_r : (synth->filter == bandpass ? synth->bp_r : sample)));
+                    float filtered_right = (synth->filter == lowpass ? synth->lp_r : (synth->filter == highpass ? synth->hp_r : (synth->filter == bandpass ? synth->bp_r : right_sample)));
 
-                    buffer[i] = filtered;
+                    // Fill the buffer differently depending on channel
+                    if (spec->channels == 1)
+                        buffer[frame] = filtered_left;
+                    else
+                    {
+                        buffer[frame * 2 + 0] = filtered_left;
+                        buffer[frame * 2 + 1] = filtered_right;
+                    }
 
                     // Step
                     phase += synth->freq / spec->freq;
@@ -200,47 +186,47 @@ public:
                     {
                         phase -= 1.;
                     }
-                    // Step panning
-                    if (synth->pan_freq > 0)
-                    {
-                        pan_phase += synth->pan_freq / spec->freq;
-                        synth->panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
-                        if (pan_phase > 1.)
-                            pan_phase -= 1.;
-                    }
-                    // Step pulse width
-                    if (synth->pulse_width_freq > 0)
-                    {
-                        pw_phase += synth->pulse_width_freq / spec->freq;
-                        synth->pulse_width = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
-                        if (pw_phase > 1.)
-                            pw_phase -= 1.;
-                    }
-                    // Step note
-                    if (synth->pitch_freq != 0)
-                    {
-                        double amount = synth->pitch_freq / spec->freq;
-                        synth->freq += amount;
-                    }
-                    // Step volumne
-                    if (synth->volume_freq != 0)
-                    {
-                        double amount = synth->volume_freq / spec->freq;
-                        synth->volume += amount;
-                    }
-                    if (synth->volume < 0)
-                        synth->volume = 0;
                 }
+
+                // Push buffer to stream
+                SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
             }
-            // Push buffer to stream
-            SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
-            // Yield CPU and prevent overfilling the audio buffer - Note; this came from Copilot, and I added the part of the condition that handles play and pause
-            while (SDL_GetAudioStreamAvailable(stream) > buffer_bytes && ((*state) == playing || (*state) == paused)) {
-                SDL_Delay(1); // yield without adding latency 
-            }
+
+            // Yield CPU and prevent overfilling the audio buffer 
+            std::this_thread::yield();
+
         }
         // End sequence
         SDL_free(buffer);
         (*synth_playing) = false;
+    }
+
+    // Automate the synth modulation variables
+    void SynthAutomation()
+    {
+        // Step panning
+        if (pan_freq > 0)
+        {
+            pan_phase += pan_freq / 100;
+            panning = (sin(pan_freq * 2. * PI) / 2) + 0.5;
+            if (pan_phase > 1.)
+                pan_phase -= 1.;
+        }
+        // Step pulse width
+        if (pulse_width_freq > 0)
+        {
+            pw_phase += pulse_width_freq / 100;
+            pulse_width = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
+            if (pw_phase > 1.)
+                pw_phase -= 1.;
+        }
+        // Step note
+        if (pitch_freq != 0)
+            freq += pitch_freq / 100;
+        // Step volumne
+        if (volume_freq != 0)
+            volume += volume_freq / 100;
+        if (volume < 0)
+            volume = 0;
     }
 };
