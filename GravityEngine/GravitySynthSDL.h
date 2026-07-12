@@ -147,8 +147,10 @@ public:
                         sample = (distrib(gen) / 10000.);
 
                     // Apply panning volume and global volume
-                    auto left_sample = (1.f - synth->panning) * (synth->volume) * sample;
-                    auto right_sample = (synth->panning) * (synth->volume) * sample;
+                    auto left_pan = spec->channels == 2 ? (1.f - synth->panning) : 1 - abs(0.5 - synth->panning); // TODO: Test
+                    auto right_pan = (synth->panning);
+                    auto left_sample = left_pan * (synth->volume) * sample;
+                    auto right_sample = right_pan * (synth->volume) * sample;
 
                     // Apply filter - COPILOT
                     float cutoff_hz = synth->cutoff * (spec->freq * 0.5f);
@@ -180,8 +182,12 @@ public:
                         buffer[frame * 2 + 1] = filtered_right;
                     }
 
-                    // Step
-                    phase += synth->freq / spec->freq;
+                    // Step - Depending on the channel count, multiply to the pitch
+                    if (spec->channels == 1) // TODO: Test
+                        phase += (synth->freq * 2) / spec->freq;
+                    else
+                        phase += synth->freq / spec->freq;
+                    // Normalize phase
                     if (phase > 1.)
                     {
                         phase -= 1.;
