@@ -136,20 +136,31 @@ class instrument
 {
     public:
         // Audio parameters
-        ChannelType type; // Synth or Sample
+        static const int menu_width = 1;
+        static const int menu_height = 10;
+
+        // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
         // Synth parameters
-        float freq_offset = 0.f; // Add to freq
+        ChannelType type = synth; // Synth or Sample
+        float detune = 0.f; // Add to freq
+        int detune_edit = 0x80; // 0x80 = 0, 0x00 = -128, 0xFF = 127
+        int volume_edit = 0xFF80; // 0xFF = 1, 0x80 = 0;
         float volume = 1.f; // Volume
         float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
+        int pan_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
         float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave Synth)
+        int pw_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
         float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
+        float pitch_freq_edit = 0x80; // 0x80 = 0, 0x00 = -128, 0xFF = 127
         float volume_freq = 0.0; // Linear volume sweep (positive up, negative down)
         float pan_freq = 0.0; // Ping-pong pan frequency
         float pulse_width_freq = 0.0; // Ping-pong pulse-width pan frequency (Only for Pulse Wave Synth)
         SynthWaveForm waveform = sine; // Synth wave type
         float cutoff = 0.0f; // Filter cutoff
+        int cutoff_edit = 0x0000f; // 0x0000 = 0, 0xFFFF = 1
         float resonance = 0.0f; // Filter resonance
+        int resonance_edit = 0x0000f; // 0x0000 = 0, 0xFFFF = 1
         FilterType filter = none;
 
         // Sample parameters
@@ -1362,7 +1373,80 @@ void DrawInstrumentUI(std::string type)
     if (str_contains(type, "all") || str_contains(type, "navigator"))
     {
         // Draw instrument options
+        int ty = 3;
+        std::string outstr;
 
+        // Channel Type
+        geptr->DrawTextString(0, ty, geptr->entity, "TYP:", primary_text_a); // Synth or Sample
+        outstr = instrumentlist[open_instrument]->type == synth ? "SYNTH" : "SAMPLE";
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Waveform
+        geptr->DrawTextString(0, ty, geptr->entity, "WAV:", primary_text_a); // Sine, Square, Saw, etc.
+        outstr = waveform_to_string[instrumentlist[open_instrument]->waveform];
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Volume
+        geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
+        outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr, 
+            cursor_y == ty-3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Panning
+        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Pulse width
+        geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Tuning
+        geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
+        outstr = IntToHexString(instrumentlist[open_instrument]->detune_edit);
+        outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Pitch sweep
+        geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 units per tick
+        outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
+        outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
+        geptr->DrawTextString(5+2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+
+        // Filter type
+        ty++;
+        geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
+        outstr = instrumentlist[open_instrument]->filter == lowpass ? "LOWPASS" : 
+                 instrumentlist[open_instrument]->filter == bandpass ? "BANDPASS" : 
+                 instrumentlist[open_instrument]->filter == highpass ? "HIGHPASS" : "NONE";
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Filter cutoff
+        geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
+        outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
+        // Filter resonance
+        geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
+        outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        ty++;
     }
 }
 
@@ -2189,8 +2273,8 @@ void EditorControl()
                     }
                     // Chain
                     state = m_instrument;
-                    cursor_x = SDL_clamp(cursor_x, 0, 1); // TODO: Implement instrument menu width
-                    cursor_y = SDL_clamp(cursor_y, 0, 1); // TODO: Implement instrument menu height
+                    cursor_x = SDL_clamp(cursor_x, 0, instrument::menu_width-1); // TODO: Implement instrument menu width
+                    cursor_y = SDL_clamp(cursor_y, 0, instrument::menu_height-1); // TODO: Implement instrument menu height
                     breakend = true;
                 }
             }

@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_map>
 #include <random>
+#include <map>
 
 #define PI 3.141592f
 
@@ -33,6 +34,16 @@ enum SynthWaveForm
     sawtooth,
     triangle,
     noise
+};
+
+// Conversion map for waveforms
+std::map<SynthWaveForm, std::string> waveform_to_string = {
+    {sine, "SINE"},
+    {square, "SQUARE"},
+    {square, "PULSE"},
+    {square, "SAWTOOTH"},
+    {square, "TRIANGLE"},
+    {square, "NOISE"}
 };
 
 // Enum to define the type of filter applied to audio channel
