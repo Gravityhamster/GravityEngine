@@ -129,7 +129,13 @@ public:
                 continue;
             }
 
-            // Get the available stream
+            // Get the available stream in frames
+            // ----------------------------------
+            // A sample is one decimal. For mono that would be 1 sample per frame. 
+            // However in Stereo, it's 1 sample per speaker per frame. 
+            // So that would be 2 samples per frame.
+            // This is why we are ooping frame-by-frame. 
+            // We are calculating all samples per frame in one loop cycle.
             int threshold_frames = synth->sample_frames * 2;
             int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
 
@@ -139,7 +145,7 @@ public:
                 // Fill in audio data
                 for (int frame = 0; frame < synth->sample_frames; frame++)
                 {
-                    // Get oscillator one value
+                    // Get oscillator one value | Why 2PI?
                     float one = phase * 2. * PI;
 
                     // Set sample based on wave form
@@ -158,6 +164,8 @@ public:
                         sample = (distrib(gen) / 10000.);
 
                     // Apply panning volume and global volume
+                    // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
+                    // That way, panning still effects the audio output in mono.
                     float left_pan = spec->channels == 2 ? (1.f - synth->panning) : 1 - abs(0.5 - synth->panning);
                     float right_pan = synth->panning;
                     auto left_sample = left_pan * (synth->volume) * sample;
@@ -168,7 +176,7 @@ public:
                     float f = 2.0f * sinf(PI * cutoff_hz / spec->freq);
                     float q = synth->resonance;
 
-                    // Calculate left filter
+                    // Calculate left filter - COPILOT
                     synth->hp_l = left_sample - synth->lp_l - q * synth->bp_l;
                     synth->bp_l = synth->bp_l + f * synth->hp_l;
                     synth->lp_l = synth->lp_l + f * synth->bp_l;
@@ -176,7 +184,7 @@ public:
                     // Get filtered value based on the type of filter
                     float filtered_left = (synth->filter == lowpass ? synth->lp_l : (synth->filter == highpass ? synth->hp_l : (synth->filter == bandpass ? synth->bp_l : left_sample)));
 
-                    // Calculate right filter
+                    // Calculate right filter - COPILOT
                     synth->hp_r = right_sample - synth->lp_r - q * synth->bp_r;
                     synth->bp_r = synth->bp_r + f * synth->hp_r;
                     synth->lp_r = synth->lp_r + f * synth->bp_r;
@@ -189,11 +197,14 @@ public:
                         buffer[frame] = filtered_left;
                     else
                     {
+                        // Every frame is made up of a left sample and a right sample.
+                        // We place the left sample into the buffer.
+                        // Then the right sample.
                         buffer[frame * 2 + 0] = filtered_left;
                         buffer[frame * 2 + 1] = filtered_right;
                     }
 
-                    // Step - Depending on the channel count, multiply to the pitch
+                    // Step
                     phase += synth->freq / spec->freq;
                     // Normalize phase
                     if (phase > 1.)
@@ -215,7 +226,7 @@ public:
         (*synth_playing) = false;
     }
 
-    // Automate the synth modulation variables
+    // Automate the synth modulation variables (Effected by call rate)
     void SynthAutomation()
     {
         // Step panning
