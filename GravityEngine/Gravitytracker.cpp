@@ -1378,75 +1378,80 @@ void DrawInstrumentUI(std::string type)
 
         // Channel Type
         geptr->DrawTextString(0, ty, geptr->entity, "TYP:", primary_text_a); // Synth or Sample
-        outstr = instrumentlist[open_instrument]->type == synth ? "SYNTH" : "SAMPLE";
+        outstr = instrumentlist[open_instrument]->type == synth ? "SYNTH" : "FILE";
         geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Waveform
-        geptr->DrawTextString(0, ty, geptr->entity, "WAV:", primary_text_a); // Sine, Square, Saw, etc.
-        outstr = waveform_to_string[instrumentlist[open_instrument]->waveform];
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Volume
-        geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
-        outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(5, ty, geptr->entity, outstr, 
-            cursor_y == ty-3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Panning
-        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
-        outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Pulse width
-        geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
-        outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Tuning
-        geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
-        outstr = IntToHexString(instrumentlist[open_instrument]->detune_edit);
-        outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
-        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Pitch sweep
-        geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 units per tick
-        outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
-        outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
-        geptr->DrawTextString(5+2, ty, geptr->entity, outstr,
             cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
         ty++;
 
-        // Filter type
-        ty++;
-        geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
-        outstr = instrumentlist[open_instrument]->filter == lowpass ? "LOWPASS" : 
-                 instrumentlist[open_instrument]->filter == bandpass ? "BANDPASS" : 
-                 instrumentlist[open_instrument]->filter == highpass ? "HIGHPASS" : "NONE";
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Filter cutoff
-        geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
-        outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
-        // Filter resonance
-        geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
-        outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        ty++;
+        // Draw synth UI
+        if (instrumentlist[open_instrument]->type == synth)
+        {
+            // Waveform
+            geptr->DrawTextString(0, ty, geptr->entity, "WAV:", primary_text_a); // Sine, Square, Saw, etc.
+            outstr = waveform_to_string[instrumentlist[open_instrument]->waveform];
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Volume
+            geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
+            outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Panning
+            geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+            outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Pulse width
+            geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+            outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Tuning
+            geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
+            outstr = IntToHexString(instrumentlist[open_instrument]->detune_edit);
+            outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
+            geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Pitch sweep
+            geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 units per tick
+            outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
+            outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
+            geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+
+            // Filter type
+            ty++;
+            geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
+            outstr = instrumentlist[open_instrument]->filter == lowpass ? "LOWPASS" :
+                instrumentlist[open_instrument]->filter == bandpass ? "BANDPASS" :
+                instrumentlist[open_instrument]->filter == highpass ? "HIGHPASS" : "NONE";
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Filter cutoff
+            geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
+            outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+            // Filter resonance
+            geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
+            outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
+                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            ty++;
+        }
     }
 }
 
