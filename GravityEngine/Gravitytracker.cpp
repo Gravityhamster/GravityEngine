@@ -65,6 +65,7 @@ int max_note = 107; // Maximum note that can be inserted
 bool pause_song = true; // Pause the song progression
 bool play_thread = false; // Play thread check flag
 int do_deep_copy = 0; // Track progress for deep copy
+int instrument_edit_digit_count = -1; // Flag for how many digits to expect an edit to be in the instr editor
 playing_type play_context = pt_song; // What type of play are we doing
 
 // Find string f in s
@@ -1386,11 +1387,15 @@ void DrawInstrumentUI(std::string type)
         // Draw synth UI
         if (instrumentlist[open_instrument]->type == synth)
         {
+            int editing_y = -1;
+            instrument_edit_digit_count = -1;
+
             // Waveform
             geptr->DrawTextString(0, ty, geptr->entity, "WAV:", primary_text_a); // Sine, Square, Saw, etc.
             outstr = waveform_to_string[instrumentlist[open_instrument]->waveform];
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 3) { editing_y = ty; instrument_edit_digit_count = 1; }
             ty++;
             // Volume
             geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
@@ -1398,6 +1403,7 @@ void DrawInstrumentUI(std::string type)
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 3) { editing_y = ty; instrument_edit_digit_count = 2; }
             ty++;
             // Panning
             geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
@@ -1405,6 +1411,7 @@ void DrawInstrumentUI(std::string type)
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 3) { editing_y = ty; instrument_edit_digit_count = 2; }
             ty++;
             // Pulse width
             geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
@@ -1412,6 +1419,7 @@ void DrawInstrumentUI(std::string type)
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 3) { editing_y = ty; instrument_edit_digit_count = 2; }
             ty++;
             // Tuning
             geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
@@ -1419,6 +1427,7 @@ void DrawInstrumentUI(std::string type)
             outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
             geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 3) { editing_y = ty; instrument_edit_digit_count = 1; }
             ty++;
             // Pitch sweep
             geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 units per tick
@@ -1426,6 +1435,7 @@ void DrawInstrumentUI(std::string type)
             outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
             geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 3) { editing_y = ty; instrument_edit_digit_count = 1; }
             ty++;
 
             // Filter type
@@ -1435,22 +1445,41 @@ void DrawInstrumentUI(std::string type)
                 instrumentlist[open_instrument]->filter == bandpass ? "BANDPASS" :
                 instrumentlist[open_instrument]->filter == highpass ? "HIGHPASS" : "NONE";
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+                cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 4) { editing_y = ty; instrument_edit_digit_count = 1; }
             ty++;
             // Filter cutoff
             geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
             outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+                cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 4) { editing_y = ty; instrument_edit_digit_count = 2; }
             ty++;
             // Filter resonance
             geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
             outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+                cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+            if (cursor_y == ty - 4) { editing_y = ty; instrument_edit_digit_count = 2; }
             ty++;
+
+            if (editing_y != -1 && instrument_edit_digit_count == 2)
+            {
+                // Modify left part of the number
+                if (leftrightcenter == left)
+                {
+                    geptr->DrawSetColor(5 + cursor_x, editing_y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(6 + cursor_x, editing_y, geptr->entity, primary_text_a);
+                }
+                // Modify right part of the number
+                if (leftrightcenter == right)
+                {
+                    geptr->DrawSetColor(7 + cursor_x, editing_y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(8 + cursor_x, editing_y, geptr->entity, primary_text_a);
+                }
+            }
         }
     }
 }
@@ -2339,6 +2368,56 @@ void EditorControl()
     // Handle input for the song menu
     if (state == m_instrument && !breakend)
     {
+        // Editing
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        {
+            // Get edit ptr
+            int* edit = &(instrumentlist[open_instrument]->volume_edit);
+
+            // Movement keys
+            if (goup || godown || goright || goleft)
+            {
+                // Mod the left two digits
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                {
+                    if (goup) (*edit) += 0x1000;
+                    if (godown) (*edit) -= 0x1000;
+                    if (goright) (*edit) += 0x0100;
+                    if (goleft) (*edit) -= 0x0100;
+                }
+                // Mod the right two digits
+                else
+                {
+                    if (goup) (*edit) += 0x0010;
+                    if (godown)  (*edit) -= 0x0010;
+                    if (goright) (*edit) += 0x0001;
+                    if (goleft) (*edit) -= 0x0001;
+                }
+
+                // Wrap the cell between 0x0000 and 0xFFFF
+                if ((*edit) < 0)
+                    (*edit) = 0xFFFF + ((*edit) + 1);
+                if ((*edit) > 0xFFFF)
+                    (*edit) = ((*edit) - 1) - 0xFFFF;
+            }
+        }
+        // Moving
+        else
+        {
+            cursor_x += goright - goleft;
+            cursor_y += godown - goup;
+        }
+
+        // wrap the cursor and clamp offsets
+        if (cursor_x > instrument::menu_width - 1)
+            cursor_x = 0;
+        if (cursor_x < 0)
+            cursor_x = instrument::menu_width - 1;
+        if (cursor_y > instrument::menu_height - 1)
+            cursor_y = 0;
+        if (cursor_y < 0)
+            cursor_y = instrument::menu_height - 1;
+
         // Update UI
         DrawInstrumentUI("all");
     }
