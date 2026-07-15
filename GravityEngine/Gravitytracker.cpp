@@ -1519,10 +1519,7 @@ void TrackTicks()
     while (running == true)
     {
         // Execute tick
-        //if (pause_song == false)
-            DoTick();
-        //else
-        //    next = std::chrono::steady_clock::now();
+        DoTick();
 
         // Sync timing
         next += std::chrono::nanoseconds((int64_t)ticklength);
@@ -1534,6 +1531,8 @@ void TrackTicks()
             // Break if we have no more time
             if (rem <= std::chrono::nanoseconds(0))
                 break;
+
+			// TODO: Test using thread sleep instead of sdl delay
 
             // Should we sleep or nah?
             if (rem > std::chrono::milliseconds(5))
@@ -1662,7 +1661,6 @@ void EditorControl()
     // Handle input for the song menu
     if (state == m_song && !breakend)
     {
-
         // Handle deep copy input logic
         GetDeepCopyInputs();
 
