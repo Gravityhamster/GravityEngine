@@ -14,6 +14,7 @@
 #define PI 3.141592f
 
 // TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
+// TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
 
 // Enum to define the current playback state of a sound channel
 enum ChannelStates
@@ -81,7 +82,7 @@ public:
     SynthWaveForm waveform = SynthWaveForm::sine;
     FilterType filter = FilterType::none;
 
-    // Filter - COPILOT
+    // Filter
     float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
     float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
 
@@ -138,7 +139,7 @@ public:
             // A sample is one decimal. For mono that would be 1 sample per frame. 
             // However in Stereo, it's 1 sample per speaker per frame. 
             // So that would be 2 samples per frame.
-            // This is why we are ooping frame-by-frame. 
+            // This is why we are looping frame-by-frame. 
             // We are calculating all samples per frame in one loop cycle.
             int threshold_frames = synth->sample_frames * 2;
             int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
@@ -149,7 +150,7 @@ public:
                 // Fill in audio data
                 for (int frame = 0; frame < synth->sample_frames; frame++)
                 {
-                    // Get oscillator one value | Why 2PI?
+                    // Get oscillator phase in radians for usage with trig functions
                     float one = phase * 2. * PI;
 
                     // Set sample based on wave form
