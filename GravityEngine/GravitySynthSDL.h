@@ -150,7 +150,15 @@ public:
                 // Fill in audio data
                 for (int frame = 0; frame < synth->sample_frames; frame++)
                 {
-                    // Get oscillator phase in radians for usage with trig functions
+                    // The pitch of the sound is determined by sound wave cycles
+                    // per second. Thus, we take the number of samples in a second
+                    // And divide the pitch frequency across sample rate.
+                    // Every time we get an audio frame, we add the pitch/number of samples
+                    // to the phase to move forward at the proper rate to make that sound freq.
+                    // We make the range of this phase 0 to 1. The range of
+                    // a trig function input is 0 to 2PI. So we take the phase
+                    // and map it to the cycle of the trig function by multiplying
+                    // it by 2PI.
                     float one = phase * 2. * PI;
 
                     // Set sample based on wave form
