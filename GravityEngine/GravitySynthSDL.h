@@ -26,33 +26,37 @@ enum ChannelStates
 };
 
 // Enum to define the wave forms on a synth
-enum SynthWaveForm
+enum class SynthWaveForm
 {
     sine,
     square,
     pulse,
     sawtooth,
     triangle,
-    noise
+    noise,
+    min = sine,
+    max = noise
 };
 
 // Conversion map for waveforms
 std::map<SynthWaveForm, std::string> waveform_to_string = {
-    {sine, "SINE"},
-    {square, "SQUARE"},
-    {square, "PULSE"},
-    {square, "SAWTOOTH"},
-    {square, "TRIANGLE"},
-    {square, "NOISE"}
+    {SynthWaveForm::sine, "SINE"},
+    {SynthWaveForm::square, "SQUARE"},
+    {SynthWaveForm::pulse, "PULSE"},
+    {SynthWaveForm::sawtooth, "SAWTOOTH"},
+    {SynthWaveForm::triangle, "TRIANGLE"},
+    {SynthWaveForm::noise, "NOISE"}
 };
 
 // Enum to define the type of filter applied to audio channel
-enum FilterType
+enum class FilterType
 {
     lowpass,
     highpass,
     bandpass,
-    none
+    none,
+    min = lowpass,
+    max = none
 };
 
 // Template for synth objects
@@ -74,8 +78,8 @@ public:
     // float vibrato_freq = 0; -- Not yet implemented
     // float vibrato_amp = 0; -- Not yet implemented
     int sample_frames;
-    SynthWaveForm waveform = sine;
-    FilterType filter = none;
+    SynthWaveForm waveform = SynthWaveForm::sine;
+    FilterType filter = FilterType::none;
 
     // Filter - COPILOT
     float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
@@ -150,17 +154,17 @@ public:
 
                     // Set sample based on wave form
                     float sample = 0.;
-                    if (synth->waveform == sine)
+                    if (synth->waveform == SynthWaveForm::sine)
                         sample = sin(one);
-                    else if (synth->waveform == square)
+                    else if (synth->waveform == SynthWaveForm::square)
                         sample = (sin(one) > 0 ? 1 : -1);
-                    else if (synth->waveform == pulse)
+                    else if (synth->waveform == SynthWaveForm::pulse)
                         sample = (sin(one) > synth->pulse_width ? 1 : -1);
-                    else if (synth->waveform == sawtooth)
+                    else if (synth->waveform == SynthWaveForm::sawtooth)
                         sample = (phase * 2.f - 1.f);
-                    else if (synth->waveform == triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
+                    else if (synth->waveform == SynthWaveForm::triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
                         sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                    else if (synth->waveform == noise)
+                    else if (synth->waveform == SynthWaveForm::noise)
                         sample = (distrib(gen) / 10000.);
 
                     // Apply panning volume and global volume
@@ -182,7 +186,7 @@ public:
                     synth->lp_l = synth->lp_l + f * synth->bp_l;
 
                     // Get filtered value based on the type of filter
-                    float filtered_left = (synth->filter == lowpass ? synth->lp_l : (synth->filter == highpass ? synth->hp_l : (synth->filter == bandpass ? synth->bp_l : left_sample)));
+                    float filtered_left = (synth->filter == FilterType::lowpass ? synth->lp_l : (synth->filter == FilterType::highpass ? synth->hp_l : (synth->filter == FilterType::bandpass ? synth->bp_l : left_sample)));
 
                     // Calculate right filter - COPILOT
                     synth->hp_r = right_sample - synth->lp_r - q * synth->bp_r;
@@ -190,7 +194,7 @@ public:
                     synth->lp_r = synth->lp_r + f * synth->bp_r;
 
                     // Get filtered value based on the type of filter
-                    float filtered_right = (synth->filter == lowpass ? synth->lp_r : (synth->filter == highpass ? synth->hp_r : (synth->filter == bandpass ? synth->bp_r : right_sample)));
+                    float filtered_right = (synth->filter == FilterType::lowpass ? synth->lp_r : (synth->filter == FilterType::highpass ? synth->hp_r : (synth->filter == FilterType::bandpass ? synth->bp_r : right_sample)));
 
                     // Fill the buffer differently depending on channel
                     if (spec->channels == 1)

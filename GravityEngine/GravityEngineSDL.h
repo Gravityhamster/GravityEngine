@@ -21,10 +21,12 @@ struct color
 };
 
 // Enum to define the type of sound currently playing on the channel
-enum ChannelType
+enum class ChannelType
 {
     file,
-    synth
+    synth,
+    min = file,
+    max = synth
 };
 
 // Template for game objects
@@ -118,7 +120,7 @@ private:
         SDL_AudioStream* sdl_audio_stream = nullptr; // SDL audio streaming object
         SDL_AudioDeviceID audio_device_id; // SDL audio playback device object
         std::atomic<ChannelStates> state = uninit; // Playback state of this audio channel
-        ChannelType type = file; // Sound type currently playing
+        ChannelType type = ChannelType::file; // Sound type currently playing
         std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
         bool looping = false; // Loop audio
         std::thread* synth_thread = nullptr; // CPU thread to run the synth audio generation on
@@ -158,7 +160,7 @@ private:
             int bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8;
             int buffer_size = sample_frames * audio_spec.channels * bytes_per_sample;
 
-            while (ac->GetType() == file && (ac->GetState() == playing || ac->GetState() == paused))
+            while (ac->GetType() == ChannelType::file && (ac->GetState() == playing || ac->GetState() == paused))
             {
                 // If the synth is paused, do not play the synth
                 if (ac->GetState() == paused)
@@ -197,7 +199,7 @@ private:
             // Set whether this channel should loop or not
             looping = loop;
             // Change the provider type
-            type = file;
+            type = ChannelType::file;
         }
 
         // Play a synth on this channel
@@ -219,7 +221,7 @@ private:
             // Start playback
             SDL_ResumeAudioDevice(audio_device_id);
             // Change the provider type
-            type = synth;
+            type = ChannelType::synth;
         }
 
         // Stop audio
@@ -228,13 +230,13 @@ private:
             // Flag that this sound channel has been stopped and cleared
             state = stopped;
             // Wait for the synth thread if this is a synth
-            if (type == synth)
+            if (type == ChannelType::synth)
             {
                 // Wait for the thread to quit
                 while (synth_playing) {}
             }
             // Wait for the loop thread if this is a file
-            if (type == file)
+            if (type == ChannelType::file)
             {
                 // Wait for the thread to quit
                 while (file_playing) {}
@@ -336,7 +338,7 @@ private:
             // Flag that this sound channel has been stopped and cleared
             state = stopped;
             // Wait for the synth thread if this is a synth
-            if (type == synth)
+            if (type == ChannelType::synth)
             {
                 // Wait for the thread to quit
                 while (synth_playing) {}
