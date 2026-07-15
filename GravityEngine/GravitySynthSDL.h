@@ -159,6 +159,10 @@ public:
                     // a trig function input is 0 to 2PI. So we take the phase
                     // and map it to the cycle of the trig function by multiplying
                     // it by 2PI.
+                    // Basically, phase is the normalized position in the cycle. 
+                    // A cycle of a wave is 0 to 2PI.
+                    // The faster the phase moves, the faster the wave cycles, and the higher the pitch.
+                    // Phase is normalized because 2PI and 0 are the same position on a wave in trig.
                     float one = phase * 2. * PI;
 
                     // Set sample based on wave form
