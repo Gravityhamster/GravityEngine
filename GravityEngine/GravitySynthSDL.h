@@ -14,6 +14,7 @@
 #define PI 3.141592f
 
 // TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
+// TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
 
 // Enum to define the current playback state of a sound channel
 enum ChannelStates
@@ -81,7 +82,7 @@ public:
     SynthWaveForm waveform = SynthWaveForm::sine;
     FilterType filter = FilterType::none;
 
-    // Filter - COPILOT
+    // Filter
     float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
     float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
 
@@ -146,7 +147,7 @@ public:
             // A sample is one decimal. For mono that would be 1 sample per frame. 
             // However in Stereo, it's 1 sample per speaker per frame. 
             // So that would be 2 samples per frame.
-            // This is why we are ooping frame-by-frame. 
+            // This is why we are looping frame-by-frame. 
             // We are calculating all samples per frame in one loop cycle.
             int threshold_frames = synth->sample_frames * 2;
             int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
@@ -157,7 +158,19 @@ public:
                 // Fill in audio data
                 for (int frame = 0; frame < synth->sample_frames; frame++)
                 {
-                    // Get oscillator one value | Why 2PI?
+                    // The pitch of the sound is determined by sound wave cycles
+                    // per second. Thus, we take the number of samples in a second
+                    // And divide the pitch frequency across sample rate.
+                    // Every time we get an audio frame, we add the pitch/number of samples
+                    // to the phase to move forward at the proper rate to make that sound freq.
+                    // We make the range of this phase 0 to 1. The range of
+                    // a trig function input is 0 to 2PI. So we take the phase
+                    // and map it to the cycle of the trig function by multiplying
+                    // it by 2PI.
+                    // Basically, phase is the normalized position in the cycle. 
+                    // A cycle of a wave is 0 to 2PI.
+                    // The faster the phase moves, the faster the wave cycles, and the higher the pitch.
+                    // Phase is normalized because 2PI and 0 are the same position on a wave in trig.
                     float one = phase * 2. * PI;
 
                     // Set sample based on wave form
