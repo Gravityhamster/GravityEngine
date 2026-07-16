@@ -168,6 +168,38 @@ class instrument
         FilterType filter = FilterType::none;
 
         // Sample parameters
+
+
+        // Methods
+        instrument* DeepCopyInstrument()
+        {
+            // New instrument
+            auto i = new instrument();
+
+            // Apply parameters
+            i->detune_edit = detune_edit;
+            i->detune = detune;
+            i->volume_edit = volume_edit;
+            i->volume = volume;
+            i->volume_freq = volume_freq;
+            i->pan_edit = pan_edit;
+            i->panning = panning;
+            i->pan_freq = pan_freq;
+            i->pw_edit = pw_edit;
+            i->pulse_width = pulse_width;
+            i->pulse_width_freq = pulse_width_freq;
+            i->pitch_freq_edit = pitch_freq_edit;
+            i->pitch_freq = pitch_freq;
+            i->cutoff_edit = cutoff_edit;
+            i->cutoff = cutoff;
+            i->resonance_edit = resonance_edit;
+            i->resonance = resonance;
+            i->waveform = waveform;
+            i->filter = filter;
+
+            // Return copy
+            return i;
+        }
 };
 
 // Tables - List of modulations for the currently playing instrument
@@ -2073,308 +2105,327 @@ void EditorControl()
     // Handle input for the phrase menu
     if (state == m_phrase && !breakend)
     {
-        // Handle play button
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+        // Handle deep copy input logic
+        GetDeepCopyInputs();
+
+        // If we have a successful deep copy, do it
+        if (do_deep_copy == 2 && cursor_x == 1 && GetAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + chain_offset_y][cursor_x]) != nullptr)
         {
-            StopAllChannels();
-            // Set the song ptr position for only this channel
-            playing_channel = open_channel;
-            channellist[playing_channel].chain_ptr = open_chain_index;
-            channellist[playing_channel].playing_chain = open_chain;
-            channellist[playing_channel].phrase_ptr = open_phrase_index;
-            channellist[playing_channel].playing_phrase = open_phrase;
-            channellist[playing_channel].step_ptr = 0;
-            channellist[playing_channel].tick_ptr = 0;
-            // Set the scope of play to only this phrase
-            play_context = pt_phrase;
-            // Unpause the song playback
-            pause_song = false;
+            // Deep copy the instrument
+            auto i = GetAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + chain_offset_y][cursor_x])->DeepCopyInstrument();
+            auto index = GetNextEmpty(&instrumentlist);
+            InsertAt(&instrumentlist, index, i);
+            phraselist[open_phrase]->arr[cursor_y + chain_offset_y][cursor_x] = index;
         }
-
-        // Modify value
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-        {
-            // Edit instr
-            if (cursor_x == 1)
-            {
-                // If the phraselist value is unfilled, insert 0
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
-                {
-                    if (copied_instr == -1)
-                    {
-                        // Set UI reference to Hex0
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0x0000;
-                        // If this instrument doesn't exist yet, insert it
-                        if (GetAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x]) == nullptr)
-                            InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x], new instrument());
-                    }
-                    else
-                    {
-                        // Set UI reference to copied instrument
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_instr;
-                    }
-                }
-                // If double click, add a new instrument
-                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
-                {
-                    // Set UI reference to the next empty
-                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = GetNextEmpty(&instrumentlist);
-                    // Add the new instrument
-                    InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x], new instrument());
-                    // Copy to clipboard
-                    copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x];
-                }
-                else
-                {
-                    // Copy to clipboard
-                    copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x];
-                }
-            }
-        }
-
-        // Do actions given the context --
-
-        // Editing
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
-        {
-            // Edit note
-            if (cursor_x == 0)
-            {
-                // Set to C-4 if it isn't set
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
-
-                // Movement keys
-                if (goup || godown || goright || goleft)
-                {
-                    // Edit note pitch
-                    if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 12;
-                    if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 12;
-                    if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 1;
-                    if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 1;
-
-                    // Wrap the cell between min_note and max_note
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] < min_note)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = max_note + ((phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - min_note) + 1);
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] > max_note)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = min_note + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - 1) - max_note;
-                }
-
-                // Copy to clipboard
-                copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
-
-                // Preview note
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft)
-                    PlayStepPhrase(open_channel, open_phrase, cursor_y + phrase_offset_y);
-
-                // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = -9999;
-            }
-            
-            // Edit instr
-            if (cursor_x == 1)
-            {
-                // Movement keys
-                if (goup || godown || goright || goleft)
-                {
-                    // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
-                    {
-                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
-                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
-                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0100;
-                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0100;
-                    }
-                    // Mod the right two digits
-                    else
-                    {
-                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0010;
-                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0010;
-                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0001;
-                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0001;
-                    }
-
-                    // Wrap the cell between 0x0000 and 0xFFFF
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0xFFFF + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > 0xFFFF)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - 0xFFFF;
-
-                    // Copy to clipboard
-                    copied_instr = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
-                }
-
-                // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
-            }
-
-            // Edit fx1,2,3
-            if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
-            {
-                // Set to 0 if it isn't set
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
-
-                // Movement keys
-                if (goup || godown || goright || goleft)
-                {
-                    if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 5;
-                    if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 5;
-                    if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 1;
-                    if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 1;
-
-                    // Wrap the cell between 0 and effect list length
-                    int effect_list_len = (sizeof(fx) / sizeof(fx[0])) - 1;
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = effect_list_len + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > effect_list_len)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - effect_list_len;
-                }
-
-                // Copy to clipboard
-                copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
-
-                // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
-            }
-
-            // Edit fx1,2,3 param
-            if (cursor_x == 3 || cursor_x == 5 || cursor_x == 7)
-            {
-                // Set to 0 if it isn't set
-                if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
-
-                // Movement keys
-                if (goup || godown || goright || goleft)
-                {
-                    // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
-                    {
-                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
-                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
-                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0100;
-                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0100;
-                    }
-                    // Mod the right two digits
-                    else
-                    {
-                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0010;
-                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0010;
-                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0001;
-                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0001;
-                    }
-
-                    // Wrap the cell between 0x0000 and 0xFFFF
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0xFFFF + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > 0xFFFF)
-                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - 0xFFFF;
-                }
-
-                // Copy to clipboard
-                copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
-
-                // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
-                    phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
-            }
-        }
-        // Goto page
-        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
-        {
-            // Go to the left page over
-            if (goleft)
-            {
-                // If the open_chain is valid
-                if (open_chain != -1)
-                {
-                    // Check if the chain does not exist
-                    if (GetAt(&chainlist, open_chain) == nullptr)
-                    {
-                        InsertAt(&chainlist, open_chain, new chain());
-                    }
-                    // Chain
-                    state = m_chain;
-                    cursor_x = SDL_clamp(cursor_x, 0, chain_grid_w - 1);
-                    cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
-                    breakend = true;
-                }
-            }
-            // Go to the right page over
-            else if (goright)
-            {
-                // Set open instrument
-                if (phraselist[open_phrase]->arr[cursor_y + chain_offset_y][1] != -1)
-                {
-                    open_instrument = phraselist[open_phrase]->arr[cursor_y + chain_offset_y][1];
-                }
-                // If the open_instrument is valid
-                if (open_instrument != -1)
-                {
-                    // Check if the instrument does not exist
-                    if (GetAt(&instrumentlist, open_instrument) == nullptr)
-                    {
-                        InsertAt(&instrumentlist, open_instrument, new instrument());
-                    }
-                    // Chain
-                    state = m_instrument;
-                    cursor_x = SDL_clamp(cursor_x, 0, instrument::synth_menu_width-1); // TODO: Implement instrument menu width
-                    cursor_y = SDL_clamp(cursor_y, 0, instrument::synth_menu_height-1); // TODO: Implement instrument menu height
-                    breakend = true;
-                }
-            }
-        }
-        // Moving
         else
         {
-            cursor_x += goright - goleft;
-            cursor_y += godown - goup;
+            // Handle play button
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+            {
+                StopAllChannels();
+                // Set the song ptr position for only this channel
+                playing_channel = open_channel;
+                channellist[playing_channel].chain_ptr = open_chain_index;
+                channellist[playing_channel].playing_chain = open_chain;
+                channellist[playing_channel].phrase_ptr = open_phrase_index;
+                channellist[playing_channel].playing_phrase = open_phrase;
+                channellist[playing_channel].step_ptr = 0;
+                channellist[playing_channel].tick_ptr = 0;
+                // Set the scope of play to only this phrase
+                play_context = pt_phrase;
+                // Unpause the song playback
+                pause_song = false;
+            }
+
+            // Modify value
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            {
+                // Edit instr
+                if (cursor_x == 1)
+                {
+                    // If the phraselist value is unfilled, insert 0
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1)
+                    {
+                        if (copied_instr == -1)
+                        {
+                            // Set UI reference to Hex0
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0x0000;
+                            // If this instrument doesn't exist yet, insert it
+                            if (GetAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x]) == nullptr)
+                                InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x], new instrument());
+                        }
+                        else
+                        {
+                            // Set UI reference to copied instrument
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_instr;
+                        }
+                    }
+                    // If double click, add a new instrument
+                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                    {
+                        // Set UI reference to the next empty
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = GetNextEmpty(&instrumentlist);
+                        // Add the new instrument
+                        InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x], new instrument());
+                        // Copy to clipboard
+                        copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x];
+                    }
+                    else
+                    {
+                        // Copy to clipboard
+                        copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x];
+                    }
+                }
+            }
+
+            // Do actions given the context --
+
+            // Editing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            {
+                // Edit note
+                if (cursor_x == 0)
+                {
+                    // Set to C-4 if it isn't set
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
+
+                    // Movement keys
+                    if (goup || godown || goright || goleft)
+                    {
+                        // Edit note pitch
+                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 12;
+                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 12;
+                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 1;
+                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] -= 1;
+
+                        // Wrap the cell between min_note and max_note
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] < min_note)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = max_note + ((phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - min_note) + 1);
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] > max_note)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = min_note + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] - 1) - max_note;
+                    }
+
+                    // Copy to clipboard
+                    copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+
+                    // Preview note
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft)
+                        PlayStepPhrase(open_channel, open_phrase, cursor_y + phrase_offset_y);
+
+                    // Handle deletes
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = -9999;
+                }
+
+                // Edit instr
+                if (cursor_x == 1)
+                {
+                    // Movement keys
+                    if (goup || godown || goright || goleft)
+                    {
+                        // Mod the left two digits
+                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        {
+                            if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
+                            if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
+                            if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0100;
+                            if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0100;
+                        }
+                        // Mod the right two digits
+                        else
+                        {
+                            if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0010;
+                            if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0010;
+                            if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0001;
+                            if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0001;
+                        }
+
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0xFFFF + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > 0xFFFF)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - 0xFFFF;
+
+                        // Copy to clipboard
+                        copied_instr = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+                    }
+
+                    // Handle deletes
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
+                }
+
+                // Edit fx1,2,3
+                if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
+                {
+                    // Set to 0 if it isn't set
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
+
+                    // Movement keys
+                    if (goup || godown || goright || goleft)
+                    {
+                        if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 5;
+                        if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 5;
+                        if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 1;
+                        if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 1;
+
+                        // Wrap the cell between 0 and effect list length
+                        int effect_list_len = (sizeof(fx) / sizeof(fx[0])) - 1;
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = effect_list_len + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > effect_list_len)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - effect_list_len;
+                    }
+
+                    // Copy to clipboard
+                    copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+
+                    // Handle deletes
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
+                }
+
+                // Edit fx1,2,3 param
+                if (cursor_x == 3 || cursor_x == 5 || cursor_x == 7)
+                {
+                    // Set to 0 if it isn't set
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
+
+                    // Movement keys
+                    if (goup || godown || goright || goleft)
+                    {
+                        // Mod the left two digits
+                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        {
+                            if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
+                            if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
+                            if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0100;
+                            if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0100;
+                        }
+                        // Mod the right two digits
+                        else
+                        {
+                            if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0010;
+                            if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0010;
+                            if (goright) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x0001;
+                            if (goleft) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x0001;
+                        }
+
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] < 0)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = 0xFFFF + (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] + 1);
+                        if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] > 0xFFFF)
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] - 1) - 0xFFFF;
+                    }
+
+                    // Copy to clipboard
+                    copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
+
+                    // Handle deletes
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                        phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
+                }
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            {
+                // Go to the left page over
+                if (goleft)
+                {
+                    // If the open_chain is valid
+                    if (open_chain != -1)
+                    {
+                        // Check if the chain does not exist
+                        if (GetAt(&chainlist, open_chain) == nullptr)
+                        {
+                            InsertAt(&chainlist, open_chain, new chain());
+                        }
+                        // Chain
+                        state = m_chain;
+                        cursor_x = SDL_clamp(cursor_x, 0, chain_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, chain_grid_h - 1);
+                        breakend = true;
+                    }
+                }
+                // Go to the right page over
+                else if (goright)
+                {
+                    // Set open instrument
+                    if (phraselist[open_phrase]->arr[cursor_y + chain_offset_y][1] != -1)
+                    {
+                        open_instrument = phraselist[open_phrase]->arr[cursor_y + chain_offset_y][1];
+                    }
+                    // If the open_instrument is valid
+                    if (open_instrument != -1)
+                    {
+                        // Check if the instrument does not exist
+                        if (GetAt(&instrumentlist, open_instrument) == nullptr)
+                        {
+                            InsertAt(&instrumentlist, open_instrument, new instrument());
+                        }
+                        // Chain
+                        state = m_instrument;
+                        cursor_x = SDL_clamp(cursor_x, 0, instrument::synth_menu_width - 1); // TODO: Implement instrument menu width
+                        cursor_y = SDL_clamp(cursor_y, 0, instrument::synth_menu_height - 1); // TODO: Implement instrument menu height
+                        breakend = true;
+                    }
+                }
+            }
+            // Moving
+            else
+            {
+                cursor_x += goright - goleft;
+                cursor_y += godown - goup;
+            }
+
+            // Step previewing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
+            {
+                StopAllChannels();
+            }
+
+            // Next and last phrase
+            auto next_phrase_index = (open_phrase_index + 1) % chain::length;
+            auto next_phrase = GetAt(&phraselist, chainlist[open_chain]->arr[next_phrase_index]);
+            auto last_phrase_index = (open_phrase_index - 1 < 0 ? chain::length - 1 : open_phrase_index - 1) % chain::length;
+            auto last_phrase = GetAt(&phraselist, chainlist[open_chain]->arr[last_phrase_index]);
+
+            // wrap the cursor and clamp offsets
+            if (cursor_x > phrase_grid_w - 1)
+                cursor_x = 0;
+            if (cursor_x < 0)
+                cursor_x = phrase_grid_w - 1;
+            if (cursor_y + phrase_offset_y > phrase::len_y - 1 && next_phrase != nullptr)
+            {
+                cursor_y = 0;
+                phrase_offset_y = 0;
+                open_phrase = chainlist[open_chain]->arr[next_phrase_index];
+                open_phrase_index = next_phrase_index;
+            }
+            if (cursor_y + phrase_offset_y < 0 && last_phrase != nullptr)
+            {
+                cursor_y = phrase_grid_h - 1;
+                phrase_offset_y = phrase::len_y - phrase_grid_h;
+                open_phrase = chainlist[open_chain]->arr[last_phrase_index];
+                open_phrase_index = last_phrase_index;
+            }
+
+            // Move the page
+            if (cursor_y > phrase_grid_h - 1)
+                phrase_offset_y += 1;
+            if (cursor_y < 0)
+                phrase_offset_y -= 1;
+
+            cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
+            phrase_offset_y = SDL_clamp(phrase_offset_y, 0, phrase::len_y - phrase_grid_h);
         }
 
-        // Step previewing
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
-        {
-            StopAllChannels();
-        }
-
-        // Next and last phrase
-        auto next_phrase_index = (open_phrase_index + 1) % chain::length;
-        auto next_phrase = GetAt(&phraselist, chainlist[open_chain]->arr[next_phrase_index]);
-        auto last_phrase_index = (open_phrase_index - 1 < 0 ? chain::length - 1 : open_phrase_index - 1) % chain::length;
-        auto last_phrase = GetAt(&phraselist, chainlist[open_chain]->arr[last_phrase_index]);
-
-        // wrap the cursor and clamp offsets
-        if (cursor_x > phrase_grid_w - 1)
-            cursor_x = 0;
-        if (cursor_x < 0)
-            cursor_x = phrase_grid_w - 1;
-        if (cursor_y + phrase_offset_y > phrase::len_y - 1 && next_phrase != nullptr)
-        {
-            cursor_y = 0;
-            phrase_offset_y = 0;
-            open_phrase = chainlist[open_chain]->arr[next_phrase_index];
-            open_phrase_index = next_phrase_index;
-        }
-        if (cursor_y + phrase_offset_y < 0 && last_phrase != nullptr)
-        {
-            cursor_y = phrase_grid_h - 1;
-            phrase_offset_y = phrase::len_y - phrase_grid_h;
-            open_phrase = chainlist[open_chain]->arr[last_phrase_index];
-            open_phrase_index = last_phrase_index;
-        }
-
-        // Move the page
-        if (cursor_y > phrase_grid_h - 1)
-            phrase_offset_y += 1;
-        if (cursor_y < 0)
-            phrase_offset_y -= 1;
-
-        cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
-        phrase_offset_y = SDL_clamp(phrase_offset_y, 0, phrase::len_y - phrase_grid_h);
+        // Reset deep copy action flag
+        if (do_deep_copy == 2)
+            do_deep_copy = 0;
 
         // Update UI
         DrawPhraseUI(phrase_offset_y, "all");
