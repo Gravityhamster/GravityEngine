@@ -123,6 +123,14 @@ public:
         float phase = 0.;
         float pan_phase = synth->panning;
         float pw_phase = synth->pulse_width;
+
+        synth->hp_l = 0.0f;
+        synth->bp_l = 0.0f;
+        synth->lp_l = 0.0f;
+        synth->hp_r = 0.0f;
+        synth->bp_r = 0.0f;
+        synth->lp_r = 0.0f;
+
         // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
 
@@ -251,7 +259,12 @@ public:
         }
         // Step note
         if (pitch_freq != 0)
-            freq += pitch_freq / 100;
+        {
+            if (pitch_freq > 0)
+                freq = freq * (pitch_freq + 1);
+            if (pitch_freq < 0)
+                freq = freq / (abs(pitch_freq) + 1);
+        }
         // Step volumne
         if (volume_freq != 0)
             volume += volume_freq / 100;

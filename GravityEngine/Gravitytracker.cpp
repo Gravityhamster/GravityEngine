@@ -138,31 +138,33 @@ class instrument
 {
     public:
         // Audio parameters
-        static const int menu_width = 1;
-        static const int menu_height = 10;
+        static const int synth_menu_width = 1;
+        static const int synth_menu_height = 10;
 
         // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
+        // Synth or Sample
+        ChannelType type = ChannelType::synth;
+
         // Synth parameters
-        ChannelType type = ChannelType::synth; // Synth or Sample
-        float detune = 0.f; // Add to freq
         int detune_edit = 0x80; // 0x80 = 0, 0x00 = -128, 0xFF = 127
-        int volume_edit = 0xFF80; // 0xFF = 1, 0x80 = 0;
+        float detune = 0.f; // Add to freq
+        int volume_edit = 0xFF80; // 0xFF = 1 | 0x80 = 0
         float volume = 1.f; // Volume
-        float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
-        int pan_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
-        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave Synth)
-        int pw_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
-        float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
-        int pitch_freq_edit = 0x80; // 0x80 = 0, 0x00 = -128, 0xFF = 127
         float volume_freq = 0.0; // Linear volume sweep (positive up, negative down)
+        int pan_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
+        float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
         float pan_freq = 0.0; // Ping-pong pan frequency
+        int pw_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
+        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave Synth)
         float pulse_width_freq = 0.0; // Ping-pong pulse-width pan frequency (Only for Pulse Wave Synth)
-        SynthWaveForm waveform = SynthWaveForm::sine; // Synth wave type
+        int pitch_freq_edit = 0x8000; // 0x8000 = 0, 0x0000 = -32768, 0xFFFF = 32767
+        float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
+        int cutoff_edit = 0x8000; // 0x0000 = 0, 0xFFFF = 1
         float cutoff = 0.0f; // Filter cutoff
-        int cutoff_edit = 0x0000f; // 0x0000 = 0, 0xFFFF = 1
+        int resonance_edit = 0x6554; // 0x0000 = 0, 0xFFFF = 1
         float resonance = 0.0f; // Filter resonance
-        int resonance_edit = 0x0000f; // 0x0000 = 0, 0xFFFF = 1
+        SynthWaveForm waveform = SynthWaveForm::sine; // Synth wave type
         FilterType filter = FilterType::none;
 
         // Sample parameters
@@ -269,19 +271,32 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 {
     // Get frequency to play
     auto f = phraselist[playing_phrase]->arr[step_ptr][0];
+    auto i = phraselist[playing_phrase]->arr[step_ptr][1];
     // If no note is present, no need to play
-    if (f != -9999)
+    if (f != -9999 && GetAt(&instrumentlist, i) != nullptr)
     {
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
-        synthlist[channel_index]->pulse_width = 0.5f;
-        synthlist[channel_index]->pulse_width_freq = 0.5f;
-        synthlist[channel_index]->panning = 0.5f;
-        synthlist[channel_index]->freq = NoteFreq(f);
-        synthlist[channel_index]->volume = 0.125f;
-        synthlist[channel_index]->volume_freq = -0.5;
-        synthlist[channel_index]->waveform = SynthWaveForm::pulse;
-        geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
+        if (instrumentlist[i]->type == ChannelType::synth)
+        {
+            synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
+            synthlist[channel_index]->volume = instrumentlist[i]->volume;
+            synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
+            synthlist[channel_index]->panning = instrumentlist[i]->panning;
+            synthlist[channel_index]->pan_freq = instrumentlist[i]->pan_freq;
+            synthlist[channel_index]->pulse_width = instrumentlist[i]->pulse_width;
+            synthlist[channel_index]->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
+            synthlist[channel_index]->pitch_freq = instrumentlist[i]->pitch_freq;
+            synthlist[channel_index]->cutoff = instrumentlist[i]->cutoff;
+            synthlist[channel_index]->resonance = instrumentlist[i]->resonance;
+            synthlist[channel_index]->waveform = instrumentlist[i]->waveform;
+            synthlist[channel_index]->filter = instrumentlist[i]->filter;
+            geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
+        }
+        else if (instrumentlist[i]->type == ChannelType::file)
+        {
+            // TODO: Implement sample-based playback
+        }
     }
 }
 
@@ -1417,7 +1432,7 @@ void DrawInstrumentUI(std::string type)
             if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
             ty++;
             // Pulse width
-            geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+            geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pulse Width Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
             outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
             geptr->DrawTextString(5, ty, geptr->entity, outstr,
@@ -1433,12 +1448,12 @@ void DrawInstrumentUI(std::string type)
             if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 1; }
             ty++;
             // Pitch sweep
-            geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 units per tick
+            geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -32768, 0xFF = 32767 units per tick
             outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
-            outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
-            geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(5, ty, geptr->entity, outstr,
                 cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 1; }
+            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
             ty++;
 
             // Filter type
@@ -2014,7 +2029,6 @@ void EditorControl()
                         cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
                         breakend = true;
                     }
-
                 }
             }
             // Moving
@@ -2310,8 +2324,8 @@ void EditorControl()
                     }
                     // Chain
                     state = m_instrument;
-                    cursor_x = SDL_clamp(cursor_x, 0, instrument::menu_width-1); // TODO: Implement instrument menu width
-                    cursor_y = SDL_clamp(cursor_y, 0, instrument::menu_height-1); // TODO: Implement instrument menu height
+                    cursor_x = SDL_clamp(cursor_x, 0, instrument::synth_menu_width-1); // TODO: Implement instrument menu width
+                    cursor_y = SDL_clamp(cursor_y, 0, instrument::synth_menu_height-1); // TODO: Implement instrument menu height
                     breakend = true;
                 }
             }
@@ -2368,21 +2382,24 @@ void EditorControl()
         DrawPhraseUI(phrase_offset_y, "all");
     }
 
-    // Handle input for the song menu
+    // Handle input for the instrument menu
     if (state == m_instrument && !breakend)
     {
-        // Editing
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        // For editing synth instrumetn
+        if (instrumentlist[open_instrument]->type == ChannelType::synth)
         {
-            // Get edit ptr
-            int* edit;
-
-            // Default
-            edit = &(instrumentlist[open_instrument]->volume_edit);
-
-            // Get instrument edit pointer
-            switch (instrument_edit_y)
+            // Editing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
             {
+                // Get edit ptr
+                int* edit;
+
+                // Default
+                edit = &(instrumentlist[open_instrument]->volume_edit);
+
+                // Get instrument edit pointer
+                switch (instrument_edit_y)
+                {
                 case 3: // Channel Type
                     edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->type);
                     break;
@@ -2413,87 +2430,139 @@ void EditorControl()
                 case 13: // Filter Resonance
                     edit = &(instrumentlist[open_instrument]->resonance_edit);
                     break;
-            }
+                }
 
-            // Movement keys
-            if (goup || godown || goright || goleft)
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                    {
+                        if (goup) (*edit) += 0x1000;
+                        if (godown) (*edit) -= 0x1000;
+                        if (goright) (*edit) += 0x0100;
+                        if (goleft) (*edit) -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup && instrument_edit_digit_count != 0) (*edit) += 0x0010;
+                        if (godown && instrument_edit_digit_count != 0)  (*edit) -= 0x0010;
+                        if (goright) (*edit) += 0x0001;
+                        if (goleft) (*edit) -= 0x0001;
+                    }
+
+                    // Correct number ranges
+                    switch (instrument_edit_y)
+                    {
+                    case 3: // Channel Type
+                        if ((*edit) < static_cast<int>(ChannelType::min))
+                            (*edit) = static_cast<int>(ChannelType::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(ChannelType::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
+                        break;
+                    case 4: // Waveform
+                        if ((*edit) < static_cast<int>(SynthWaveForm::min))
+                            (*edit) = static_cast<int>(SynthWaveForm::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(SynthWaveForm::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(SynthWaveForm::max);
+                        break;
+                    case 11: // Filter Type
+                        if ((*edit) < static_cast<int>(FilterType::min))
+                            (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(FilterType::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(FilterType::max);
+                        break;
+                    case 5: // Volume
+                    case 6: // Panning
+                    case 7: // Pulse Width
+                    case 9: // Pitch Sweep
+                    case 12: // Filter Cutoff
+                    case 13: // Filter Resonance
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFFFF + ((*edit) + 1);
+                        if ((*edit) > 0xFFFF)
+                            (*edit) = ((*edit) - 1) - 0xFFFF;
+                        break;
+                    case 8: // Tuning
+                        // Wrap the cell between 0x00 and 0xFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFF + ((*edit) + 1);
+                        if ((*edit) > 0xFF)
+                            (*edit) = ((*edit) - 1) - 0xFF;
+                        break;
+                    }
+
+                    // Convert edits to actual values
+                    instrumentlist[open_instrument]->detune = (instrumentlist[open_instrument]->detune_edit - 128) / 2.f;
+                    std::string outstr;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->volume = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 16.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->pulse_width = (std::stoi(outstr.substr(0, 2), 0, 16) / 255.f) - 0.5f;
+                    instrumentlist[open_instrument]->pulse_width_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
+                    instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
+                    instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
+                    instrumentlist[open_instrument]->resonance = instrumentlist[open_instrument]->resonance_edit / 65535.f;
+                }
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
             {
-                // Mod the left two digits
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                // Go to the left page over
+                if (goleft)
                 {
-                    if (goup) (*edit) += 0x1000;
-                    if (godown) (*edit) -= 0x1000;
-                    if (goright) (*edit) += 0x0100;
-                    if (goleft) (*edit) -= 0x0100;
+                    // If the open_chain is valid
+                    if (open_phrase != -1)
+                    {
+                        // Check if the phrase does not exist
+                        if (GetAt(&phraselist, open_phrase) == nullptr)
+                        {
+                            InsertAt(&phraselist, open_phrase, new phrase());
+                        }
+                        // Chain
+                        state = m_phrase;
+                        cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
+                        breakend = true;
+                    }
                 }
-                // Mod the right two digits
-                else
+                // Go to the right page over
+                else if (goright)
                 {
-                    if (goup && instrument_edit_digit_count != 0) (*edit) += 0x0010;
-                    if (godown && instrument_edit_digit_count != 0)  (*edit) -= 0x0010;
-                    if (goright) (*edit) += 0x0001;
-                    if (goleft) (*edit) -= 0x0001;
-                }
-
-                // Correct number ranges
-                switch (instrument_edit_y)
-                {
-                case 3: // Channel Type
-                    if ((*edit) < static_cast<int>(ChannelType::min))
-                        (*edit) = static_cast<int>(ChannelType::max) + ((*edit) + 1);
-                    if ((*edit) > static_cast<int>(ChannelType::max))
-                        (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
-                    break;
-                case 4: // Waveform
-                    if ((*edit) < static_cast<int>(SynthWaveForm::min))
-                        (*edit) = static_cast<int>(SynthWaveForm::max) + ((*edit) + 1);
-                    if ((*edit) > static_cast<int>(SynthWaveForm::max))
-                        (*edit) = ((*edit) - 1) - static_cast<int>(SynthWaveForm::max);
-                    break;
-                case 11: // Filter Type
-                    if ((*edit) < static_cast<int>(FilterType::min))
-                        (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
-                    if ((*edit) > static_cast<int>(FilterType::max))
-                        (*edit) = ((*edit) - 1) - static_cast<int>(FilterType::max);
-                    break;
-                case 5: // Volume
-                case 6: // Panning
-                case 7: // Pulse Width
-                case 12: // Filter Cutoff
-                case 13: // Filter Resonance
-                    // Wrap the cell between 0x0000 and 0xFFFF
-                    if ((*edit) < 0)
-                        (*edit) = 0xFFFF + ((*edit) + 1);
-                    if ((*edit) > 0xFFFF)
-                        (*edit) = ((*edit) - 1) - 0xFFFF;
-                    break;
-                case 8: // Tuning
-                case 9: // Pitch Sweep
-                    // Wrap the cell between 0x00 and 0xFF
-                    if ((*edit) < 0)
-                        (*edit) = 0xFF + ((*edit) + 1);
-                    if ((*edit) > 0xFF)
-                        (*edit) = ((*edit) - 1) - 0xFF;
-                    break;
                 }
             }
-        }
-        // Moving
-        else
-        {
-            cursor_x += goright - goleft;
-            cursor_y += godown - goup;
-        }
+            // Moving
+            else
+            {
+                cursor_x += goright - goleft;
+                cursor_y += godown - goup;
+            }
 
-        // wrap the cursor and clamp offsets
-        if (cursor_x > instrument::menu_width - 1)
-            cursor_x = 0;
-        if (cursor_x < 0)
-            cursor_x = instrument::menu_width - 1;
-        if (cursor_y > instrument::menu_height - 1)
-            cursor_y = 0;
-        if (cursor_y < 0)
-            cursor_y = instrument::menu_height - 1;
+            // wrap the cursor and clamp offsets
+            if (cursor_x > instrument::synth_menu_width - 1)
+                cursor_x = 0;
+            if (cursor_x < 0)
+                cursor_x = instrument::synth_menu_width - 1;
+            if (cursor_y > instrument::synth_menu_height - 1)
+                cursor_y = 0;
+            if (cursor_y < 0)
+                cursor_y = instrument::synth_menu_height - 1;
+
+        }
+        // For editing file instrument
+        else if (instrumentlist[open_instrument]->type == ChannelType::file)
+        {
+
+        }
 
         // Update UI
         DrawInstrumentUI("all");
