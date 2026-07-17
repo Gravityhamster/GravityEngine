@@ -6,14 +6,15 @@ GravityTracker is an LSDJ inspired music tracker for PC made in C++ in the Gravi
   - Live documentation for FX editing
 - Instrument creation
   - Synth instruments
+    - Overall audio cleanup with more refined signal functions
   - Sample instruments
     - Backend GravityEngine updates to allow sample manipulation
 - Table sequencing
 - Live playback (I kinda hate live playback in LSDJ, but I feel like I should add it for completeness)
 - FX playback
-- Custom synth waveforms
+- Custom synth waveforms/wave table synthesis
 - Overall song settings such as BPM
-- MIDI sync??
+- MIDI out
 - Saving and loading
 - Controller input
 - Customizeable colors, window settings, and resolution
