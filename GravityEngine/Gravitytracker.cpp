@@ -33,7 +33,7 @@ int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
 const int channelcount = 64; // How many audio channels in the song
 int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
-int bpm = 295; // 170; // Beats per minute of the song
+int bpm = 155; // 170; // Beats per minute of the song
 int tps = 6; // Ticks per step of the song
 int fps = 60; // Frame rate in hz of the UI
 double ticklength = 0; // Nanoseconds per tick
@@ -133,6 +133,21 @@ class phrase
         ~phrase() {};
 }; 
 
+// Get note freq
+double NoteFreq(int n)
+{
+    // https://superglobalcalculator.com/calculators/music/piano-key-frequency/
+    return 440.0 * pow(2.0, ((n+1) - 49.0) / 12.0);
+}
+
+// Get sample ratio
+// int base_pitch : Base pitch of the sample tuned to a piano. For example, C4 == 39
+// int base_pitch : New pitch of the sample tuned to a piano. For example, C#4 == 40
+double GetSampleRatioChange(int base_pitch, int new_pitch)
+{
+    return std::pow(2, (new_pitch - base_pitch) / 12);
+}
+
 // Instruments - Note audio definitions
 class instrument 
 {
@@ -146,7 +161,7 @@ class instrument
         // Synth or Sample
         ChannelType type = ChannelType::synth;
 
-        // Synth parameters
+        // Parameters for both
         int detune_edit = 0x80; // 0x80 = 0, 0x00 = -128, 0xFF = 127
         float detune = 0.f; // Add to freq
         int volume_edit = 0xFF80; // 0xFF = 1 | 0x80 = 0
@@ -155,9 +170,6 @@ class instrument
         int pan_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
         float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
         float pan_freq = 0.0; // Ping-pong pan frequency
-        int pw_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
-        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave Synth)
-        float pulse_width_freq = 0.0; // Ping-pong pulse-width pan frequency (Only for Pulse Wave Synth)
         int pitch_freq_edit = 0x8000; // 0x8000 = 0, 0x0000 = -32768, 0xFFFF = 32767
         float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
         int cutoff_edit = 0x8000; // 0x0000 = 0, 0xFFFF = 1
@@ -165,10 +177,15 @@ class instrument
         int resonance_edit = 0x6554; // 0x0000 = 0, 0xFFFF = 1
         float resonance = 0.0f; // Filter resonance
         SynthWaveForm waveform = SynthWaveForm::sine; // Synth wave type
-        FilterType filter = FilterType::none;
+        FilterType filter = FilterType::none; // Lowpass, bandpass, or highpass filter
+
+        // Synth parameters
+        int pw_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
+        float pulse_width = 0.5; // Pulse Width (Only for Pulse Wave Synth)
+        float pulse_width_freq = 0.0; // Ping-pong pulse-width pan frequency (Only for Pulse Wave Synth)
 
         // Sample parameters
-
+        int base_pitch = 39;
 
         // Methods
         instrument* DeepCopyInstrument()
@@ -288,12 +305,6 @@ GetNextEmpty(std::vector<T*>* vec)
     return index;
 }
 
-// Get note freq
-double NoteFreq(int n)
-{
-    // https://superglobalcalculator.com/calculators/music/piano-key-frequency/
-    return 440.0 * pow(2.0, ((n+1) - 49.0) / 12.0);
-}
 
 // Play step phrase
 // channelnumber : The particular channel to play the step on
@@ -311,6 +322,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         // TODO: Sub-step on preview so that we can preview the table commands as well
         if (instrumentlist[i]->type == ChannelType::synth)
         {
+            //geptr->SetChannelPitchRatio(channel_index, 1);
             synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
             synthlist[channel_index]->volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
@@ -2186,6 +2198,24 @@ void EditorControl()
                 // Edit note
                 if (cursor_x == 0)
                 {
+                    // If the phraselist instrument value is unfilled, insert 0
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    {
+                        if (copied_instr == -1)
+                        {
+                            // Set UI reference to Hex0
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] = 0x0000;
+                            // If this instrument doesn't exist yet, insert it
+                            if (GetAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1]) == nullptr)
+                                InsertAt(&instrumentlist, phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1], new instrument());
+                        }
+                        else
+                        {
+                            // Set UI reference to copied instrument
+                            phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] = copied_instr;
+                        }
+                    }
+
                     // Set to C-4 if it isn't set
                     if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
@@ -2215,7 +2245,10 @@ void EditorControl()
 
                     // Handle deletes
                     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    {
+                        phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] = -1;
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = -9999;
+                    }
                 }
 
                 // Edit instr
@@ -2671,7 +2704,8 @@ void GameInit()
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
-    //geptr->PlaySoundOnChannel(0, 1, true);
+    geptr->SetChannelPitchRatio(1, GetSampleRatioChange(39, 39-12));
+    geptr->PlaySoundOnChannel(0, 1, true);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());

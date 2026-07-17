@@ -129,6 +129,7 @@ private:
         std::atomic<bool> file_playing = false; // Flag if file audio is playing
         bool file_first_loop = false; // First loop of the audio file
         long audio_file_read_offset = 0; // Read pointer for the audio file load
+        int pitch_offset = 0;
 
     public:
         // -= Methods =-
@@ -159,18 +160,27 @@ private:
             // Get buffer size
             int bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8;
             int buffer_size = sample_frames * audio_spec.channels * bytes_per_sample;
+            buffer_size *= SDL_GetAudioStreamFrequencyRatio(ac->sdl_audio_stream);
 
             while (ac->GetType() == ChannelType::file && (ac->GetState() == playing || ac->GetState() == paused))
             {
                 // If the synth is paused, do not play the synth
                 if (ac->GetState() == paused)
                 {
-                    SDL_Delay(0);
+                    std::this_thread::yield(); // Yield to CPU
                     continue;
                 }
                 ac->FeedAudioFileStream(buffer_size);
             }
             (*file_playing) = false;
+        }
+
+        // Set pitch offset
+        // double ratio : 0.01 - 100.00
+        bool SetPitchRatio(double ratio)
+        {
+            bool t = SDL_SetAudioStreamFrequencyRatio(sdl_audio_stream, ratio);
+            return t;
         }
 
         // Play a sound on this channel
@@ -315,7 +325,7 @@ private:
                 }
 
             }
-            SDL_Delay(1); // Yield to CPU
+            std::this_thread::yield(); // Yield to CPU
         }
 
         // Get state of channel
@@ -1057,6 +1067,15 @@ public:
     GravityEngine_Object* GetObjectReference(int index)
     {
         return entity_list[index];
+    }
+
+    // Set sound channel pitch ratio
+    // int channel : channel to set pitch ratio on
+    // int ratio : pitch ratio to set it to
+    void SetChannelPitchRatio(int channel, double ratio)
+    {
+        channel = channel % audio_channels.size();
+        audio_channels[channel]->SetPitchRatio(ratio);
     }
 
     // Add sounds to the sound list
