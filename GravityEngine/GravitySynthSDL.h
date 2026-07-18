@@ -120,7 +120,7 @@ public:
     float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
     float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
 
-    // Filter state - COPILOT
+    // Filter state
     float lp_l = 0.0f;
     float bp_l = 0.0f;
     float hp_l = 0.0f;

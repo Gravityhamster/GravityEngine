@@ -2582,7 +2582,7 @@ void EditorControl()
                     outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
                     instrumentlist[open_instrument]->volume = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
-                    instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 16.f;
+                    instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
                     outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
                     instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
