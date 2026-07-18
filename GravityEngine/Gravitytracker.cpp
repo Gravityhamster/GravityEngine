@@ -322,7 +322,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         // TODO: Sub-step on preview so that we can preview the table commands as well
         if (instrumentlist[i]->type == ChannelType::synth)
         {
-            //geptr->SetChannelPitchRatio(channel_index, 1);
+            geptr->SetChannelPitchRatio(channel_index, 1);
             synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
             synthlist[channel_index]->volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;

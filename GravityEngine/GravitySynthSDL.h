@@ -16,6 +16,44 @@
 // TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
 // TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
 
+// Enum to define the type of filter applied to audio channel
+enum class FilterType
+{
+    lowpass,
+    highpass,
+    bandpass,
+    none,
+    min = lowpass,
+    max = none
+};
+
+// Chamerblain filter processing - COPILOT function implemented into a sequestored function
+// float sample : Current decimal audio position
+// float cutoff : 0 to 1 freq filter cutoff 
+// float resonance : 0 to 1 resonance frequency
+// float sample_rate_freq : Audio sample rate (e.g. 48000hz)
+// float* lp : Pointer to the lowpass filter state variable
+// float* bp : Pointer to the bandpass filter state variable
+// float* hp : Pointer to the highpass filter state variable
+void ProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
+{
+    // Apply filter
+    float warped = cutoff * cutoff * cutoff;
+    float cutoff_hz = warped * (sample_rate_freq * 0.5f);
+    float f = std::clamp(2.0f * sinf(PI * cutoff_hz / sample_rate_freq), 0.f, 0.999f);
+    float q = std::clamp(1.0f - resonance, 0.05f, 1.f);
+
+    // Calculate filter
+    (*hp) = sample - (*lp) - q * (*bp);
+    (*bp) = (*bp) + f * (*hp);
+    (*lp) = (*lp) + f * (*bp);
+
+    // Dampen output to prevent feedback looping
+    (*hp) *= 0.999f;
+    (*bp) *= 0.999f;
+    (*lp) *= 0.999f;
+}
+
 // Enum to define the current playback state of a sound channel
 enum ChannelStates
 {
@@ -39,6 +77,12 @@ enum class SynthWaveForm
     max = noise
 };
 
+// Enum to define filter algorithm
+enum class FilterAlgorithm
+{
+    chamberlain
+};
+
 // Conversion map for waveforms
 std::map<SynthWaveForm, std::string> waveform_to_string = {
     {SynthWaveForm::sine, "SINE"},
@@ -47,17 +91,6 @@ std::map<SynthWaveForm, std::string> waveform_to_string = {
     {SynthWaveForm::sawtooth, "SAWTOOTH"},
     {SynthWaveForm::triangle, "TRIANGLE"},
     {SynthWaveForm::noise, "NOISE"}
-};
-
-// Enum to define the type of filter applied to audio channel
-enum class FilterType
-{
-    lowpass,
-    highpass,
-    bandpass,
-    none,
-    min = lowpass,
-    max = none
 };
 
 // Template for synth objects
@@ -81,6 +114,7 @@ public:
     int sample_frames;
     SynthWaveForm waveform = SynthWaveForm::sine;
     FilterType filter = FilterType::none;
+    FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
 
     // Filter
     float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
@@ -196,23 +230,15 @@ public:
                     auto left_sample = left_pan * (synth->volume) * sample;
                     auto right_sample = right_pan * (synth->volume) * sample;
 
-                    // Apply filter - COPILOT
-                    float cutoff_hz = synth->cutoff * (spec->freq * 0.5f);
-                    float f = 2.0f * sinf(PI * cutoff_hz / spec->freq);
-                    float q = synth->resonance;
-
-                    // Calculate left filter - COPILOT
-                    synth->hp_l = left_sample - synth->lp_l - q * synth->bp_l;
-                    synth->bp_l = synth->bp_l + f * synth->hp_l;
-                    synth->lp_l = synth->lp_l + f * synth->bp_l;
+                    // Process filtered out
+                    if (synth->algorithm == FilterAlgorithm::chamberlain)
+                    {
+                        ProcessChamberlainFilter(left_sample, synth->cutoff, synth->resonance, spec->freq, &synth->lp_l, &synth->bp_l, &synth->hp_l);
+                        ProcessChamberlainFilter(right_sample, synth->cutoff, synth->resonance, spec->freq, &synth->lp_r, &synth->bp_r, &synth->hp_r);
+                    }
 
                     // Get filtered value based on the type of filter
                     float filtered_left = (synth->filter == FilterType::lowpass ? synth->lp_l : (synth->filter == FilterType::highpass ? synth->hp_l : (synth->filter == FilterType::bandpass ? synth->bp_l : left_sample)));
-
-                    // Calculate right filter - COPILOT
-                    synth->hp_r = right_sample - synth->lp_r - q * synth->bp_r;
-                    synth->bp_r = synth->bp_r + f * synth->hp_r;
-                    synth->lp_r = synth->lp_r + f * synth->bp_r;
 
                     // Get filtered value based on the type of filter
                     float filtered_right = (synth->filter == FilterType::lowpass ? synth->lp_r : (synth->filter == FilterType::highpass ? synth->hp_r : (synth->filter == FilterType::bandpass ? synth->bp_r : right_sample)));
