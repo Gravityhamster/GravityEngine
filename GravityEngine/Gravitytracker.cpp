@@ -133,6 +133,15 @@ class phrase
         ~phrase() {};
 }; 
 
+// Samples - Sound sample references
+class sample
+{
+    public:
+        std::string path;
+        int sound_index;
+};
+
+
 // Get note freq
 double NoteFreq(int n)
 {
@@ -186,6 +195,9 @@ class instrument
 
         // Sample parameters
         int base_pitch = 39;
+        int sample_index = 0x0000;
+        int start_time_ms = 0x000000;
+        int end_time_ms = 0xFFFFFF;
 
         // Methods
         instrument* DeepCopyInstrument()

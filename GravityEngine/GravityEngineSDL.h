@@ -1087,6 +1087,16 @@ public:
         return sounds.size() - 1;
     }
 
+    // Check if the sound exists at this index
+    // int index : Integer index to where the sound is stored
+    bool CheckSound(int index)
+    {
+        if (index >= 0 && index < audio_channels.size())
+            return sounds[index] == nullptr ? true : false;
+        else
+            return false;
+    }
+
     // Delete sound from the sound list
     // int index : Integer index to where the sound is stored
     void DeleteSound(int index)
