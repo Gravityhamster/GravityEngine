@@ -59,6 +59,7 @@ int open_phrase = -1; // Tracking which phrase we have open
 int open_phrase_index = 0; // Index of phrase in the chain in the song
 int playing_channel = -1; // Track which channel we're playing
 int open_instrument = -1; // Tracking which instrument we have open
+int open_sample = -1; // Tracking which sample we have open
 char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
 int max_note = 107; // Maximum note that can be inserted
@@ -164,6 +165,8 @@ class instrument
         // Audio parameters
         static const int synth_menu_width = 1;
         static const int synth_menu_height = 10;
+        static const int sample_menu_width = 1;
+        static const int sample_menu_height = 10;
 
         // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
@@ -903,103 +906,86 @@ std::string IntToHexString(int i)
 // Draw Song Editor UI
 // off_x : UI offset on the x axis
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
-void DrawSongUI(int off_x, int off_y, std::string type)
+void DrawSongUI(int off_x, int off_y)
 {
     // Width and height of the screen
     int h = song_grid_h;
     int w = song_grid_w;
 
     // Song position pointer
-    if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (play_context == pt_song &&
-            pause_song == false)
+    if (play_context == pt_song &&
+        pause_song == false)
+    {
+        // Loop through all visible channels
+        for (int x = 0; x < w && x + off_x < channelcount; x++)
         {
-            // Loop through all visible channels
-            for (int x = 0; x < w && x + off_x < channelcount; x++)
+            // Only draw if the channel has reported that it is allowed to play
+            if (channellist[x + off_x].cant_play == false)
             {
-                // Only draw if the channel has reported that it is allowed to play
-                if (channellist[x + off_x].cant_play == false)
-                {
-                    geptr->DrawChar(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, '>');
-                    geptr->DrawSetColor(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, primary_text_a);
-                }
+                geptr->DrawChar(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, '>');
+                geptr->DrawSetColor(4 + x * 5, 3 + channellist[x + off_x].chain_ptr, geptr->entity, primary_text_a);
             }
         }
-
-    // Menu title
-    if (str_contains(type, "all") || str_contains(type, "title"))
-    {
-        geptr->DrawTextString(0, 1, geptr->entity, "SONG", primary_text_a);
     }
 
-    // Row numbers
-    if (str_contains(type, "all") || str_contains(type, "y"))
+    // Menu title
+    geptr->DrawTextString(0, 1, geptr->entity, "SONG", primary_text_a);
+
+    // Draw the row numbers
+    for (int i = 0; i < h && i + off_y < rowcount; i++)
     {
-        // Draw the row numbers
-        for (int i = 0; i < h && i + off_y < rowcount; i++)
-        {
-            int tempint = i + off_y;
+        int tempint = i + off_y;
 
-            auto upperstr = IntToHexString(tempint);
+        auto upperstr = IntToHexString(tempint);
 
-            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
-            geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
-        }
+        upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+        geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
     }
 
     // Channel headers
-    if (str_contains(type, "all") || str_contains(type, "x"))
+    for (int i = 0; i < w && i + off_x < channelcount; i++)
     {
-        // Draw the headers
-        for (int i = 0; i < w && i + off_x < channelcount; i++)
-        {
-            std::string tempstr = std::to_string(i + off_x);
-            tempstr.insert(tempstr.begin(), 2 - tempstr.size(), '0');
-            geptr->DrawTextString(5 + i*5, 2, geptr->entity, "CH" + tempstr, header_text_a);
-        }
+        std::string tempstr = std::to_string(i + off_x);
+        tempstr.insert(tempstr.begin(), 2 - tempstr.size(), '0');
+        geptr->DrawTextString(5 + i*5, 2, geptr->entity, "CH" + tempstr, header_text_a);
     }
 
-    // Song grid navigator
-    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    //Draw the song grid
+    for (int y = 0; y < h && y + off_y < rowcount; y++)
     {
-        //Draw the song grid
-        for (int y = 0; y < h && y + off_y < rowcount; y++)
+        for (int x = 0; x < w && x + off_x < channelcount; x++)
         {
-            for (int x = 0; x < w && x + off_x < channelcount; x++)
+            // Is the cursor currently hovering this cell? Set color accordingly
+            color thiscolor = (x == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
+            // Get the current song grid value
+            int chain = songgrid[y + off_y][x + off_x];
+            if (chain == -1)
             {
-                // Is the cursor currently hovering this cell? Set color accordingly
-                color thiscolor = (x == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
-                // Get the current song grid value
-                int chain = songgrid[y + off_y][x + off_x];
-                if (chain == -1)
-                {
-                    // Draw null chain
-                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->entity, "----", thiscolor);
-                }
-                else
-                {
-                    // Draw chain number
-                    auto outstr = IntToHexString(chain);
-                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                    geptr->DrawTextString(5 + x * 5, 3 + y, geptr->entity, outstr, thiscolor);
-                }
+                // Draw null chain
+                geptr->DrawTextString(5 + x * 5, 3 + y, geptr->entity, "----", thiscolor);
+            }
+            else
+            {
+                // Draw chain number
+                auto outstr = IntToHexString(chain);
+                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                geptr->DrawTextString(5 + x * 5, 3 + y, geptr->entity, outstr, thiscolor);
+            }
 
-                // Is a modifier key held on the selected cell?
-                if (x == cursor_x && y == cursor_y)
+            // Is a modifier key held on the selected cell?
+            if (x == cursor_x && y == cursor_y)
+            {
+                // Modify right part of the number
+                if (leftrightcenter == left)
                 {
-                    // Modify right part of the number
-                    if (leftrightcenter == left)
-                    {
-                        geptr->DrawSetColor(5 + x * 5, 3 + y, geptr->entity, primary_text_a);
-                        geptr->DrawSetColor(5 + x * 5 + 1, 3 + y, geptr->entity, primary_text_a);
-                    }
-                    // Modify left part of the number
-                    else if (leftrightcenter == right)
-                    {
-                        geptr->DrawSetColor(5 + x * 5 + 2, 3 + y, geptr->entity, primary_text_a);
-                        geptr->DrawSetColor(5 + x * 5 + 3, 3 + y, geptr->entity, primary_text_a);
-                    }
+                    geptr->DrawSetColor(5 + x * 5, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(5 + x * 5 + 1, 3 + y, geptr->entity, primary_text_a);
+                }
+                // Modify left part of the number
+                else if (leftrightcenter == right)
+                {
+                    geptr->DrawSetColor(5 + x * 5 + 2, 3 + y, geptr->entity, primary_text_a);
+                    geptr->DrawSetColor(5 + x * 5 + 3, 3 + y, geptr->entity, primary_text_a);
                 }
             }
         }
@@ -1008,103 +994,85 @@ void DrawSongUI(int off_x, int off_y, std::string type)
 
 // Draw Chain Editor UI
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
-void DrawChainUI(int off_y, std::string type)
+void DrawChainUI(int off_y)
 {
     // Width and height of the screen
     int h = chain_grid_h;
     int w = 1;
 
     // Song position pointer
-    if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (((open_channel == playing_channel && open_chain_index == channellist[playing_channel].chain_ptr)
-            || (channellist[open_channel].chain_ptr == open_chain_index && channellist[open_channel].cant_play == false && play_context == pt_song)) && 
-            play_context != pt_phrase && play_context != pt_phrase_all &&
-            pause_song == false)
-        {
-            geptr->DrawChar(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, '>');
-            geptr->DrawSetColor(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, primary_text_a);
-        }
-
-    // Menu title
-    if (str_contains(type, "all") || str_contains(type, "title"))
+    if (((open_channel == playing_channel && open_chain_index == channellist[playing_channel].chain_ptr)
+        || (channellist[open_channel].chain_ptr == open_chain_index && channellist[open_channel].cant_play == false && play_context == pt_song)) && 
+        play_context != pt_phrase && play_context != pt_phrase_all &&
+        pause_song == false)
     {
-        // Draw chain number
-        auto outstr = IntToHexString(open_chain);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(0, 1, geptr->entity, "CHAIN - " + outstr, primary_text_a);
+        geptr->DrawChar(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, '>');
+        geptr->DrawSetColor(4, 3 + channellist[playing_channel].phrase_ptr, geptr->entity, primary_text_a);
     }
 
-    // Row numbers
-    if (str_contains(type, "all") || str_contains(type, "y"))
+    // Draw menu title and chain number
+    auto outstr = IntToHexString(open_chain);
+    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+    geptr->DrawTextString(0, 1, geptr->entity, "CHAIN - " + outstr, primary_text_a);
+
+    // Draw the row numbers
+    for (int i = 0; i < h && i + off_y < rowcount; i++)
     {
-        // Draw the row numbers
-        for (int i = 0; i < h && i + off_y < rowcount; i++)
-        {
-            int tempint = i + off_y;
+        int tempint = i + off_y;
 
-            auto upperstr = IntToHexString(tempint);
+        auto upperstr = IntToHexString(tempint);
 
-            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
-            geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
-        }
+        upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+        geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
     }
 
     // Channel headers
-    if (str_contains(type, "all") || str_contains(type, "x"))
-    {
-        // Draw the headers
-        geptr->DrawTextString(5, 2, geptr->entity, "PHSE", header_text_a);
-        geptr->DrawTextString(10, 2, geptr->entity, "TRPS", header_text_a);
-    }
+    geptr->DrawTextString(5, 2, geptr->entity, "PHSE", header_text_a);
+    geptr->DrawTextString(10, 2, geptr->entity, "TRPS", header_text_a);
 
-    // Chain grid navigator
-    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    //Draw the chain grid
+    for (int y = 0; y < h && y + off_y < rowcount; y++)
     {
-        //Draw the chain grid
-        for (int y = 0; y < h && y + off_y < rowcount; y++)
+        // Is the cursor currently hovering this cell? Set color accordingly
+        color thiscolor = (0 == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
+        color thiscolor_t = (1 == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
+
+        // Get the current chain grid value
+        int chain = chainlist[open_chain]->arr[y + off_y];
+        if (chain == -1)
         {
-            // Is the cursor currently hovering this cell? Set color accordingly
-            color thiscolor = (0 == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
-            color thiscolor_t = (1 == cursor_x && y == cursor_y ? primary_text_b : primary_text_a);
-
-            // Get the current chain grid value
-            int chain = chainlist[open_chain]->arr[y + off_y];
-            if (chain == -1)
-            {
-                // Draw null chain
-                geptr->DrawTextString(5, 3 + y, geptr->entity, "----", thiscolor);
-            }
-            else
-            {
-                // Draw chain number
-                auto outstr = IntToHexString(chain);
-                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                geptr->DrawTextString(5, 3 + y, geptr->entity, outstr, thiscolor);
-            }
-
-            // Draw chain transposition
-            int chain_trsp = chainlist[open_chain]->arr_transpose[y + off_y];
-            auto outstr = IntToHexString(chain_trsp);
+            // Draw null chain
+            geptr->DrawTextString(5, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw chain number
+            auto outstr = IntToHexString(chain);
             outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(10, 3 + y, geptr->entity, outstr, thiscolor_t);
+            geptr->DrawTextString(5, 3 + y, geptr->entity, outstr, thiscolor);
+        }
 
-            // Is a modifier key held on the selected cell?
-            if (y == cursor_y)
+        // Draw chain transposition
+        int chain_trsp = chainlist[open_chain]->arr_transpose[y + off_y];
+        auto outstr = IntToHexString(chain_trsp);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(10, 3 + y, geptr->entity, outstr, thiscolor_t);
+
+        // Is a modifier key held on the selected cell?
+        if (y == cursor_y)
+        {
+            int trsp_offset = 5*(1 == cursor_x);
+            // Modify right part of the number
+            if (leftrightcenter == left)
             {
-                int trsp_offset = 5*(1 == cursor_x);
-                // Modify right part of the number
-                if (leftrightcenter == left)
-                {
-                    geptr->DrawSetColor(5 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
-                    geptr->DrawSetColor(6 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
-                }
-                // Modify left part of the number
-                else if (leftrightcenter == right)
-                {
-                    geptr->DrawSetColor(7 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
-                    geptr->DrawSetColor(8 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
-                }
+                geptr->DrawSetColor(5 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(6 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
+            }
+            // Modify left part of the number
+            else if (leftrightcenter == right)
+            {
+                geptr->DrawSetColor(7 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(8 + trsp_offset, 3 + y, geptr->entity, primary_text_a);
             }
         }
     }
@@ -1171,391 +1139,375 @@ std::string IntToNoteString(int n)
 
 // Draw Phrase Editor UI
 // off_y : UI offset on the y axis
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
-void DrawPhraseUI(int off_y, std::string type)
+void DrawPhraseUI(int off_y)
 {
     // Width and height of the screen
     int h = phrase_grid_h;
     int w = phrase_grid_w;
 
     // Song position pointer
-    if (str_contains(type, "all") || str_contains(type, "ptr"))
-        if (((open_phrase_index == channellist[playing_channel].phrase_ptr &&
-            open_chain_index == channellist[playing_channel].chain_ptr && open_channel == playing_channel) ||
-            (channellist[open_channel].phrase_ptr == open_phrase_index && channellist[open_channel].chain_ptr == open_chain_index && 
-            channellist[open_channel].cant_play == false && play_context == pt_song)
-            ) &&
-            pause_song == false)
-        {
-            geptr->DrawChar(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, '>');
-            geptr->DrawSetColor(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, primary_text_a);
-        }
-
-    // Menu title
-    if (str_contains(type, "all") || str_contains(type, "title"))
+    if (((open_phrase_index == channellist[playing_channel].phrase_ptr &&
+        open_chain_index == channellist[playing_channel].chain_ptr && open_channel == playing_channel) ||
+        (channellist[open_channel].phrase_ptr == open_phrase_index && channellist[open_channel].chain_ptr == open_chain_index && 
+        channellist[open_channel].cant_play == false && play_context == pt_song)
+        ) &&
+        pause_song == false)
     {
-        // Draw phrase number
-        auto outstr = IntToHexString(open_phrase);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(0, 1, geptr->entity, "PHRASE - " + outstr, primary_text_a);
+        geptr->DrawChar(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, '>');
+        geptr->DrawSetColor(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, primary_text_a);
     }
+
+    // Menu title and phrase number
+    auto outstr = IntToHexString(open_phrase);
+    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+    geptr->DrawTextString(0, 1, geptr->entity, "PHRASE - " + outstr, primary_text_a);
     
-    // Row numbers
-    if (str_contains(type, "all") || str_contains(type, "y"))
+    // Draw the row numbers
+    for (int i = 0; i < h && i + off_y < rowcount; i++)
     {
-        // Draw the row numbers
-        for (int i = 0; i < h && i + off_y < rowcount; i++)
-        {
-            int tempint = i + off_y;
+        int tempint = i + off_y;
 
-            auto upperstr = IntToHexString(tempint);
+        auto upperstr = IntToHexString(tempint);
 
-            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
-            geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
-        }
+        upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+        geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
     }
 
     // Channel headers
-    if (str_contains(type, "all") || str_contains(type, "x"))
-    {
-        // Draw the headers
-        geptr->DrawTextString(5, 2, geptr->entity, "NTE", header_text_a);
-        geptr->DrawTextString(9, 2, geptr->entity, "ISTR", header_text_a);
-        geptr->DrawTextString(14, 2, geptr->entity, "EFFT1", header_text_a);
-        geptr->DrawTextString(20, 2, geptr->entity, "EFFT2", header_text_a);
-        geptr->DrawTextString(26, 2, geptr->entity, "EFFT3", header_text_a);
-    }
+    geptr->DrawTextString(5, 2, geptr->entity, "NTE", header_text_a);
+    geptr->DrawTextString(9, 2, geptr->entity, "ISTR", header_text_a);
+    geptr->DrawTextString(14, 2, geptr->entity, "EFFT1", header_text_a);
+    geptr->DrawTextString(20, 2, geptr->entity, "EFFT2", header_text_a);
+    geptr->DrawTextString(26, 2, geptr->entity, "EFFT3", header_text_a);
 
-    // Phrase grid navigator
-    if (str_contains(type, "all") || str_contains(type, "navigator"))
+    //Draw the phrase grid
+    for (int y = 0; y < h && y + off_y < rowcount; y++)
     {
-        //Draw the phrase grid
-        for (int y = 0; y < h && y + off_y < rowcount; y++)
-        {
-            // Note -
-            auto thiscolor = cursor_y == y && cursor_x == 0 ? primary_text_b : primary_text_a;
+        // Note -
+        auto thiscolor = cursor_y == y && cursor_x == 0 ? primary_text_b : primary_text_a;
             
-            // Get the current phrase grid value
-            int note = phraselist[open_phrase]->arr[y + off_y][0];
-            if (note == -9999)
-            {
-                // Draw null note
-                geptr->DrawTextString(5, 3 + y, geptr->entity, "---", thiscolor);
-            }
-            else
-            {
-                // Draw note
-                geptr->DrawTextString(5, 3 + y, geptr->entity, IntToNoteString(note), thiscolor);
-            }
+        // Get the current phrase grid value
+        int note = phraselist[open_phrase]->arr[y + off_y][0];
+        if (note == -9999)
+        {
+            // Draw null note
+            geptr->DrawTextString(5, 3 + y, geptr->entity, "---", thiscolor);
+        }
+        else
+        {
+            // Draw note
+            geptr->DrawTextString(5, 3 + y, geptr->entity, IntToNoteString(note), thiscolor);
+        }
 
-            // Instrument -
-            thiscolor = cursor_y == y && cursor_x == 1 ? primary_text_b : primary_text_a;
+        // Instrument -
+        thiscolor = cursor_y == y && cursor_x == 1 ? primary_text_b : primary_text_a;
 
-            // Get the current phrase grid value
-            int instr = phraselist[open_phrase]->arr[y + off_y][1];
-            if (instr == -1)
-            {
-                // Draw null instrument
-                geptr->DrawTextString(9, 3 + y, geptr->entity, "----", thiscolor);
-            }
-            else
-            {
-                // Draw instrument number
-                auto outstr = IntToHexString(instr);
-                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                geptr->DrawTextString(9, 3 + y, geptr->entity, outstr, thiscolor);
-            }
+        // Get the current phrase grid value
+        int instr = phraselist[open_phrase]->arr[y + off_y][1];
+        if (instr == -1)
+        {
+            // Draw null instrument
+            geptr->DrawTextString(9, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw instrument number
+            auto outstr = IntToHexString(instr);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(9, 3 + y, geptr->entity, outstr, thiscolor);
+        }
 
-            // Modify right part of the number
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(9, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(10, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(11, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(12, 3 + y, geptr->entity, primary_text_a);
+        }
+
+        // FX1 -
+        thiscolor = cursor_y == y && cursor_x == 2 ? header_text_b : header_text_a;
+
+        // Get the current phrase grid value
+        int effect1 = phraselist[open_phrase]->arr[y + off_y][2];
+        if (effect1 == -1)
+        {
+            // Draw null effect
+            geptr->DrawTextString(14, 3 + y, geptr->entity, "-", thiscolor);
+        }
+        else
+        {
+            // Draw effect char
+            std::string outchr = "";
+            outchr += fx[effect1];
+            geptr->DrawTextString(14, 3 + y, geptr->entity, outchr, thiscolor);
+        }
+
+        // FX1 Param -
+        thiscolor = cursor_y == y && cursor_x == 3 ? primary_text_b : primary_text_a;
+
+        // Get the current phrase grid value
+        int effect1_param = phraselist[open_phrase]->arr[y + off_y][3];
+        if (effect1_param == -1)
+        {
+            // Draw null parameter
+            geptr->DrawTextString(15, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw effect parameter
+            auto outstr = IntToHexString(effect1_param);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(15, 3 + y, geptr->entity, outstr, thiscolor);
+        }
+
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(15, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(16, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(17, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(18, 3 + y, geptr->entity, primary_text_a);
+        }
+
+        // FX2 -
+        thiscolor = cursor_y == y && cursor_x == 4 ? header_text_b : header_text_a;
+
+        // Get the current phrase grid value
+        int effect2 = phraselist[open_phrase]->arr[y + off_y][4];
+        if (effect2 == -1)
+        {
+            // Draw null effect
+            geptr->DrawTextString(20, 3 + y, geptr->entity, "-", thiscolor);
+        }
+        else
+        {
+            // Draw effect char
+            std::string outchr = "";
+            outchr += fx[effect2];
+            geptr->DrawTextString(20, 3 + y, geptr->entity, outchr, thiscolor);
+        }
+
+        // FX2 Param -
+        thiscolor = cursor_y == y && cursor_x == 5 ? primary_text_b : primary_text_a;
+
+        // Get the current phrase grid value
+        int effect2_param = phraselist[open_phrase]->arr[y + off_y][5];
+        if (effect2_param == -1)
+        {
+            // Draw null parameter
+            geptr->DrawTextString(21, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw effect parameter
+            auto outstr = IntToHexString(effect2_param);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(21, 3 + y, geptr->entity, outstr, thiscolor);
+        }
+
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(21, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(22, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(23, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(24, 3 + y, geptr->entity, primary_text_a);
+        }
+
+        // FX3 -
+        thiscolor = cursor_y == y && cursor_x == 6 ? header_text_b : header_text_a;
+
+        // Get the current phrase grid value
+        int effect3 = phraselist[open_phrase]->arr[y + off_y][6];
+        if (effect3 == -1)
+        {
+            // Draw null effect
+            geptr->DrawTextString(26, 3 + y, geptr->entity, "-", thiscolor);
+        }
+        else
+        {
+            // Draw effect char
+            std::string outchr = "";
+            outchr += fx[effect3];
+            geptr->DrawTextString(26, 3 + y, geptr->entity, outchr, thiscolor);
+        }
+
+        // FX3 Param -
+        thiscolor = cursor_y == y && cursor_x == 7 ? primary_text_b : primary_text_a;
+
+        // Get the current phrase grid value
+        int effect3_param = phraselist[open_phrase]->arr[y + off_y][7];
+        if (effect3_param == -1)
+        {
+            // Draw null parameter
+            geptr->DrawTextString(27, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw effect parameter
+            auto outstr = IntToHexString(effect3_param);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(27, 3 + y, geptr->entity, outstr, thiscolor);
+        }
+
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(27, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(28, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(29, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(30, 3 + y, geptr->entity, primary_text_a);
+        }
+    }
+}
+
+// Draw Instrument Editor UI
+void DrawInstrumentUI()
+{
+    // Menu title and instrument number
+    auto outstr = IntToHexString(open_instrument);
+    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+    geptr->DrawTextString(0, 1, geptr->entity, "INSTR - " + outstr, primary_text_a);
+
+    // Editor body
+
+    // Inits
+    instrument_edit_y = -1;
+    instrument_edit_digit_count = -1;
+
+    // Draw instrument options
+    int ty = 3;
+    std::string outstr;
+
+    // Channel Type
+    geptr->DrawTextString(0, ty, geptr->entity, "TYP:", primary_text_a); // Synth or Sample
+    outstr = instrumentlist[open_instrument]->type == ChannelType::synth ? "SYNTH" : "FILE";
+    geptr->DrawTextString(5, ty, geptr->entity, outstr,
+        cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+    if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
+    ty++;
+
+    // Draw synth UI
+    if (instrumentlist[open_instrument]->type == ChannelType::synth)
+    {
+        // Waveform
+        geptr->DrawTextString(0, ty, geptr->entity, "WAV:", primary_text_a); // Sine, Square, Saw, etc.
+        outstr = waveform_to_string[instrumentlist[open_instrument]->waveform];
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
+        ty++;
+        // Volume
+        geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
+        outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Panning
+        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Pulse width
+        geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pulse Width Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Tuning
+        geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
+        outstr = IntToHexString(instrumentlist[open_instrument]->detune_edit);
+        outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 1; }
+        ty++;
+        // Pitch sweep
+        geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -32768, 0xFF = 32767 units per tick
+        outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+
+        // Filter type
+        ty++;
+        geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
+        outstr = instrumentlist[open_instrument]->filter == FilterType::lowpass ? "LOWPASS" :
+            instrumentlist[open_instrument]->filter == FilterType::bandpass ? "BANDPASS" :
+            instrumentlist[open_instrument]->filter == FilterType::highpass ? "HIGHPASS" : "NONE";
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
+        ty++;
+        // Filter cutoff
+        geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
+        outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Filter resonance
+        geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
+        outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+
+        if (instrument_edit_y != -1 && instrument_edit_digit_count == 2)
+        {
+            // Modify left part of the number
             if (leftrightcenter == left)
             {
-                geptr->DrawSetColor(9, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(10, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(5 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(6 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
             }
-            // Modify left part of the number
-            else if (leftrightcenter == right)
-            {
-                geptr->DrawSetColor(11, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(12, 3 + y, geptr->entity, primary_text_a);
-            }
-
-            // FX1 -
-            thiscolor = cursor_y == y && cursor_x == 2 ? header_text_b : header_text_a;
-
-            // Get the current phrase grid value
-            int effect1 = phraselist[open_phrase]->arr[y + off_y][2];
-            if (effect1 == -1)
-            {
-                // Draw null effect
-                geptr->DrawTextString(14, 3 + y, geptr->entity, "-", thiscolor);
-            }
-            else
-            {
-                // Draw effect char
-                std::string outchr = "";
-                outchr += fx[effect1];
-                geptr->DrawTextString(14, 3 + y, geptr->entity, outchr, thiscolor);
-            }
-
-            // FX1 Param -
-            thiscolor = cursor_y == y && cursor_x == 3 ? primary_text_b : primary_text_a;
-
-            // Get the current phrase grid value
-            int effect1_param = phraselist[open_phrase]->arr[y + off_y][3];
-            if (effect1_param == -1)
-            {
-                // Draw null parameter
-                geptr->DrawTextString(15, 3 + y, geptr->entity, "----", thiscolor);
-            }
-            else
-            {
-                // Draw effect parameter
-                auto outstr = IntToHexString(effect1_param);
-                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                geptr->DrawTextString(15, 3 + y, geptr->entity, outstr, thiscolor);
-            }
-
             // Modify right part of the number
-            if (leftrightcenter == left)
+            if (leftrightcenter == right)
             {
-                geptr->DrawSetColor(15, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(16, 3 + y, geptr->entity, primary_text_a);
-            }
-            // Modify left part of the number
-            else if (leftrightcenter == right)
-            {
-                geptr->DrawSetColor(17, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(18, 3 + y, geptr->entity, primary_text_a);
-            }
-
-            // FX2 -
-            thiscolor = cursor_y == y && cursor_x == 4 ? header_text_b : header_text_a;
-
-            // Get the current phrase grid value
-            int effect2 = phraselist[open_phrase]->arr[y + off_y][4];
-            if (effect2 == -1)
-            {
-                // Draw null effect
-                geptr->DrawTextString(20, 3 + y, geptr->entity, "-", thiscolor);
-            }
-            else
-            {
-                // Draw effect char
-                std::string outchr = "";
-                outchr += fx[effect2];
-                geptr->DrawTextString(20, 3 + y, geptr->entity, outchr, thiscolor);
-            }
-
-            // FX2 Param -
-            thiscolor = cursor_y == y && cursor_x == 5 ? primary_text_b : primary_text_a;
-
-            // Get the current phrase grid value
-            int effect2_param = phraselist[open_phrase]->arr[y + off_y][5];
-            if (effect2_param == -1)
-            {
-                // Draw null parameter
-                geptr->DrawTextString(21, 3 + y, geptr->entity, "----", thiscolor);
-            }
-            else
-            {
-                // Draw effect parameter
-                auto outstr = IntToHexString(effect2_param);
-                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                geptr->DrawTextString(21, 3 + y, geptr->entity, outstr, thiscolor);
-            }
-
-            // Modify right part of the number
-            if (leftrightcenter == left)
-            {
-                geptr->DrawSetColor(21, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(22, 3 + y, geptr->entity, primary_text_a);
-            }
-            // Modify left part of the number
-            else if (leftrightcenter == right)
-            {
-                geptr->DrawSetColor(23, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(24, 3 + y, geptr->entity, primary_text_a);
-            }
-
-            // FX3 -
-            thiscolor = cursor_y == y && cursor_x == 6 ? header_text_b : header_text_a;
-
-            // Get the current phrase grid value
-            int effect3 = phraselist[open_phrase]->arr[y + off_y][6];
-            if (effect3 == -1)
-            {
-                // Draw null effect
-                geptr->DrawTextString(26, 3 + y, geptr->entity, "-", thiscolor);
-            }
-            else
-            {
-                // Draw effect char
-                std::string outchr = "";
-                outchr += fx[effect3];
-                geptr->DrawTextString(26, 3 + y, geptr->entity, outchr, thiscolor);
-            }
-
-            // FX3 Param -
-            thiscolor = cursor_y == y && cursor_x == 7 ? primary_text_b : primary_text_a;
-
-            // Get the current phrase grid value
-            int effect3_param = phraselist[open_phrase]->arr[y + off_y][7];
-            if (effect3_param == -1)
-            {
-                // Draw null parameter
-                geptr->DrawTextString(27, 3 + y, geptr->entity, "----", thiscolor);
-            }
-            else
-            {
-                // Draw effect parameter
-                auto outstr = IntToHexString(effect3_param);
-                outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                geptr->DrawTextString(27, 3 + y, geptr->entity, outstr, thiscolor);
-            }
-
-            // Modify right part of the number
-            if (leftrightcenter == left)
-            {
-                geptr->DrawSetColor(27, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(28, 3 + y, geptr->entity, primary_text_a);
-            }
-            // Modify left part of the number
-            else if (leftrightcenter == right)
-            {
-                geptr->DrawSetColor(29, 3 + y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(30, 3 + y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(7 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(8 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
             }
         }
     }
 }
 
 // Draw Instrument Editor UI
-// type : Draw type (What do you want to redraw?) [all, title, x, y, navigator, etc.]
-void DrawInstrumentUI(std::string type)
+void DrawWaveUI()
 {
-    // Menu title
-    if (str_contains(type, "all") || str_contains(type, "title"))
-    {
-        // Draw instrument number
-        auto outstr = IntToHexString(open_instrument);
-        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-        geptr->DrawTextString(0, 1, geptr->entity, "INSTR - " + outstr, primary_text_a);
-    }
-
-    // Editor body
-    if (str_contains(type, "all") || str_contains(type, "navigator"))
-    {
-        // Inits
-        instrument_edit_y = -1;
-        instrument_edit_digit_count = -1;
-
-        // Draw instrument options
-        int ty = 3;
-        std::string outstr;
-
-        // Channel Type
-        geptr->DrawTextString(0, ty, geptr->entity, "TYP:", primary_text_a); // Synth or Sample
-        outstr = instrumentlist[open_instrument]->type == ChannelType::synth ? "SYNTH" : "FILE";
-        geptr->DrawTextString(5, ty, geptr->entity, outstr,
-            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
-        ty++;
-
-        // Draw synth UI
-        if (instrumentlist[open_instrument]->type == ChannelType::synth)
-        {
-            // Waveform
-            geptr->DrawTextString(0, ty, geptr->entity, "WAV:", primary_text_a); // Sine, Square, Saw, etc.
-            outstr = waveform_to_string[instrumentlist[open_instrument]->waveform];
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
-            ty++;
-            // Volume
-            geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
-            outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
-            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
-            ty++;
-            // Panning
-            geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
-            outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
-            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
-            ty++;
-            // Pulse width
-            geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pulse Width Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
-            outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
-            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
-            ty++;
-            // Tuning
-            geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
-            outstr = IntToHexString(instrumentlist[open_instrument]->detune_edit);
-            outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
-            geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 1; }
-            ty++;
-            // Pitch sweep
-            geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -32768, 0xFF = 32767 units per tick
-            outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
-            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
-            ty++;
-
-            // Filter type
-            ty++;
-            geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
-            outstr = instrumentlist[open_instrument]->filter == FilterType::lowpass ? "LOWPASS" :
-                instrumentlist[open_instrument]->filter == FilterType::bandpass ? "BANDPASS" :
-                instrumentlist[open_instrument]->filter == FilterType::highpass ? "HIGHPASS" : "NONE";
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
-            ty++;
-            // Filter cutoff
-            geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
-            outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
-            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
-            ty++;
-            // Filter resonance
-            geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
-            outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
-            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-            geptr->DrawTextString(5, ty, geptr->entity, outstr,
-                cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
-            if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
-            ty++;
-
-            if (instrument_edit_y != -1 && instrument_edit_digit_count == 2)
-            {
-                // Modify left part of the number
-                if (leftrightcenter == left)
-                {
-                    geptr->DrawSetColor(5 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
-                    geptr->DrawSetColor(6 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
-                }
-                // Modify right part of the number
-                if (leftrightcenter == right)
-                {
-                    geptr->DrawSetColor(7 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
-                    geptr->DrawSetColor(8 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
-                }
-            }
-        }
-    }
+    // Menu title and sample number
+    auto outstr = IntToHexString(open_sample);
+    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+    geptr->DrawTextString(0, 1, geptr->entity, "SMPLE - " + outstr, primary_text_a);
 }
 
 // Draw the map for where you are in the UI
@@ -1898,7 +1850,7 @@ void EditorControl()
             do_deep_copy = 0;
 
         // Update UI
-        DrawSongUI(offset_x, offset_y, "all");
+        DrawSongUI(offset_x, offset_y);
     }
 
     // Handle input for the chain menu
@@ -2123,7 +2075,7 @@ void EditorControl()
             do_deep_copy = 0;
 
         // Update UI
-        DrawChainUI(chain_offset_y, "all");
+        DrawChainUI(chain_offset_y);
     }
 
     // Handle input for the phrase menu
@@ -2473,7 +2425,7 @@ void EditorControl()
             do_deep_copy = 0;
 
         // Update UI
-        DrawPhraseUI(phrase_offset_y, "all");
+        DrawPhraseUI(phrase_offset_y);
     }
 
     // Handle input for the instrument menu
@@ -2629,8 +2581,8 @@ void EditorControl()
                         breakend = true;
                     }
                 }
-                // Go to the right page over
-                else if (goright)
+                // Go to the above page over
+                else if (goup)
                 {
                 }
             }
@@ -2650,7 +2602,6 @@ void EditorControl()
                 cursor_y = 0;
             if (cursor_y < 0)
                 cursor_y = instrument::synth_menu_height - 1;
-
         }
         // For editing file instrument
         else if (instrumentlist[open_instrument]->type == ChannelType::file)
@@ -2659,7 +2610,23 @@ void EditorControl()
         }
 
         // Update UI
-        DrawInstrumentUI("all");
+        DrawInstrumentUI();
+    }
+
+    // Handle input for the wave menu
+    if (state == m_wave && !breakend)
+    {
+        if (instrumentlist[open_instrument]->type == ChannelType::file) // Sample loader
+        {
+
+        }
+        else // Waveform editor
+        {
+
+        }
+
+        // Update UI
+        DrawWaveUI();
     }
 
     // Draw the map for where you are in the UI
@@ -2709,10 +2676,7 @@ void GameInit()
     }
 
     // Start song UI
-    if (state == m_song)
-        DrawSongUI(0, 0, "all");
-    if (state == m_chain)
-        DrawChainUI(0, "all");
+    DrawSongUI(0, 0);
 
     // Test: Init file play and play it
     int i = geptr->AddSound("DrumBeat.wav");
