@@ -66,7 +66,7 @@ int max_note = 107; // Maximum note that can be inserted
 bool pause_song = true; // Pause the song progression
 bool play_thread = false; // Play thread check flag
 int do_deep_copy = 0; // Track progress for deep copy
-int instrument_edit_digit_count = -1; // Flag for how many digits to expect an edit to be in the instr editor
+float instrument_edit_digit_count = -1; // Flag for how many digits to expect an edit to be in the instr editor
 int instrument_edit_y = -1;
 playing_type play_context = pt_song; // What type of play are we doing
 
@@ -166,7 +166,7 @@ class instrument
         static const int synth_menu_width = 1;
         static const int synth_menu_height = 10;
         static const int sample_menu_width = 1;
-        static const int sample_menu_height = 10;
+        static const int sample_menu_height = 12;
 
         // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
@@ -1396,12 +1396,11 @@ void DrawInstrumentUI()
 
     // Draw instrument options
     int ty = 3;
-    std::string outstr;
 
     // Channel Type
     geptr->DrawTextString(0, ty, geptr->entity, "TYP:", primary_text_a); // Synth or Sample
     outstr = instrumentlist[open_instrument]->type == ChannelType::synth ? "SYNTH" : "FILE";
-    geptr->DrawTextString(5, ty, geptr->entity, outstr,
+    geptr->DrawTextString(instrumentlist[open_instrument]->type == ChannelType::synth ? 5 : 7, ty, geptr->entity, outstr,
         cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
     if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
     ty++;
@@ -1497,6 +1496,116 @@ void DrawInstrumentUI()
             {
                 geptr->DrawSetColor(7 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
                 geptr->DrawSetColor(8 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+            }
+        }
+    }
+    else
+    {
+        // Sample index
+        geptr->DrawTextString(0, ty, geptr->entity, "SPL:", primary_text_a); // File ref
+        outstr = IntToHexString(instrumentlist[open_instrument]->sample_index);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5+2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Volume
+        geptr->DrawTextString(0, ty, geptr->entity, "VOL:", primary_text_a); // Volume : 0x00 = 0, 0xFF = 1 | Fade : 0x80 = 0, 0x00 = -128, 0xFF = 127
+        outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Panning
+        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Tuning
+        geptr->DrawTextString(0, ty, geptr->entity, "TUN:", primary_text_a); // 0x80 = 0, 0x00 = -128, 0xFF = 127 semitones
+        outstr = IntToHexString(instrumentlist[open_instrument]->detune_edit);
+        outstr.insert(outstr.begin(), 2 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 4, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 1; }
+        ty++;
+        // Pitch sweep
+        geptr->DrawTextString(0, ty, geptr->entity, "SWP:", primary_text_a); // 0x80 = 0, 0x00 = -32768, 0xFF = 32767 units per tick
+        outstr = IntToHexString(instrumentlist[open_instrument]->pitch_freq_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Base pitch
+        geptr->DrawTextString(0, ty, geptr->entity, "BSP:", primary_text_a); // 39 = C-4
+        outstr = IntToNoteString(instrumentlist[open_instrument]->base_pitch);
+        geptr->DrawTextString(5 + 3, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 1.5; }
+        ty++;
+        // Start time
+        geptr->DrawTextString(0, ty, geptr->entity, "BEG:", primary_text_a); // 0x000000 = 0 ms
+        outstr = IntToHexString(instrumentlist[open_instrument]->start_time_ms);
+        outstr.insert(outstr.begin(), 6 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 3; }
+        ty++;
+        // End time
+        geptr->DrawTextString(0, ty, geptr->entity, "END:", primary_text_a); // 0xFFFFFF = 16777215 ms
+        outstr = IntToHexString(instrumentlist[open_instrument]->end_time_ms);
+        outstr.insert(outstr.begin(), 6 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 3; }
+        ty++;
+        
+
+        // Filter type
+        ty++;
+        geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
+        outstr = instrumentlist[open_instrument]->filter == FilterType::lowpass ? "LOWPASS" :
+            instrumentlist[open_instrument]->filter == FilterType::bandpass ? "BANDPASS" :
+            instrumentlist[open_instrument]->filter == FilterType::highpass ? "HIGHPASS" : "NONE";
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 0; }
+        ty++;
+        // Filter cutoff
+        geptr->DrawTextString(0, ty, geptr->entity, "CTF:", primary_text_a); // Cutoff
+        outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+        // Filter resonance
+        geptr->DrawTextString(0, ty, geptr->entity, "RES:", primary_text_a); // Resonance
+        outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+
+        if (instrument_edit_y != -1 && instrument_edit_digit_count >= 2)
+        {
+            // Modify left part of the number
+            if (leftrightcenter == left)
+            {
+                geptr->DrawSetColor(5 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(6 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+            }
+            // Modify right part of the number
+            if (leftrightcenter == right)
+            {
+                geptr->DrawSetColor(7 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(8 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
             }
         }
     }
@@ -2445,7 +2554,7 @@ void EditorControl()
     // Handle input for the instrument menu
     if (state == m_instrument && !breakend)
     {
-        // For editing synth instrumetn
+        // For editing synth instrument
         if (instrumentlist[open_instrument]->type == ChannelType::synth)
         {
             // Editing
@@ -2621,7 +2730,208 @@ void EditorControl()
         // For editing file instrument
         else if (instrumentlist[open_instrument]->type == ChannelType::file)
         {
-            // TODO: Implement file intrument edit controls
+            // Editing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            {
+                // Get edit ptr
+                int* edit;
+
+                // Default
+                edit = &(instrumentlist[open_instrument]->volume_edit);
+
+                // Get instrument edit pointer
+                switch (instrument_edit_y)
+                {
+                case 3: // Channel Type
+                    edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->type);
+                    break;
+                case 4: // Sample Index
+                    edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->sample_index);
+                    break;
+                case 5: // Volume
+                    edit = &(instrumentlist[open_instrument]->volume_edit);
+                    break;
+                case 6: // Panning
+                    edit = &(instrumentlist[open_instrument]->pan_edit);
+                    break;
+                case 7: // Tuning
+                    edit = &(instrumentlist[open_instrument]->detune_edit);
+                    break;
+                case 8: // Pitch Sweep
+                    edit = &(instrumentlist[open_instrument]->pitch_freq_edit);
+                    break;
+                case 9: // Base Pitch
+                    edit = &(instrumentlist[open_instrument]->base_pitch);
+                    break;
+                case 10: // Start Time
+                    edit = &(instrumentlist[open_instrument]->start_time_ms);
+                    break;
+                case 11: // End Time
+                    edit = &(instrumentlist[open_instrument]->end_time_ms);
+                    break;
+                case 13: // Filter Type
+                    edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->filter);
+                    break;
+                case 14: // Filter Cutoff
+                    edit = &(instrumentlist[open_instrument]->cutoff_edit);
+                    break;
+                case 15: // Filter Resonance
+                    edit = &(instrumentlist[open_instrument]->resonance_edit);
+                    break;
+                }
+
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 3)
+                    {
+                        if (goup) (*edit) += 0x001000;
+                        if (godown) (*edit) -= 0x001000;
+                        if (goright) (*edit) += 0x000100;
+                        if (goleft) (*edit) -= 0x000100;
+                    }
+                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                    {
+                        if (goup) (*edit) += 0x1000;
+                        if (godown) (*edit) -= 0x1000;
+                        if (goright) (*edit) += 0x0100;
+                        if (goleft) (*edit) -= 0x0100;
+                    }
+                    // Mod a note
+                    else if (instrument_edit_digit_count == 1.5)
+                    {
+                        // Edit note pitch
+                        if (goup) (*edit) += 12;
+                        if (godown) (*edit) -= 12;
+                        if (goright) (*edit) += 1;
+                        if (goleft) (*edit) -= 1;
+                    }
+                    // Mod the right two digits
+                    else if (instrument_edit_digit_count == 3)
+                    {
+                        if (goup) (*edit) += 0x000010;
+                        if (godown) (*edit) -= 0x000010;
+                        if (goright) (*edit) += 0x000001;
+                        if (goleft) (*edit) -= 0x000001;
+                    }
+                    else
+                    {
+                        if (goup && instrument_edit_digit_count != 0) (*edit) += 0x0010;
+                        if (godown && instrument_edit_digit_count != 0)  (*edit) -= 0x0010;
+                        if (goright) (*edit) += 0x0001;
+                        if (goleft) (*edit) -= 0x0001;
+                    }
+
+                    // Correct number ranges
+                    switch (instrument_edit_y)
+                    {
+                    case 3: // Channel Type
+                        if ((*edit) < static_cast<int>(ChannelType::min))
+                            (*edit) = static_cast<int>(ChannelType::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(ChannelType::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
+                        break;
+                    case 13: // Filter Type
+                        if ((*edit) < static_cast<int>(FilterType::min))
+                            (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(FilterType::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(FilterType::max);
+                        break;
+                    case 9: // Base pitch
+                        if ((*edit) < min_note)
+                            (*edit) = max_note + (((*edit) - min_note) + 1);
+                        if ((*edit) > max_note)
+                            (*edit) = min_note + ((*edit) - 1) - max_note;
+                        break;
+                    case 10: // Start Time
+                    case 11: // End Time
+                        // Wrap the cell between 0x000000 and 0xFFFFFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFFFFFF + ((*edit) + 1);
+                        if ((*edit) > 0xFFFFFF)
+                            (*edit) = ((*edit) - 1) - 0xFFFFFF;
+                        break;
+                    case 4: // Sample index
+                    case 5: // Volume
+                    case 6: // Panning
+                    case 8: // Pitch Sweep
+                    case 14: // Filter Cutoff
+                    case 15: // Filter Resonance
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFFFF + ((*edit) + 1);
+                        if ((*edit) > 0xFFFF)
+                            (*edit) = ((*edit) - 1) - 0xFFFF;
+                        break;
+                    case 7: // Tuning
+                        // Wrap the cell between 0x00 and 0xFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFF + ((*edit) + 1);
+                        if ((*edit) > 0xFF)
+                            (*edit) = ((*edit) - 1) - 0xFF;
+                        break;
+                    }
+
+                    // Convert edits to actual values
+                    instrumentlist[open_instrument]->detune = (instrumentlist[open_instrument]->detune_edit - 128) / 2.f;
+                    std::string outstr;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->volume = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
+                    instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
+                    instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
+                    instrumentlist[open_instrument]->resonance = instrumentlist[open_instrument]->resonance_edit / 65535.f;
+                }
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            {
+                // Go to the left page over
+                if (goleft)
+                {
+                    // If the open_chain is valid
+                    if (open_phrase != -1)
+                    {
+                        // Check if the phrase does not exist
+                        if (GetAt(&phraselist, open_phrase) == nullptr)
+                        {
+                            InsertAt(&phraselist, open_phrase, new phrase());
+                        }
+                        // Chain
+                        state = m_phrase;
+                        cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
+                        breakend = true;
+                    }
+                }
+                // Go to the above page over
+                else if (goup)
+                {
+                    // TODO: Implement going to the wave editor
+                }
+            }
+            // Moving
+            else
+            {
+                cursor_x += goright - goleft;
+                cursor_y += godown - goup;
+            }
+
+            // wrap the cursor and clamp offsets
+            if (cursor_x > instrument::sample_menu_width - 1)
+                cursor_x = 0;
+            if (cursor_x < 0)
+                cursor_x = instrument::sample_menu_width - 1;
+            if (cursor_y > instrument::sample_menu_height - 1)
+                cursor_y = 0;
+            if (cursor_y < 0)
+                cursor_y = instrument::sample_menu_height - 1;
         }
 
         // Update UI
