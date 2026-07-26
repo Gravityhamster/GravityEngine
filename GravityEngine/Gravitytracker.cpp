@@ -884,6 +884,7 @@ void DoTick()
 }
 
 // Convert i to hex string
+// int i : Number to convert
 std::string IntToHexString(int i)
 {
     // Write the int to a stream as hex
@@ -1504,10 +1505,23 @@ void DrawInstrumentUI()
 // Draw Instrument Editor UI
 void DrawWaveUI()
 {
-    // Menu title and sample number
-    auto outstr = IntToHexString(open_sample);
-    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-    geptr->DrawTextString(0, 1, geptr->entity, "SMPLE - " + outstr, primary_text_a);
+    // Synth or File instrument?
+    if (instrumentlist[open_instrument]->type == ChannelType::synth)
+    {
+        // TODO: Implement UI for waveform editing
+    }
+    else
+    {
+        // Menu title and sample number
+        auto outstr = IntToHexString(open_sample);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(0, 1, geptr->entity, "SMPLE - " + outstr, primary_text_a);
+
+        // TODO: Implement remaining UI for sample loading
+        // - Need file browser
+        // - Need file path
+        // - Etc.
+    }
 }
 
 // Draw the map for where you are in the UI
@@ -2584,6 +2598,7 @@ void EditorControl()
                 // Go to the above page over
                 else if (goup)
                 {
+                    // TODO: Implement going to the wave editor
                 }
             }
             // Moving
@@ -2606,7 +2621,7 @@ void EditorControl()
         // For editing file instrument
         else if (instrumentlist[open_instrument]->type == ChannelType::file)
         {
-
+            // TODO: Implement file intrument edit controls
         }
 
         // Update UI
