@@ -2509,8 +2509,8 @@ void EditorControl()
                         }
                         // Chain
                         state = m_instrument;
-                        cursor_x = SDL_clamp(cursor_x, 0, instrument::synth_menu_width - 1); // TODO: Implement instrument menu width
-                        cursor_y = SDL_clamp(cursor_y, 0, instrument::synth_menu_height - 1); // TODO: Implement instrument menu height
+                        cursor_x = SDL_clamp(cursor_x, 0, GetAt(&instrumentlist, open_instrument)->type == ChannelType::synth ? instrument::synth_menu_width - 1 : instrument::sample_menu_width - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, GetAt(&instrumentlist, open_instrument)->type == ChannelType::synth ? instrument::synth_menu_height - 1 : instrument::sample_menu_height - 1);
                         breakend = true;
                     }
                 }
@@ -2989,7 +2989,25 @@ void EditorControl()
                     // Go to the above page over
                     else if (goup)
                     {
-                        // TODO: Implement going to the wave editor
+                        // Set open sample
+                        if (cursor_y == 1 && cursor_x == 0 && instrumentlist[open_instrument]->sample_index != -1)
+                        {
+                            open_sample = instrumentlist[open_instrument]->sample_index;
+                        }
+                        // If the open_sample is valid
+                        if (open_sample != -1)
+                        {
+                            // Check if the sample does not exist
+                            if (GetAt(&samplelist, open_sample) == nullptr)
+                            {
+                                InsertAt(&samplelist, open_sample, new sample());
+                            }
+                            // Chain
+                            state = m_wave;
+                            cursor_x = SDL_clamp(cursor_x, 0, 0);
+                            cursor_y = SDL_clamp(cursor_y, 0, 0);
+                            breakend = true;
+                        }
                     }
                 }
                 // Moving
