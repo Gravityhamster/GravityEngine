@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <random>
+#include <filesystem>
 
 // Color struct (foreground and background)
 // SDL_Color f : Letter color
@@ -1083,7 +1084,8 @@ public:
     int AddSound(const char* path)
     {
         // Initialize all audio channels
-        sounds.insert(sounds.end(), new GravityEngine_Sound(path, global_audio_spec));
+        if (std::filesystem::exists(path))
+            sounds.insert(sounds.end(), new GravityEngine_Sound(path, global_audio_spec));
         return sounds.size() - 1;
     }
 
@@ -1092,7 +1094,7 @@ public:
     bool CheckSound(int index)
     {
         if (index >= 0 && index < audio_channels.size())
-            return sounds[index] == nullptr ? true : false;
+            return sounds[index] == nullptr ? false : true;
         else
             return false;
     }
@@ -1113,8 +1115,11 @@ public:
     // bool loop : Whether the sound should loop or not
     void PlaySoundOnChannel(int audio_index, int channel, bool loop = false)
     {
-        channel = channel % audio_channels.size();
-        audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index], loop);
+        if (CheckSound(audio_index))
+        {
+            channel = channel % audio_channels.size();
+            audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index], loop);
+        }
     }
 
     // Bind a synth to a channel

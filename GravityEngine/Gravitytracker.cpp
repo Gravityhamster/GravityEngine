@@ -1,4 +1,5 @@
 #include "GravityEngineSDL.h"
+#include <list>
 
 GravityEngine_Core* geptr;
 
@@ -28,6 +29,7 @@ int offset_x; // X offset of the editor scroll
 int offset_y; // Y offset of the editor scroll
 int chain_offset_y; // Y offset when editing the chain
 int phrase_offset_y; // Y offset of the editor scroll
+int sample_offset_y; // Y offset of the samples selector scroll
 int inputholdtimer = 0; // The timer for checking if an input should be considered held-down
 int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
@@ -69,6 +71,12 @@ bool play_thread = false; // Play thread check flag
 int do_deep_copy = 0; // Track progress for deep copy
 float instrument_edit_digit_count = -1; // Flag for how many digits to expect an edit to be in the instr editor
 int instrument_edit_y = -1;
+int file_display_count = 10;
+int current_dir_length = 0;
+std::string main_dir = ".\\SampleLibrary\\";
+std::string current_dir = main_dir;
+std::string selected_path = "";
+bool selected_path_isdir = false;
 playing_type play_context = pt_song; // What type of play are we doing
 
 // Find string f in s
@@ -1445,7 +1453,7 @@ void DrawInstrumentUI()
         if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
         ty++;
         // Panning
-        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick
         outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
         outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
         geptr->DrawTextString(5, ty, geptr->entity, outstr,
@@ -1453,7 +1461,7 @@ void DrawInstrumentUI()
         if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
         ty++;
         // Pulse width
-        geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pulse Width Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        geptr->DrawTextString(0, ty, geptr->entity, "WID:", primary_text_a); // 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pulse Width Mod : 0x00 = 1, 0xFF = X units per tick
         outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
         outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
         geptr->DrawTextString(5, ty, geptr->entity, outstr,
@@ -1539,7 +1547,7 @@ void DrawInstrumentUI()
         if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
         ty++;
         // Panning
-        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick - TODO: Define upper speed range
+        geptr->DrawTextString(0, ty, geptr->entity, "PAN:", primary_text_a); // Pan : 0x00 = 0, 0x80 = 0.5, 0xFF = 1 | Pan Mod : 0x00 = 1, 0xFF = X units per tick
         outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
         outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
         geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
@@ -1646,11 +1654,82 @@ void DrawWaveUI()
         auto outstr = IntToHexString(open_sample);
         outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
         geptr->DrawTextString(0, 1, geptr->entity, "SMPLE - " + outstr, primary_text_a);
+        
+        // Draw current directory -
 
-        // TODO: Implement remaining UI for sample loading
-        // - Need file browser
-        // - Need file path
-        // - Etc.
+        // Create sample library if it does not exist
+        if (!std::filesystem::exists(current_dir))
+            std::filesystem::create_directory(current_dir);
+
+        // Loop through contents and draw them
+        int i = 0;
+        std::list<std::filesystem::directory_entry> files;
+
+        // Get all the objects in the archive
+        for (const auto& entry : std::filesystem::directory_iterator(current_dir))
+        {
+            files.push_front(entry);
+        }
+
+        // Get length of the directory
+        current_dir_length = files.size();
+        
+        // Sort the folder and file list
+        files.sort([](const std::filesystem::directory_entry& a, const std::filesystem::directory_entry& b)
+            {
+                auto patha = a.path().string();
+                auto pathb = b.path().string();
+                int at = 0;
+                for (auto c : patha)
+                    patha[at++] = (char)toupper(c);
+                at = 0;
+                for (auto c : pathb)
+                    pathb[at++] = (char)toupper(c);
+                return !(a.is_regular_file() && b.is_directory()) && patha < pathb;
+            }
+        );
+
+        // Draw them
+        for (auto entry : files)
+        {
+            // Skip until we get to the offset
+            if (i < sample_offset_y)
+            {
+                i++;
+                continue;
+            }
+
+            // Get the highlighted path
+            if (i - sample_offset_y == cursor_y)
+            {
+                selected_path = entry.path().string();
+                selected_path_isdir = entry.is_directory();
+                if (selected_path_isdir)
+                    selected_path += "\\";
+            }
+
+            // Draw the entry
+            auto path = entry.path().string();
+            int at = 0;
+            int l = current_dir.length();
+            int r = path.length() - current_dir.length();
+            path = path.substr(l, r);
+            for (auto c : path)
+                path[at++] = (char)toupper(c);
+            if (entry.is_regular_file())
+                geptr->DrawTextString(1, 3 + i - sample_offset_y, geptr->entity, path, i - sample_offset_y == cursor_y ? primary_text_b : primary_text_a);
+            else
+                geptr->DrawTextString(1, 3 + i - sample_offset_y, geptr->entity, path, i - sample_offset_y == cursor_y ? header_text_b : header_text_a);
+            i++;
+            
+            // Have we displayed the max
+            if (i >= file_display_count + sample_offset_y)
+                break;
+        }
+
+        // Draw loaded header and current file text
+        geptr->DrawTextString(1, 3 + file_display_count + 1, geptr->entity, "LOADED:", header_text_a);
+        geptr->DrawTextString(1, 3 + file_display_count + 2, geptr->entity, samplelist[open_sample]->path, primary_text_a);
     }
 }
 
@@ -3002,10 +3081,11 @@ void EditorControl()
                             {
                                 InsertAt(&samplelist, open_sample, new sample());
                             }
-                            // Chain
+                            // Sample
                             state = m_wave;
-                            cursor_x = SDL_clamp(cursor_x, 0, 0);
-                            cursor_y = SDL_clamp(cursor_y, 0, 0);
+                            sample_offset_y = 0;
+                            cursor_x = 0;
+                            cursor_y = 0;
                             breakend = true;
                         }
                     }
@@ -3042,7 +3122,71 @@ void EditorControl()
     {
         if (instrumentlist[open_instrument]->type == ChannelType::file) // Sample loader
         {
+            // TODO: Implement safety for missing files or directories
 
+            // Modify value or open dir
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            {
+                // Open directory
+                if (selected_path_isdir)
+                {
+                    current_dir_length = 0;
+                    sample_offset_y = 0;
+                    cursor_y = 0;
+                    current_dir = selected_path;
+                }
+                // Open file
+                else
+                {
+                    samplelist[open_sample]->path = selected_path;
+                    int at = 0;
+                    for (auto c : samplelist[open_sample]->path)
+                        samplelist[open_sample]->path[at++] = (char)toupper(c);
+
+                    // TODO: Load sample audio into memory and assign index to sample object
+                }
+            }
+            // Go up a directory
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+            {
+                if (current_dir != main_dir)
+                {
+                    // Remove trailing backslash
+                    current_dir = current_dir.substr(0, current_dir.length() - 1);
+                    // Remove all to the last backslash
+                    current_dir = current_dir.substr(0, current_dir.find_last_of('\\')+1);
+                    // Reset
+                    current_dir_length = 0;
+                    sample_offset_y = 0;
+                    cursor_y = 0;
+                }
+            }
+            // Moving
+            else
+            {
+                cursor_y += godown - goup;
+            }
+
+            // wrap the cursor and clamp offsets
+            if (cursor_y + sample_offset_y > current_dir_length - 1)
+            {
+                cursor_y = 0;
+                sample_offset_y = 0;
+            }
+            if (cursor_y + sample_offset_y < 0)
+            {
+                cursor_y = file_display_count - 1;
+                sample_offset_y = std::max(0, current_dir_length - file_display_count);
+            }
+
+            // Move the page
+            if (cursor_y > file_display_count - 1)
+                sample_offset_y += 1;
+            if (cursor_y < 0)
+                sample_offset_y -= 1;
+
+            cursor_y = SDL_clamp(cursor_y, 0, file_display_count - 1);
+            sample_offset_y = SDL_clamp(sample_offset_y, 0, std::max(0, current_dir_length - file_display_count));
         }
         else // Waveform editor
         {
@@ -3079,6 +3223,7 @@ void GameInit()
     phrase_grid_w = 8;
     chain_grid_h = std::min(16, geptr->GetCanvasH() - 4);
     chain_grid_w = 2;
+    file_display_count = song_grid_h - 6;
 
     // Init channel sequencers
     for (int i = 0; i < channelcount; i++)
@@ -3103,9 +3248,9 @@ void GameInit()
     DrawSongUI(0, 0);
 
     // Test: Init file play and play it
-    int i = geptr->AddSound("DrumBeat.wav");
+    int i = geptr->AddSound((main_dir + "DrumBeat.wav").c_str());
     geptr->SetChannelPitchRatio(1, GetSampleRatioChange(39, 39-12));
-    geptr->PlaySoundOnChannel(0, 1, true);
+    geptr->PlaySoundOnChannel(i, 1, true);
 
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
