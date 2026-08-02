@@ -130,9 +130,11 @@ private:
         std::atomic<bool> file_playing = false; // Flag if file audio is playing
         bool file_first_loop = false; // First loop of the audio file
         long audio_file_read_offset = 0; // Read pointer for the audio file load
-        int pitch_offset = 0;
+        double pitch_ratio = 1;
 
     public:
+        GravityEngine_Sound* currently_playing_sound_ref = nullptr; // Sound playing ref
+
         // -= Methods =-
 
         // Construct audio
@@ -171,9 +173,10 @@ private:
                     std::this_thread::yield(); // Yield to CPU
                     continue;
                 }
-                ac->FeedAudioFileStream(buffer_size);
+                ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio);
             }
             (*file_playing) = false;
+            ac->StopPlayback();
         }
 
         // Set pitch offset
@@ -181,6 +184,7 @@ private:
         bool SetPitchRatio(double ratio)
         {
             bool t = SDL_SetAudioStreamFrequencyRatio(sdl_audio_stream, ratio);
+            pitch_ratio = ratio;
             return t;
         }
 
@@ -193,6 +197,7 @@ private:
             // If any audio is currently playing, stop it
             StopPlayback();
             // Save the audio bound to this channel so we can feed the channel later
+            currently_playing_sound_ref = gravity_engine_sound_ref;
             currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
             // Set the starting flag
             file_first_loop = true;
@@ -289,21 +294,24 @@ private:
 
         // Feed the channel with loop audio
         // int buffer_size : Size of the channel's audio buffer
-        void FeedAudioFileStream(int buffer_size)
+        void FeedAudioFileStream(int buffer_size, double pitch_ratio)
         {
+            double safety = 8;
+            double pitch_mult = (1 / pitch_ratio) * safety;
+            
             // Only get data while it's needed -
             // Copilot suggested looping while the queue needs data instead of overfilling and 
             // busy waiting for the audio stream to have less data than the buffer
-            while (SDL_GetAudioStreamQueued(sdl_audio_stream) < buffer_size)
+            while (SDL_GetAudioStreamAvailable(sdl_audio_stream) < buffer_size)
             {
 
                 // Get the remaining amount of audio data
                 int remaining = currently_playing_audio->size() - audio_file_read_offset;
                 // Either get the next chunk or get the rest of the audio file
-                int to_write = std::min(buffer_size, remaining);
+                int to_write = std::min((int)std::ceil(buffer_size * safety), remaining);
 
                 // There is no need to write if nothing is going to be written
-                if (to_write >= 0)
+                if (to_write > 0)
                 {
                     // Insert the audio data into the audio stream
                     SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data() + audio_file_read_offset, to_write);
@@ -320,13 +328,11 @@ private:
                         audio_file_read_offset = 0; // Go back to start
                     else
                     {
-                        if (SDL_GetAudioStreamAvailable(sdl_audio_stream) <= 0) StopPlayback(); // End the channel audio
+                        if (SDL_GetAudioStreamAvailable(sdl_audio_stream) <= 0) state = stopped; // End the channel audio
                         break;
                     }
                 }
-
             }
-            std::this_thread::yield(); // Yield to CPU
         }
 
         // Get state of channel
@@ -355,6 +361,7 @@ private:
                 while (synth_playing) {}
             }
             SDL_Delay(5);
+            currently_playing_sound_ref = nullptr;
             currently_playing_audio = nullptr;
             SDL_CloseAudioDevice(audio_device_id);
         };
@@ -1093,7 +1100,7 @@ public:
     // int index : Integer index to where the sound is stored
     bool CheckSound(int index)
     {
-        if (index >= 0 && index < audio_channels.size())
+        if (index >= 0 && index < sounds.size())
             return sounds[index] == nullptr ? false : true;
         else
             return false;
@@ -1103,8 +1110,16 @@ public:
     // int index : Integer index to where the sound is stored
     void DeleteSound(int index)
     {
+        // Stop any channel playing this sound
+        int i = 0;
+        for (auto c : audio_channels)
+        {
+            if (c->currently_playing_sound_ref == sounds[index])
+                StopChannel(i);
+            i++;
+        }
         // Delete the sound objects
-        delete[] sounds[index];
+        delete sounds[index];
         // Set this index to a nullptr
         sounds[index] = nullptr;
     }
@@ -1115,6 +1130,7 @@ public:
     // bool loop : Whether the sound should loop or not
     void PlaySoundOnChannel(int audio_index, int channel, bool loop = false)
     {
+        // Check if the sound exists
         if (CheckSound(audio_index))
         {
             channel = channel % audio_channels.size();

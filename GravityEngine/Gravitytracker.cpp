@@ -148,7 +148,7 @@ class sample
 {
     public:
         std::string path;
-        int sound_index;
+        int sound_index = -1;
 
         // Methods
         sample* DeepCopySample()
@@ -167,18 +167,24 @@ class sample
 
 
 // Get note freq
-double NoteFreq(int n)
+double NoteFreq(double n)
 {
     // https://superglobalcalculator.com/calculators/music/piano-key-frequency/
     return 440.0 * pow(2.0, ((n+1) - 49.0) / 12.0);
 }
 
+// Get freq note
+double FreqNote(double f)
+{
+    return 12 * std::log2(f / 440) + 48;
+}
+
 // Get sample ratio
 // int base_pitch : Base pitch of the sample tuned to a piano. For example, C4 == 39
 // int base_pitch : New pitch of the sample tuned to a piano. For example, C#4 == 40
-double GetSampleRatioChange(int base_pitch, int new_pitch)
+double GetSampleRatioChange(int base_pitch, int new_pitch, double detune = 0)
 {
-    return std::pow(2, (new_pitch - base_pitch) / 12);
+    return std::pow(2, (FreqNote(NoteFreq(new_pitch) + detune) - base_pitch) / 12.f);
 }
 
 // Instruments - Note audio definitions
@@ -189,7 +195,7 @@ class instrument
         static const int synth_menu_width = 1;
         static const int synth_menu_height = 10;
         static const int sample_menu_width = 1;
-        static const int sample_menu_height = 12;
+        static const int sample_menu_height = 13;
 
         // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
@@ -224,6 +230,7 @@ class instrument
         int sample_index = -1;
         int start_time_ms = 0x000000;
         int end_time_ms = 0xFFFFFF;
+        int loop = false;
 
         // Methods
         instrument* DeepCopyInstrument()
@@ -256,6 +263,7 @@ class instrument
             i->sample_index = sample_index;
             i->start_time_ms = start_time_ms;
             i->end_time_ms = end_time_ms;
+            i->loop = loop;
 
             // Return copy
             return i;
@@ -354,7 +362,7 @@ GetNextEmpty(std::vector<T*>* vec)
 // channelnumber : The particular channel to play the step on
 // playing_phrase : Phrase to play
 // step_ptr : Phrase progress index
-void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
+void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double pitch_offset = 1)
 {
     // Get frequency to play
     auto f = phraselist[playing_phrase]->arr[step_ptr][0];
@@ -383,7 +391,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         }
         else if (instrumentlist[i]->type == ChannelType::file)
         {
-            // TODO: Implement sample-based playback
+            geptr->SetChannelPitchRatio(channel_index, GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune));
+            geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
         }
     }
 }
@@ -1593,6 +1602,13 @@ void DrawInstrumentUI()
             cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
         if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 3; }
         ty++;
+        // Loop
+        geptr->DrawTextString(0, ty, geptr->entity, "LOP:", primary_text_a); // TRUE, FALSE
+        outstr = instrumentlist[open_instrument]->loop == 0 ? "FALSE" : "TRUE";
+        geptr->DrawTextString(6 + (int)instrumentlist[open_instrument]->loop, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 4; }
+        ty++;
         
 
         // Filter type
@@ -1622,7 +1638,7 @@ void DrawInstrumentUI()
         if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
         ty++;
 
-        if (instrument_edit_y != -1 && instrument_edit_digit_count >= 2)
+        if (instrument_edit_y != -1 && instrument_edit_digit_count != 4 && instrument_edit_digit_count >= 2)
         {
             // Modify left part of the number
             if (leftrightcenter == left)
@@ -2924,13 +2940,16 @@ void EditorControl()
                     case 11: // End Time
                         edit = &(instrumentlist[open_instrument]->end_time_ms);
                         break;
-                    case 13: // Filter Type
+                    case 12: // Loop
+                        edit = &(instrumentlist[open_instrument]->loop);
+                        break;
+                    case 14: // Filter Type
                         edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->filter);
                         break;
-                    case 14: // Filter Cutoff
+                    case 15: // Filter Cutoff
                         edit = &(instrumentlist[open_instrument]->cutoff_edit);
                         break;
-                    case 15: // Filter Resonance
+                    case 16: // Filter Resonance
                         edit = &(instrumentlist[open_instrument]->resonance_edit);
                         break;
                     }
@@ -2945,6 +2964,10 @@ void EditorControl()
                             if (godown) (*edit) -= 0x001000;
                             if (goright) (*edit) += 0x000100;
                             if (goleft) (*edit) -= 0x000100;
+                        }
+                        else if (instrument_edit_digit_count == 4)
+                        {
+                            (*edit) = (*edit) == 0 ? 1 : 0;
                         }
                         else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
                         {
@@ -2987,7 +3010,7 @@ void EditorControl()
                             if ((*edit) > static_cast<int>(ChannelType::max))
                                 (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
                             break;
-                        case 13: // Filter Type
+                        case 14: // Filter Type
                             if ((*edit) < static_cast<int>(FilterType::min))
                                 (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
                             if ((*edit) > static_cast<int>(FilterType::max))
@@ -3011,8 +3034,8 @@ void EditorControl()
                         case 5: // Volume
                         case 6: // Panning
                         case 8: // Pitch Sweep
-                        case 14: // Filter Cutoff
-                        case 15: // Filter Resonance
+                        case 15: // Filter Cutoff
+                        case 16: // Filter Resonance
                             // Wrap the cell between 0x0000 and 0xFFFF
                             if ((*edit) < 0)
                                 (*edit) = 0xFFFF + ((*edit) + 1);
@@ -3143,7 +3166,14 @@ void EditorControl()
                     for (auto c : samplelist[open_sample]->path)
                         samplelist[open_sample]->path[at++] = (char)toupper(c);
 
-                    // TODO: Load sample audio into memory and assign index to sample object
+                    // Load sample audio into memory and assign index to sample object
+                    if (samplelist[open_sample]->sound_index != -1 && geptr->CheckSound(samplelist[open_sample]->sound_index) == true)
+                        geptr->DeleteSound(samplelist[open_sample]->sound_index);
+                    samplelist[open_sample]->sound_index = geptr->AddSound(samplelist[open_sample]->path.c_str());
+
+                    // Preview the audio
+                    geptr->SetChannelPitchRatio(open_channel, 1);
+                    geptr->PlaySoundOnChannel(samplelist[open_sample]->sound_index, open_channel, false);
                 }
             }
             // Go up a directory
@@ -3159,6 +3189,28 @@ void EditorControl()
                     current_dir_length = 0;
                     sample_offset_y = 0;
                     cursor_y = 0;
+                }
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            {
+                // Go to the down page over
+                if (godown)
+                {
+                    // If the open_instrument is valid
+                    if (open_instrument != -1)
+                    {
+                        // Check if the instrument does not exist
+                        if (GetAt(&instrumentlist, open_instrument) == nullptr)
+                        {
+                            InsertAt(&instrumentlist, open_instrument, new instrument());
+                        }
+                        // Chain
+                        state = m_instrument;
+                        cursor_x = SDL_clamp(cursor_x, 0, GetAt(&instrumentlist, open_instrument)->type == ChannelType::synth ? instrument::synth_menu_width - 1 : instrument::sample_menu_width - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, GetAt(&instrumentlist, open_instrument)->type == ChannelType::synth ? instrument::synth_menu_height - 1 : instrument::sample_menu_height - 1);
+                        breakend = true;
+                    }
                 }
             }
             // Moving
@@ -3193,6 +3245,12 @@ void EditorControl()
 
         }
 
+        // Stop previewing the audio
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
+        {
+            geptr->StopChannel(open_channel);
+        }
+
         // Update UI
         DrawWaveUI();
     }
@@ -3217,8 +3275,8 @@ void EditorControl()
 void GameInit()
 {
     // Set UI grid w and h
-    song_grid_h = geptr->GetCanvasH() - 4;
-    song_grid_w = (geptr->GetCanvasW() - 8) / 5;
+    song_grid_h = std::min(rowcount, geptr->GetCanvasH() - 4);
+    song_grid_w = std::min(channelcount, (geptr->GetCanvasW() - 8) / 5);
     phrase_grid_h = std::min(16, geptr->GetCanvasH() - 4);
     phrase_grid_w = 8;
     chain_grid_h = std::min(16, geptr->GetCanvasH() - 4);
@@ -3247,11 +3305,6 @@ void GameInit()
     // Start song UI
     DrawSongUI(0, 0);
 
-    // Test: Init file play and play it
-    int i = geptr->AddSound((main_dir + "DrumBeat.wav").c_str());
-    geptr->SetChannelPitchRatio(1, GetSampleRatioChange(39, 39-12));
-    geptr->PlaySoundOnChannel(i, 1, true);
-
     // Add the input check object
     inputgetter = geptr->AddObject(new input());
 
@@ -3276,11 +3329,7 @@ void PreGameLoop()
         std::to_string(channellist[0].chain_ptr) + " - " +
         std::to_string(channellist[0].phrase_ptr) + " - " +
         std::to_string(channellist[0].step_ptr) + " - " +
-        std::to_string(channellist[0].tick_ptr) + "   " + 
-        std::to_string(channellist[1].chain_ptr) + " - " +
-        std::to_string(channellist[1].phrase_ptr) + " - " +
-        std::to_string(channellist[1].step_ptr) + " - " +
-        std::to_string(channellist[1].tick_ptr) + " " + 
+        std::to_string(channellist[0].tick_ptr) + " " + 
         std::to_string(do_deep_copy) + "   ",
         primary_text_a);
 }
