@@ -915,6 +915,7 @@ void DoTick()
     {
         if (!pause_song) channellist[i].sub_step();
         synthlist[i]->SynthAutomation();
+        // TODO: Add automation equivalent for sample audio
     }
 
     // Increment global song position in ticks --
