@@ -77,6 +77,7 @@ std::string main_dir = ".\\SampleLibrary\\";
 std::string current_dir = main_dir;
 std::string selected_path = "";
 bool selected_path_isdir = false;
+bool alt_mode = false;
 playing_type play_context = pt_song; // What type of play are we doing
 
 // Find string f in s
@@ -392,6 +393,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
         else if (instrumentlist[i]->type == ChannelType::file)
         {
             geptr->SetChannelPitchRatio(channel_index, GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune));
+            geptr->SetChannelTimeOffsets(channel_index, instrumentlist[i]->start_time_ms, instrumentlist[i]->end_time_ms);
             geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
         }
     }
@@ -1641,17 +1643,20 @@ void DrawInstrumentUI()
 
         if (instrument_edit_y != -1 && instrument_edit_digit_count != 4 && instrument_edit_digit_count >= 2)
         {
+            int offset = 0;
+            if (alt_mode)
+                offset = -2;
             // Modify left part of the number
             if (leftrightcenter == left)
             {
-                geptr->DrawSetColor(5 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(6 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(5 + 2 + cursor_x + offset, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(6 + 2 + cursor_x + offset, instrument_edit_y, geptr->entity, primary_text_a);
             }
             // Modify right part of the number
             if (leftrightcenter == right)
             {
-                geptr->DrawSetColor(7 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
-                geptr->DrawSetColor(8 + 2 + cursor_x, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(7 + 2 + cursor_x + offset, instrument_edit_y, geptr->entity, primary_text_a);
+                geptr->DrawSetColor(8 + 2 + cursor_x + offset, instrument_edit_y, geptr->entity, primary_text_a);
             }
         }
     }
@@ -2902,6 +2907,10 @@ void EditorControl()
                     }
                 }
 
+                // Toggle alt mode
+                if ((instrument_edit_y == 11 || instrument_edit_y == 10) && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_pressed())
+                    alt_mode = !alt_mode;
+
                 // Editing
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
                 {
@@ -2961,10 +2970,20 @@ void EditorControl()
                         // Mod the left two digits
                         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 3)
                         {
-                            if (goup) (*edit) += 0x001000;
-                            if (godown) (*edit) -= 0x001000;
-                            if (goright) (*edit) += 0x000100;
-                            if (goleft) (*edit) -= 0x000100;
+                            if (alt_mode)
+                            {
+                                if (goup) (*edit) += 0x100000;
+                                if (godown) (*edit) -= 0x100000;
+                                if (goright) (*edit) += 0x010000;
+                                if (goleft) (*edit) -= 0x010000;
+                            }
+                            else
+                            {
+                                if (goup) (*edit) += 0x001000;
+                                if (godown) (*edit) -= 0x001000;
+                                if (goright) (*edit) += 0x000100;
+                                if (goleft) (*edit) -= 0x000100;
+                            }
                         }
                         else if (instrument_edit_digit_count == 4)
                         {
@@ -2989,10 +3008,20 @@ void EditorControl()
                         // Mod the right two digits
                         else if (instrument_edit_digit_count == 3)
                         {
-                            if (goup) (*edit) += 0x000010;
-                            if (godown) (*edit) -= 0x000010;
-                            if (goright) (*edit) += 0x000001;
-                            if (goleft) (*edit) -= 0x000001;
+                            if (alt_mode)
+                            {
+                                if (goup) (*edit) += 0x001000;
+                                if (godown) (*edit) -= 0x001000;
+                                if (goright) (*edit) += 0x000100;
+                                if (goleft) (*edit) -= 0x000100;
+                            }
+                            else
+                            {
+                                if (goup) (*edit) += 0x000010;
+                                if (godown) (*edit) -= 0x000010;
+                                if (goright) (*edit) += 0x000001;
+                                if (goleft) (*edit) -= 0x000001;
+                            }
                         }
                         else
                         {
@@ -3074,6 +3103,8 @@ void EditorControl()
                     // Go to the left page over
                     if (goleft)
                     {
+                        // Reset alt mode
+                        alt_mode = false;
                         // If the open_chain is valid
                         if (open_phrase != -1)
                         {
@@ -3092,6 +3123,8 @@ void EditorControl()
                     // Go to the above page over
                     else if (goup)
                     {
+                        // Reset alt mode
+                        alt_mode = false;
                         // Set open sample
                         if (cursor_y == 1 && cursor_x == 0 && instrumentlist[open_instrument]->sample_index != -1)
                         {
@@ -3117,6 +3150,9 @@ void EditorControl()
                 // Moving
                 else
                 {
+                    // Reset alt mode
+                    if (goright || goleft || godown || goup)
+                        alt_mode = false;
                     cursor_x += goright - goleft;
                     cursor_y += godown - goup;
                 }

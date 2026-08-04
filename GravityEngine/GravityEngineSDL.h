@@ -132,7 +132,25 @@ private:
         long audio_file_read_offset = 0; // Read pointer for the audio file load
         double pitch_ratio = 1;
 
+        // -= Methods =-
+        // time : Milliseconds to convert to bytes
+        // audio_spec : Channel audio spec
+        size_t milliseconds_to_bytes(long time, SDL_AudioSpec audio_spec)
+        {
+            // Bytes in every sample
+            double bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8.0 * audio_spec.channels;
+            // Samples in ever second
+            double samples_per_second = audio_spec.freq;
+            // Bytes per second
+            double bytes_per_second = bytes_per_sample * samples_per_second;
+            // Bytes per millisecond
+            return (size_t)floor(time * (bytes_per_second / 1000.0));
+        }
+
     public:
+        // -= Attributes =-
+        long start_time_ms = 0;
+        long end_time_ms = -1;
         GravityEngine_Sound* currently_playing_sound_ref = nullptr; // Sound playing ref
 
         // -= Methods =-
@@ -165,6 +183,13 @@ private:
             int buffer_size = sample_frames * audio_spec.channels * bytes_per_sample;
             buffer_size *= SDL_GetAudioStreamFrequencyRatio(ac->sdl_audio_stream);
 
+            // First stream feed
+            ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio, audio_spec);
+            // Attach the audio stream to the channel's audio device
+            SDL_BindAudioStream(audio_device_id, ac->sdl_audio_stream);
+            // Start playback
+            SDL_ResumeAudioDevice(audio_device_id);
+
             while (ac->GetType() == ChannelType::file && (ac->GetState() == playing || ac->GetState() == paused))
             {
                 // If the synth is paused, do not play the synth
@@ -173,7 +198,7 @@ private:
                     std::this_thread::yield(); // Yield to CPU
                     continue;
                 }
-                ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio);
+                ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio, audio_spec);
             }
             (*file_playing) = false;
             ac->StopPlayback();
@@ -196,6 +221,8 @@ private:
         {
             // If any audio is currently playing, stop it
             StopPlayback();
+            // Set the audio file start point
+            audio_file_read_offset = milliseconds_to_bytes(start_time_ms, audio_spec);
             // Save the audio bound to this channel so we can feed the channel later
             currently_playing_sound_ref = gravity_engine_sound_ref;
             currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
@@ -206,10 +233,6 @@ private:
             std::thread lt(GravityEngine_AudioChannel::FeedAudioFileStreamAsync, this, &file_playing, audio_spec, audio_device_id);
             lt.detach();
             file_thread = &lt;
-            // Attach the audio stream to the channel's audio device
-            SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
-            // Start playback
-            SDL_ResumeAudioDevice(audio_device_id);
             // Flag that this sound channel is busy playing
             state = playing;
             // Set whether this channel should loop or not
@@ -263,8 +286,6 @@ private:
             SDL_ClearAudioStream(sdl_audio_stream);
             // If this channel was set to loop, set it to stop looping
             looping = false;
-            // Set the audio position back to 0
-            audio_file_read_offset = 0;
         }
 
         // Pause audio
@@ -294,21 +315,21 @@ private:
 
         // Feed the channel with loop audio
         // int buffer_size : Size of the channel's audio buffer
-        void FeedAudioFileStream(int buffer_size, double pitch_ratio)
+        void FeedAudioFileStream(int buffer_size, double pitch_ratio, SDL_AudioSpec audio_spec)
         {
             double safety = 8;
             double pitch_mult = (1 / pitch_ratio) * safety;
+            size_t playable_file_size = std::min(currently_playing_audio->size(), (end_time_ms != -1 ? milliseconds_to_bytes(end_time_ms, audio_spec) : currently_playing_audio->size()));
             
             // Only get data while it's needed -
             // Copilot suggested looping while the queue needs data instead of overfilling and 
             // busy waiting for the audio stream to have less data than the buffer
-            while (SDL_GetAudioStreamAvailable(sdl_audio_stream) < buffer_size)
+            while (SDL_GetAudioStreamAvailable(sdl_audio_stream) < buffer_size * pitch_mult)
             {
-
                 // Get the remaining amount of audio data
-                int remaining = currently_playing_audio->size() - audio_file_read_offset;
+                int remaining = playable_file_size - audio_file_read_offset;
                 // Either get the next chunk or get the rest of the audio file
-                int to_write = std::min((int)std::ceil(buffer_size * safety), remaining);
+                int to_write = std::min((int)std::ceil(buffer_size * pitch_mult), remaining);
 
                 // There is no need to write if nothing is going to be written
                 if (to_write > 0)
@@ -321,11 +342,11 @@ private:
                 audio_file_read_offset += to_write;
 
                 // Have we surpassed the audio file input?
-                if (audio_file_read_offset >= currently_playing_audio->size())
+                if (audio_file_read_offset >= playable_file_size)
                 {
                     // Are we supposed loop the audio or quit at the end?
                     if (looping)
-                        audio_file_read_offset = 0; // Go back to start
+                        audio_file_read_offset = milliseconds_to_bytes(start_time_ms, audio_spec); // Go back to start
                     else
                     {
                         if (SDL_GetAudioStreamAvailable(sdl_audio_stream) <= 0) state = stopped; // End the channel audio
@@ -1084,6 +1105,22 @@ public:
     {
         channel = channel % audio_channels.size();
         audio_channels[channel]->SetPitchRatio(ratio);
+    }
+
+    // Set sound channel time offsets
+    // int channel : channel to set offsets on
+    // long start_time_ms : audio start time in milliseconds
+    // long end_time_ms : audio end time in milliseconds
+    void SetChannelTimeOffsets(int channel, long start_time_ms, long end_time_ms)
+    {
+        // Clean the input
+        if (start_time_ms < 0) start_time_ms = 0;
+        if (end_time_ms < -1) end_time_ms = -1;
+        if (end_time_ms != -1 && end_time_ms <= start_time_ms) end_time_ms = start_time_ms + 1;
+
+        // Apply the input
+        audio_channels[channel]->start_time_ms = start_time_ms;
+        audio_channels[channel]->end_time_ms = end_time_ms;
     }
 
     // Add sounds to the sound list
