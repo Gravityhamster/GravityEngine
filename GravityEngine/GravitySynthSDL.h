@@ -226,6 +226,7 @@ public:
                     // Apply panning volume and global volume
                     // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
                     // That way, panning still effects the audio output in mono.
+                    // This is how the Gameboy does panning on its mono speaker.
                     float left_pan = spec->channels == 2 ? (1.f - synth->panning) : 1 - abs(0.5 - synth->panning);
                     float right_pan = synth->panning;
                     auto left_sample = left_pan * (synth->volume) * sample;
