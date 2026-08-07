@@ -131,6 +131,7 @@ private:
         bool file_first_loop = false; // First loop of the audio file
         long audio_file_read_offset = 0; // Read pointer for the audio file load
         double pitch_ratio = 1;
+        float channel_volume = 1.0f;  
 
         // -= Methods =-
         // time : Milliseconds to convert to bytes
@@ -172,7 +173,6 @@ private:
         // bool* is_looping : Pointer to the variable to determine if the channel is still looping
         static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, std::atomic<bool>* file_playing, SDL_AudioSpec audio_spec, SDL_AudioDeviceID audio_device_id)
         {
-
             // Get sample frames
             int sample_frames;
             SDL_GetAudioDeviceFormat(audio_device_id, &audio_spec, &sample_frames);
@@ -211,6 +211,14 @@ private:
             bool t = SDL_SetAudioStreamFrequencyRatio(sdl_audio_stream, ratio);
             pitch_ratio = ratio;
             return t;
+        }
+
+        // Set volume
+        // float volume : 0.0f - Infinity
+        void SetVolume(float volume)
+        {
+            channel_volume = volume;
+            SDL_SetAudioStreamGain(sdl_audio_stream, volume);
         }
 
         // Play a sound on this channel
@@ -1105,6 +1113,15 @@ public:
     {
         channel = channel % audio_channels.size();
         audio_channels[channel]->SetPitchRatio(ratio);
+    }
+
+    // Set sound channel volume
+    // int channel : channel to set pitch ratio on
+    // int volume : Volume to set it to
+    void SetChannelVolume(int channel, float volume)
+    {
+        channel = channel % audio_channels.size();
+        audio_channels[channel]->SetVolume(volume);
     }
 
     // Set sound channel time offsets

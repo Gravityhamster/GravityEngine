@@ -158,6 +158,7 @@ public:
         float phase = 0.;
         float pan_phase = synth->panning;
         float pw_phase = synth->pulse_width;
+        SDL_SetAudioStreamGain(stream, 1.0f);
 
         synth->hp_l = 0.0f;
         synth->bp_l = 0.0f;
