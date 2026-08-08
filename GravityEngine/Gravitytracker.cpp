@@ -312,11 +312,7 @@ public:
             volume += volume_freq / 100;
         if (volume < 0)
             volume = 0;
-
-        // Apply volume changes
-        geptr->SetChannelVolume(channelnumber, volume * 4);
-        // Apply pitch changes
-        // Step note
+        // Step pitch
         if (pitch_freq != 0)
         {
             if (pitch_freq > 0)
@@ -324,6 +320,10 @@ public:
             if (pitch_freq < 0)
                 freq = freq / (abs(pitch_freq) + 1);
         }
+
+        // Apply volume changes
+        geptr->SetChannelVolume(channelnumber, volume * 4);
+        // Apply pitch changes
         geptr->SetChannelPitchRatio(channelnumber, freq);
     }
 };
@@ -966,8 +966,8 @@ void DoTick()
     for (int i = 0; i < channelcount; i++)
     {
         if (!pause_song) channellist[i].sub_step();
-        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation();
-        if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation();
+        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(); // Run synth automation on animated variables
+        if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation(); // Run sample automation on animated variables
     }
 
     // Increment global song position in ticks --
@@ -3232,7 +3232,7 @@ void EditorControl()
     {
         if (instrumentlist[open_instrument]->type == ChannelType::file) // Sample loader
         {
-            // TODO: Implement safety for missing files or directories
+            // TODO: Implement safety for missing files or directories (Like if the user deletes the directory or file)
 
             // Modify value or open dir
             if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
