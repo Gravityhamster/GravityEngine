@@ -182,7 +182,8 @@ double FreqNote(double f)
 
 // Get sample ratio
 // int base_pitch : Base pitch of the sample tuned to a piano. For example, C4 == 39
-// int base_pitch : New pitch of the sample tuned to a piano. For example, C#4 == 40
+// int new_pitch : New pitch of the sample tuned to a piano. For example, C#4 == 40
+// int detune : Cents to detune the pitch by
 double GetSampleRatioChange(int base_pitch, int new_pitch, double detune = 0)
 {
     return std::pow(2, (FreqNote(NoteFreq(new_pitch) + detune) - base_pitch) / 12.f);
@@ -300,10 +301,8 @@ public:
     float volume = 1.0f;
     float volume_freq = 0;
     int base_pitch = 0;
-    int pitch_F = 0;
-    float detune = 0.0f;
-    float pitch_freq = 0.0;
-    float pitch_delta = 0.0;
+    float freq = 1.0f;
+    float pitch_freq = 0.0f;
 
     // Run the channel automation
     void ChannelAutomation()
@@ -317,8 +316,15 @@ public:
         // Apply volume changes
         geptr->SetChannelVolume(channelnumber, volume * 4);
         // Apply pitch changes
-        pitch_delta += pitch_freq;
-        geptr->SetChannelPitchRatio(channelnumber, GetSampleRatioChange(base_pitch, pitch_F, detune + pitch_delta));
+        // Step note
+        if (pitch_freq != 0)
+        {
+            if (pitch_freq > 0)
+                freq = freq * (pitch_freq + 1);
+            if (pitch_freq < 0)
+                freq = freq / (abs(pitch_freq) + 1);
+        }
+        geptr->SetChannelPitchRatio(channelnumber, freq);
     }
 };
 
@@ -408,9 +414,10 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
     {
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
-        (*channellisttypeptr[i]) = instrumentlist[i]->type;
+        (*channellisttypeptr[channel_index]) = instrumentlist[i]->type;
         if (instrumentlist[i]->type == ChannelType::synth)
         {
+            geptr->SetChannelVolume(channel_index, 1);
             geptr->SetChannelPitchRatio(channel_index, 1);
             synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
             synthlist[channel_index]->volume = instrumentlist[i]->volume;
@@ -435,11 +442,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
             geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
             sampleautomatorlist[channel_index].volume = instrumentlist[i]->volume;
             sampleautomatorlist[channel_index].volume_freq = instrumentlist[i]->volume_freq;
-            sampleautomatorlist[channel_index].base_pitch = instrumentlist[i]->base_pitch;
-            sampleautomatorlist[channel_index].pitch_F = f;
-            sampleautomatorlist[channel_index].detune = instrumentlist[i]->detune;
+            sampleautomatorlist[channel_index].freq = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
             sampleautomatorlist[channel_index].pitch_freq = instrumentlist[i]->pitch_freq;
-            sampleautomatorlist[channel_index].pitch_delta = 0;
         }
     }
 }

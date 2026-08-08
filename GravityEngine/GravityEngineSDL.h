@@ -326,18 +326,17 @@ private:
         void FeedAudioFileStream(int buffer_size, double pitch_ratio, SDL_AudioSpec audio_spec)
         {
             double safety = 8;
-            double pitch_mult = (1 / pitch_ratio) * safety;
             size_t playable_file_size = std::min(currently_playing_audio->size(), (end_time_ms != -1 ? milliseconds_to_bytes(end_time_ms, audio_spec) : currently_playing_audio->size()));
             
             // Only get data while it's needed -
             // Copilot suggested looping while the queue needs data instead of overfilling and 
             // busy waiting for the audio stream to have less data than the buffer
-            while (SDL_GetAudioStreamAvailable(sdl_audio_stream) < buffer_size * pitch_mult)
+            while (SDL_GetAudioStreamAvailable(sdl_audio_stream) < buffer_size * safety)
             {
                 // Get the remaining amount of audio data
                 int remaining = playable_file_size - audio_file_read_offset;
                 // Either get the next chunk or get the rest of the audio file
-                int to_write = std::min((int)std::ceil(buffer_size * pitch_mult), remaining);
+                int to_write = std::min((int)std::ceil(buffer_size * safety), remaining);
 
                 // There is no need to write if nothing is going to be written
                 if (to_write > 0)
