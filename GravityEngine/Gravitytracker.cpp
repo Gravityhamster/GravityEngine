@@ -279,7 +279,7 @@ class table
         static const int len_y = 16;
         int arr[len_y][len_x]; // 7w x 16h - List of ticks for sound automation 
 
-        // Create pharse
+        // Create phrase
         table()
         {
             // Fill the chain with blanks
@@ -291,6 +291,39 @@ class table
         // Destruct phrase
         ~table() {};
 };
+
+// SampleAutomator - Automation related to samples on channels
+class sampleautomator
+{
+public:
+    int channelnumber = -1; // Which channel is this automator assigned to?
+    float volume = 1.0f;
+    float volume_freq = 0;
+    int base_pitch = 0;
+    int pitch_F = 0;
+    float detune = 0.0f;
+    float pitch_freq = 0.0;
+    float pitch_delta = 0.0;
+
+    // Run the channel automation
+    void ChannelAutomation()
+    {
+        // Step volumne
+        if (volume_freq != 0)
+            volume += volume_freq / 100;
+        if (volume < 0)
+            volume = 0;
+
+        // Apply volume changes
+        geptr->SetChannelVolume(channelnumber, volume * 4);
+        // Apply pitch changes
+        pitch_delta += pitch_freq;
+        geptr->SetChannelPitchRatio(channelnumber, GetSampleRatioChange(base_pitch, pitch_F, detune + pitch_delta));
+    }
+};
+
+// Sample automator variable
+sampleautomator sampleautomatorlist[channelcount];
 
 // Data structures --
 int** songgrid; //[0xffff][64];
@@ -358,6 +391,8 @@ GetNextEmpty(std::vector<T*>* vec)
     return index;
 }
 
+// Channel list type pointer
+ChannelType* channellisttypeptr[channelcount];
 
 // Play step phrase
 // channelnumber : The particular channel to play the step on
@@ -373,6 +408,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
     {
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
+        (*channellisttypeptr[i]) = instrumentlist[i]->type;
         if (instrumentlist[i]->type == ChannelType::synth)
         {
             geptr->SetChannelPitchRatio(channel_index, 1);
@@ -392,9 +428,18 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
         }
         else if (instrumentlist[i]->type == ChannelType::file)
         {
+
             geptr->SetChannelPitchRatio(channel_index, GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune));
+            geptr->SetChannelVolume(channel_index, instrumentlist[i]->volume*4);
             geptr->SetChannelTimeOffsets(channel_index, instrumentlist[i]->start_time_ms, instrumentlist[i]->end_time_ms);
             geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
+            sampleautomatorlist[channel_index].volume = instrumentlist[i]->volume;
+            sampleautomatorlist[channel_index].volume_freq = instrumentlist[i]->volume_freq;
+            sampleautomatorlist[channel_index].base_pitch = instrumentlist[i]->base_pitch;
+            sampleautomatorlist[channel_index].pitch_F = f;
+            sampleautomatorlist[channel_index].detune = instrumentlist[i]->detune;
+            sampleautomatorlist[channel_index].pitch_freq = instrumentlist[i]->pitch_freq;
+            sampleautomatorlist[channel_index].pitch_delta = 0;
         }
     }
 }
@@ -425,95 +470,11 @@ void PlayStepSong(int channel_index, int chain_ptr, int phrase_ptr, int step_ptr
         PlayStepChain(channel_index, play_chain, phrase_ptr, step_ptr);
 }
 
-// Deep Copy Phrase
-// phrase_index : The ID of the phrase
-int DeepCopyPhrase(int phrase_index)
-{
-    // Try get the phrase 
-    auto phrase_to_copy = GetAt(&phraselist, phrase_index);
-
-    // If the phrase exists, recreate it and return the new index
-    if (phrase_to_copy != nullptr)
-    {
-        // Create new
-        phrase* target_phrase = new phrase();
-        // Copy the phrase
-        for (int i = 0; i < phrase::len_x; i++)
-            for (int q = 0; q < phrase::len_y; q++)
-                target_phrase->arr[q][i] = phrase_to_copy->arr[q][i];
-        // Insert the phrase into the phraselist
-        auto n = GetNextEmpty(&phraselist);
-        InsertAt(&phraselist, n, target_phrase);
-        // Return the location of the new phrase
-        return n;
-    }
-    else
-    {
-        return -1;
-    }
-}
-
-// Shallow Copy Chain
-// chain_index : The ID of the chain
-int ShallowCopyChain(int chain_index)
-{
-    // Try get the chain 
-    auto chain_to_copy = GetAt(&chainlist, chain_index);
-
-    // If the chain exists, recreate it and return the new index
-    if (chain_to_copy != nullptr)
-    {
-        // Create new
-        chain* target_chain = new chain();
-        // Copy the chain
-        for (int i = 0; i < chain::length; i++)
-        {
-            // Copy values
-            target_chain->arr[i] = chain_to_copy->arr[i];
-            target_chain->arr_transpose[i] = chain_to_copy->arr_transpose[i];
-        }
-        // Insert the chain into the chainlist
-        auto n = GetNextEmpty(&chainlist);
-        InsertAt(&chainlist, n, target_chain);
-        // Return the location of the new chain
-        return n;
-    }
-    else
-    {
-        return -1;
-    }
-}
-
-// Deep Copy Chain
-// chain_index : The ID of the chain
-int DeepCopyChain(int chain_index)
-{
-    // First Shallow Copy the Chain
-    int r = ShallowCopyChain(chain_index);
-
-    // Check return value
-    if (r != -1)
-    {
-        // Clone the phrases within the chain
-        for (int i = 0; i < chain::length; i++)
-        {
-            // Only clone if the index exists
-            if (GetAt(&phraselist, chainlist[r]->arr[i]) != nullptr)
-                chainlist[r]->arr[i] = DeepCopyPhrase(chainlist[r]->arr[i]);
-            // Insert new if not empty but not exist
-            else if (chainlist[r]->arr[i] != -1)
-                chainlist[r]->arr[i] = GetNextEmpty(&phraselist);
-        }
-    }
-
-    // Return the chain index
-    return r;
-}
-
 // ChannelSequencer - Track position of the channel in time in the song
 class channelsequencer
 {
 public:
+    ChannelType type = ChannelType::synth;
     std::atomic<int> channelnumber = -1; // Which channel is this sequencer assigned to?
     std::atomic<int> chain_ptr = 0; // Int position of the channel in the song
     std::atomic<int> phrase_ptr = 0; // Int position of the channel in the chain
@@ -543,7 +504,7 @@ public:
     {
         if (cant_play == true && play_context == pt_song)
             return;
-        
+
         // TODO : Play step and sub-step-level effects
 
         // Play context within this local phrase
@@ -696,7 +657,7 @@ private:
                         need_to_go_back = false; // Valid
                     }
                     // If not valid, check next chain back
-                    if (need_to_go_back) 
+                    if (need_to_go_back)
                         chain_ptr--;
                 }
                 // Get back to the start
@@ -708,6 +669,91 @@ private:
 
 // Channel sequencer variable
 channelsequencer channellist[channelcount];
+
+// Deep Copy Phrase
+// phrase_index : The ID of the phrase
+int DeepCopyPhrase(int phrase_index)
+{
+    // Try get the phrase 
+    auto phrase_to_copy = GetAt(&phraselist, phrase_index);
+
+    // If the phrase exists, recreate it and return the new index
+    if (phrase_to_copy != nullptr)
+    {
+        // Create new
+        phrase* target_phrase = new phrase();
+        // Copy the phrase
+        for (int i = 0; i < phrase::len_x; i++)
+            for (int q = 0; q < phrase::len_y; q++)
+                target_phrase->arr[q][i] = phrase_to_copy->arr[q][i];
+        // Insert the phrase into the phraselist
+        auto n = GetNextEmpty(&phraselist);
+        InsertAt(&phraselist, n, target_phrase);
+        // Return the location of the new phrase
+        return n;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+// Shallow Copy Chain
+// chain_index : The ID of the chain
+int ShallowCopyChain(int chain_index)
+{
+    // Try get the chain 
+    auto chain_to_copy = GetAt(&chainlist, chain_index);
+
+    // If the chain exists, recreate it and return the new index
+    if (chain_to_copy != nullptr)
+    {
+        // Create new
+        chain* target_chain = new chain();
+        // Copy the chain
+        for (int i = 0; i < chain::length; i++)
+        {
+            // Copy values
+            target_chain->arr[i] = chain_to_copy->arr[i];
+            target_chain->arr_transpose[i] = chain_to_copy->arr_transpose[i];
+        }
+        // Insert the chain into the chainlist
+        auto n = GetNextEmpty(&chainlist);
+        InsertAt(&chainlist, n, target_chain);
+        // Return the location of the new chain
+        return n;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+// Deep Copy Chain
+// chain_index : The ID of the chain
+int DeepCopyChain(int chain_index)
+{
+    // First Shallow Copy the Chain
+    int r = ShallowCopyChain(chain_index);
+
+    // Check return value
+    if (r != -1)
+    {
+        // Clone the phrases within the chain
+        for (int i = 0; i < chain::length; i++)
+        {
+            // Only clone if the index exists
+            if (GetAt(&phraselist, chainlist[r]->arr[i]) != nullptr)
+                chainlist[r]->arr[i] = DeepCopyPhrase(chainlist[r]->arr[i]);
+            // Insert new if not empty but not exist
+            else if (chainlist[r]->arr[i] != -1)
+                chainlist[r]->arr[i] = GetNextEmpty(&phraselist);
+        }
+    }
+
+    // Return the chain index
+    return r;
+}
 
 // Song editor menu
 enum menu
@@ -916,8 +962,8 @@ void DoTick()
     for (int i = 0; i < channelcount; i++)
     {
         if (!pause_song) channellist[i].sub_step();
-        synthlist[i]->SynthAutomation();
-        // TODO: Add automation equivalent for sample audio
+        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation();
+        if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation();
     }
 
     // Increment global song position in ticks --
@@ -2623,7 +2669,7 @@ void EditorControl()
                 cursor_y += godown - goup;
             }
 
-            // Step previewing
+            // Stop previewing
             if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
             {
                 StopAllChannels();
@@ -3210,6 +3256,7 @@ void EditorControl()
 
                     // Preview the audio
                     geptr->SetChannelPitchRatio(open_channel, 1);
+                    geptr->SetChannelVolume(open_channel, 1);
                     geptr->PlaySoundOnChannel(samplelist[open_sample]->sound_index, open_channel, false);
                 }
             }
@@ -3324,6 +3371,8 @@ void GameInit()
     for (int i = 0; i < channelcount; i++)
     {
         channellist[i].channelnumber = i;
+        channellisttypeptr[i] = &(channellist[i].type);
+        sampleautomatorlist[i].channelnumber = i;
         synthlist[i] = new GravityEngine_Synth();
     }
 
