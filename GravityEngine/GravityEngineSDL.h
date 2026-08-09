@@ -130,8 +130,8 @@ private:
         std::atomic<bool> file_playing = false; // Flag if file audio is playing
         bool file_first_loop = false; // First loop of the audio file
         long audio_file_read_offset = 0; // Read pointer for the audio file load
-        double pitch_ratio = 1;
-        float channel_volume = 1.0f;  
+        std::atomic<double> pitch_ratio = 1;
+        std::atomic<float> channel_volume = 1.0f;
 
         // -= Methods =-
         // time : Milliseconds to convert to bytes
@@ -151,7 +151,9 @@ private:
     public:
         // -= Attributes =-
         long start_time_ms = 0;
+        long mid_time_ms = 0;
         long end_time_ms = -1;
+        std::atomic<float> panning = 0.5;
         GravityEngine_Sound* currently_playing_sound_ref = nullptr; // Sound playing ref
 
         // -= Methods =-
@@ -338,11 +340,18 @@ private:
                 // Either get the next chunk or get the rest of the audio file
                 int to_write = std::min((int)std::ceil(buffer_size * safety), remaining);
 
+                // Copy data to temp vector
+                std::vector<Uint8> play_data(to_write);
+                std::memcpy(play_data.data(), currently_playing_audio->data() + audio_file_read_offset, to_write);
+
+                // Apply panning effects
+                PanAudio(play_data.data(), to_write, audio_spec);
+
                 // There is no need to write if nothing is going to be written
                 if (to_write > 0)
                 {
                     // Insert the audio data into the audio stream
-                    SDL_PutAudioStreamData(sdl_audio_stream, currently_playing_audio->data() + audio_file_read_offset, to_write);
+                    SDL_PutAudioStreamData(sdl_audio_stream, play_data.data(), to_write);
                 }
 
                 // Increment the file read offset
@@ -353,11 +362,92 @@ private:
                 {
                     // Are we supposed loop the audio or quit at the end?
                     if (looping)
-                        audio_file_read_offset = milliseconds_to_bytes(start_time_ms, audio_spec); // Go back to start
+                        audio_file_read_offset = milliseconds_to_bytes(mid_time_ms, audio_spec); // Go back to start
                     else
                     {
                         if (SDL_GetAudioStreamAvailable(sdl_audio_stream) <= 0) state = stopped; // End the channel audio
                         break;
+                    }
+                }
+            }
+        }
+
+        // Panning audio function
+        void PanAudio(Uint8* data, int to_write, SDL_AudioSpec audio_spec)
+        {
+            float this_pan = (panning - 0.5f) * 2.0f; // Panning is 0 to 1 with 0.5 being centered. This converts said format to -1 to 1 with 0 centered.
+            int bit_size = SDL_AUDIO_BITSIZE(audio_spec.format);
+            bool is_float = SDL_AUDIO_ISFLOAT(audio_spec.format);
+
+            // Apply panning effect
+            if (audio_spec.channels == 1)
+            {
+                // TODO: % multiply the volume in mono like the Gameboy does (-1 == 0.5 gain, 1 == 0.5 gain, 0 == 1 gain, etc.)
+            }
+            else
+            {
+                // Equal-power panning
+                float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
+                float left_gain = std::cos(angle);
+                float right_gain = std::sin(angle);
+
+                // Do pan differently depending on the data type
+                if (bit_size == 8)
+                {
+                    // COPILOT : Apply panning to 8-bit audio
+                    for (int i = 0; i < to_write; i += 2)
+                    {
+                        // Get the left and right data
+                        Uint8 left = data[i];
+                        Uint8 right = data[i + 1];
+
+                        // Convert from unigned 8-bit (0-255) to signed (-128 to +127)
+                        int s_left = (int)left - 128;
+                        int s_right = (int)right - 128;
+
+                        // Apply gain
+                        s_left = (int)(s_left * left_gain);
+                        s_right = (int)(s_right * right_gain);
+
+                        // Convert back to unsigned
+                        data[i] = (Uint8)(std::clamp(s_left + 128, 0, 255));
+                        data[i + 1] = (Uint8)(std::clamp(s_right + 128, 0, 255));
+                    }
+                }
+                else if (bit_size == 16)
+                {
+                    // COPILOT : Apply panning to 16-bit audio
+                    int16_t* samples = reinterpret_cast<int16_t*>(data);
+                    int frames = to_write / 4; // 2 Channels * 2 Bytes each
+
+                    // Loop through all the samples
+                    for (int i = 0; i < frames; i++)
+                    {
+                        // Get the left and right sample references
+                        int16_t& left = samples[i * 2 + 0];
+                        int16_t& right = samples[i * 2 + 1];
+
+                        // Calculate left and right samples to the sample pointers
+                        left = static_cast<int16_t>(left * left_gain);
+                        right = static_cast<int16_t>(right * right_gain);
+                    }
+                }
+                else if (bit_size == 32 && is_float)
+                {
+                    // COPILOT : Apply panning to 32-bit audio
+                    float* samples = reinterpret_cast<float*>(data);
+                    int frames = to_write / (sizeof(float) * 2);
+
+                    // Loop through all the samples
+                    for (int i = 0; i < frames; i++)
+                    {
+                        // Get the left and right sample references
+                        float& left = samples[i * 2 + 0];
+                        float& right = samples[i * 2 + 1];
+
+                        // Calculate left and right samples to the sample pointers
+                        left *= left_gain;
+                        right *= right_gain;
                     }
                 }
             }
@@ -1123,19 +1213,30 @@ public:
         audio_channels[channel]->SetVolume(volume);
     }
 
+    // Set sound channel panning
+    // int channel : channel to set pitch ratio on
+    // int pan : audio paning offset
+    void SetChannelPanning(int channel, float pan)
+    {
+        audio_channels[channel]->panning = pan;
+    }
+
     // Set sound channel time offsets
     // int channel : channel to set offsets on
     // long start_time_ms : audio start time in milliseconds
+    // long mid_time_ms : audio mid loop reset time in milliseconds
     // long end_time_ms : audio end time in milliseconds
-    void SetChannelTimeOffsets(int channel, long start_time_ms, long end_time_ms)
+    void SetChannelTimeOffsets(int channel, long start_time_ms, long mid_time_ms, long end_time_ms)
     {
         // Clean the input
         if (start_time_ms < 0) start_time_ms = 0;
+        if (mid_time_ms < 0) mid_time_ms = 0;
         if (end_time_ms < -1) end_time_ms = -1;
-        if (end_time_ms != -1 && end_time_ms <= start_time_ms) end_time_ms = start_time_ms + 1;
+        if (end_time_ms != -1 && end_time_ms <= std::max(start_time_ms, mid_time_ms)) end_time_ms = std::max(start_time_ms, mid_time_ms) + 1;
 
         // Apply the input
         audio_channels[channel]->start_time_ms = start_time_ms;
+        audio_channels[channel]->mid_time_ms = mid_time_ms;
         audio_channels[channel]->end_time_ms = end_time_ms;
     }
 

@@ -11,7 +11,7 @@
 #include <random>
 #include <map>
 
-#define PI 3.141592f
+#define PI 3.14159265358979323846f
 
 // TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
 // TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
@@ -227,8 +227,13 @@ public:
                     // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
                     // That way, panning still effects the audio output in mono.
                     // This is how the Gameboy does panning on its mono speaker.
-                    float left_pan = spec->channels == 2 ? (1.f - synth->panning) : 1 - abs(0.5 - synth->panning);
-                    float right_pan = synth->panning;
+                    float this_pan = (synth->panning - 0.5f) * 2.0f;
+                    float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
+                    float left_gain = std::cos(angle);
+                    float right_gain = std::sin(angle);
+                    float left_pan = spec->channels == 2 ? 
+                        left_gain : 1 - abs(0.5 - synth->panning);
+                    float right_pan = right_gain;
                     auto left_sample = left_pan * (synth->volume) * sample;
                     auto right_sample = right_pan * (synth->volume) * sample;
 

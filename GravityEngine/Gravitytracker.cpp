@@ -231,6 +231,7 @@ class instrument
         int base_pitch = 39;
         int sample_index = -1;
         int start_time_ms = 0x000000;
+        int mid_time_ms = 0x000000;
         int end_time_ms = 0xFFFFFF;
         int loop = false;
 
@@ -435,10 +436,10 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
         }
         else if (instrumentlist[i]->type == ChannelType::file)
         {
-
             geptr->SetChannelPitchRatio(channel_index, GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune));
             geptr->SetChannelVolume(channel_index, instrumentlist[i]->volume*4);
-            geptr->SetChannelTimeOffsets(channel_index, instrumentlist[i]->start_time_ms, instrumentlist[i]->end_time_ms);
+            geptr->SetChannelTimeOffsets(channel_index, instrumentlist[i]->start_time_ms, instrumentlist[i]->mid_time_ms, instrumentlist[i]->end_time_ms);
+            geptr->SetChannelPanning(channel_index, instrumentlist[i]->panning);
             geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
             sampleautomatorlist[channel_index].volume = instrumentlist[i]->volume;
             sampleautomatorlist[channel_index].volume_freq = instrumentlist[i]->volume_freq;
@@ -1642,6 +1643,14 @@ void DrawInstrumentUI()
         // Start time
         geptr->DrawTextString(0, ty, geptr->entity, "BEG:", primary_text_a); // 0x000000 = 0 ms
         outstr = IntToHexString(instrumentlist[open_instrument]->start_time_ms);
+        outstr.insert(outstr.begin(), 6 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 3; }
+        ty++;
+        // mid time
+        geptr->DrawTextString(0, ty, geptr->entity, "MID:", primary_text_a); // 0x000000 = 0 ms
+        outstr = IntToHexString(instrumentlist[open_instrument]->mid_time_ms);
         outstr.insert(outstr.begin(), 6 - outstr.size(), '0');
         geptr->DrawTextString(5, ty, geptr->entity, outstr,
             cursor_y == ty - 3 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
@@ -2958,7 +2967,7 @@ void EditorControl()
                 }
 
                 // Toggle alt mode
-                if ((instrument_edit_y == 11 || instrument_edit_y == 10) && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_pressed())
+                if ((instrument_edit_y == 12 || instrument_edit_y == 11 || instrument_edit_y == 10) && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_pressed())
                     alt_mode = !alt_mode;
 
                 // Editing
@@ -2997,19 +3006,22 @@ void EditorControl()
                     case 10: // Start Time
                         edit = &(instrumentlist[open_instrument]->start_time_ms);
                         break;
-                    case 11: // End Time
+                    case 11: // Mid Time
+                        edit = &(instrumentlist[open_instrument]->mid_time_ms);
+                        break;
+                    case 12: // End Time
                         edit = &(instrumentlist[open_instrument]->end_time_ms);
                         break;
-                    case 12: // Loop
+                    case 13: // Loop
                         edit = &(instrumentlist[open_instrument]->loop);
                         break;
-                    case 14: // Filter Type
+                    case 15: // Filter Type
                         edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->filter);
                         break;
-                    case 15: // Filter Cutoff
+                    case 16: // Filter Cutoff
                         edit = &(instrumentlist[open_instrument]->cutoff_edit);
                         break;
-                    case 16: // Filter Resonance
+                    case 17: // Filter Resonance
                         edit = &(instrumentlist[open_instrument]->resonance_edit);
                         break;
                     }
@@ -3090,7 +3102,7 @@ void EditorControl()
                             if ((*edit) > static_cast<int>(ChannelType::max))
                                 (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
                             break;
-                        case 14: // Filter Type
+                        case 15: // Filter Type
                             if ((*edit) < static_cast<int>(FilterType::min))
                                 (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
                             if ((*edit) > static_cast<int>(FilterType::max))
@@ -3103,7 +3115,8 @@ void EditorControl()
                                 (*edit) = min_note + ((*edit) - 1) - max_note;
                             break;
                         case 10: // Start Time
-                        case 11: // End Time
+                        case 11: // Mid Time
+                        case 12: // End Time
                             // Wrap the cell between 0x000000 and 0xFFFFFF
                             if ((*edit) < 0)
                                 (*edit) = 0xFFFFFF + ((*edit) + 1);
@@ -3114,8 +3127,8 @@ void EditorControl()
                         case 5: // Volume
                         case 6: // Panning
                         case 8: // Pitch Sweep
-                        case 15: // Filter Cutoff
-                        case 16: // Filter Resonance
+                        case 16: // Filter Cutoff
+                        case 17: // Filter Resonance
                             // Wrap the cell between 0x0000 and 0xFFFF
                             if ((*edit) < 0)
                                 (*edit) = 0xFFFF + ((*edit) + 1);
@@ -3261,6 +3274,7 @@ void EditorControl()
                     // Preview the audio
                     geptr->SetChannelPitchRatio(open_channel, 1);
                     geptr->SetChannelVolume(open_channel, 1);
+                    geptr->SetChannelPanning(open_channel, 0.5);
                     geptr->PlaySoundOnChannel(samplelist[open_sample]->sound_index, open_channel, false);
                 }
             }
