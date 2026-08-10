@@ -409,6 +409,8 @@ private:
                         s_left = (int)(s_left * left_gain);
                         s_right = (int)(s_right * right_gain);
 
+                        // TODO: Audio filters!
+
                         // Convert back to unsigned
                         data[i] = (Uint8)(std::clamp(s_left + 128, 0, 255));
                         data[i + 1] = (Uint8)(std::clamp(s_right + 128, 0, 255));
@@ -427,6 +429,8 @@ private:
                         int16_t& left = samples[i * 2 + 0];
                         int16_t& right = samples[i * 2 + 1];
 
+                        // TODO: Audio filters!
+
                         // Calculate left and right samples to the sample pointers
                         left = static_cast<int16_t>(left * left_gain);
                         right = static_cast<int16_t>(right * right_gain);
@@ -444,6 +448,8 @@ private:
                         // Get the left and right sample references
                         float& left = samples[i * 2 + 0];
                         float& right = samples[i * 2 + 1];
+                        
+                        // TODO: Audio filters!
 
                         // Calculate left and right samples to the sample pointers
                         left *= left_gain;
