@@ -300,10 +300,13 @@ class sampleautomator
 public:
     int channelnumber = -1; // Which channel is this automator assigned to?
     float volume = 1.0f;
-    float volume_freq = 0;
+    float volume_freq = 0.0f;
     int base_pitch = 0;
     float freq = 1.0f;
     float pitch_freq = 0.0f;
+    float panning = 0.5f;
+    float pan_freq = 0.0f;
+    float pan_phase = 0.0f;
 
     // Run the channel automation
     void ChannelAutomation()
@@ -321,11 +324,21 @@ public:
             if (pitch_freq < 0)
                 freq = freq / (abs(pitch_freq) + 1);
         }
+        // Step pan
+        if (pan_freq != 0)
+        {
+            pan_phase += pan_freq / 100;
+            panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
+            if (pan_phase > 1.)
+                pan_phase -= 1.;
+        }
 
         // Apply volume changes
         geptr->SetChannelVolume(channelnumber, volume * 4);
         // Apply pitch changes
         geptr->SetChannelPitchRatio(channelnumber, freq);
+        // Apply pan changes
+        geptr->SetChannelPanning(channelnumber, panning);
     }
 };
 
@@ -420,6 +433,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
         {
             geptr->SetChannelVolume(channel_index, 1);
             geptr->SetChannelPitchRatio(channel_index, 1);
+            geptr->SetChannelPanning(channel_index, 0.5f);
             synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
             synthlist[channel_index]->volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
@@ -445,6 +459,9 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
             sampleautomatorlist[channel_index].volume_freq = instrumentlist[i]->volume_freq;
             sampleautomatorlist[channel_index].freq = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
             sampleautomatorlist[channel_index].pitch_freq = instrumentlist[i]->pitch_freq;
+            sampleautomatorlist[channel_index].panning = instrumentlist[i]->panning;
+            sampleautomatorlist[channel_index].pan_phase = 0.0f;
+            sampleautomatorlist[channel_index].pan_freq = instrumentlist[i]->pan_freq;
         }
     }
 }
