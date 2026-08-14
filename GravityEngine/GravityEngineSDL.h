@@ -107,8 +107,6 @@ private:
             SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
             // Convert the audio
             converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
-            // Free the audio buffer
-            free(audio_buf);
         };
 
         // Destruct audio

@@ -2873,7 +2873,10 @@ void EditorControl()
                     instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
                     outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                    instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    if (outstr.substr(0, 2) == "80")
+                        instrumentlist[open_instrument]->panning = 0.5f;
+                    else
+                        instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
                     instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
                     outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
@@ -3173,7 +3176,10 @@ void EditorControl()
                         instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
                         outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
                         outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                        instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                        if (outstr.substr(0, 2) == "80")
+                            instrumentlist[open_instrument]->panning = 0.5f;
+                        else
+                            instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
                         instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
                         instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
                         instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
