@@ -35,7 +35,7 @@ int inputholdthreshold = 15; // Frames til in input should start repeating
 int inputholddelay = 2; // How many frames to skip on hold (2 == every other, 3 == every other 3, etc.) 
 const int channelcount = 64; // How many audio channels in the song
 int rowcount = 0xffff; // How many rows in the song - 65535 chains * 16 phrases * 16 steps = 16776960 steps / 4 steps = 4194240 beats
-int bpm = 155; // 170; // Beats per minute of the song
+int bpm = 170; // Beats per minute of the song
 int tps = 6; // Ticks per step of the song
 int fps = 60; // Frame rate in hz of the UI
 double ticklength = 0; // Nanoseconds per tick
@@ -197,7 +197,7 @@ class instrument
         static const int synth_menu_width = 1;
         static const int synth_menu_height = 10;
         static const int sample_menu_width = 1;
-        static const int sample_menu_height = 13;
+        static const int sample_menu_height = 14;
 
         // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
@@ -434,6 +434,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
             geptr->SetChannelVolume(channel_index, 1);
             geptr->SetChannelPitchRatio(channel_index, 1);
             geptr->SetChannelPanning(channel_index, 0.5f);
+            geptr->SetChannelFilter(channel_index, FilterType::none, FilterAlgorithm::chamberlain, 1.0f, 0.0f);
             synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
             synthlist[channel_index]->volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
@@ -455,6 +456,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
             geptr->SetChannelTimeOffsets(channel_index, instrumentlist[i]->start_time_ms, instrumentlist[i]->mid_time_ms, instrumentlist[i]->end_time_ms);
             geptr->SetChannelPanning(channel_index, instrumentlist[i]->panning);
             geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
+            geptr->SetChannelFilter(channel_index, instrumentlist[i]->filter, FilterAlgorithm::chamberlain, instrumentlist[i]->cutoff, instrumentlist[i]->resonance);
             sampleautomatorlist[channel_index].volume = instrumentlist[i]->volume;
             sampleautomatorlist[channel_index].volume_freq = instrumentlist[i]->volume_freq;
             sampleautomatorlist[channel_index].freq = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
@@ -2523,6 +2525,7 @@ void EditorControl()
 
                     // Copy to clipboard
                     copied_note = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0];
+                    copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1];
 
                     // Preview note
                     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft)

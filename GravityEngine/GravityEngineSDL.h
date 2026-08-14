@@ -107,6 +107,8 @@ private:
             SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
             // Convert the audio
             converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
+            // Free the audio buffer
+            free(audio_buf);
         };
 
         // Destruct audio
@@ -124,8 +126,6 @@ private:
         ChannelType type = ChannelType::file; // Sound type currently playing
         std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
         bool looping = false; // Loop audio
-        std::thread* synth_thread = nullptr; // CPU thread to run the synth audio generation on
-        std::thread* file_thread = nullptr; // CPU thread to run the file audio load on
         std::atomic<bool> synth_playing = false; // Flag if synth audio is playing
         std::atomic<bool> file_playing = false; // Flag if file audio is playing
         bool file_first_loop = false; // First loop of the audio file
@@ -156,6 +156,23 @@ private:
         std::atomic<float> panning = 0.5;
         GravityEngine_Sound* currently_playing_sound_ref = nullptr; // Sound playing ref
 
+        // Filter variables
+        int sample_frames;
+        FilterType filter = FilterType::none;
+        FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
+
+        // Filter
+        float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
+        float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
+
+        // Filter state
+        float lp_l = 0.0f;
+        float bp_l = 0.0f;
+        float hp_l = 0.0f;
+        float lp_r = 0.0f;
+        float bp_r = 0.0f;
+        float hp_r = 0.0f;
+
         // -= Methods =-
 
         // Construct audio
@@ -184,6 +201,14 @@ private:
             int bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8;
             int buffer_size = sample_frames * audio_spec.channels * bytes_per_sample;
             buffer_size *= SDL_GetAudioStreamFrequencyRatio(ac->sdl_audio_stream);
+
+            // Reset filter state
+            ac->lp_l = 0.0f;
+            ac->bp_l = 0.0f;
+            ac->hp_l = 0.0f;
+            ac->lp_r = 0.0f;
+            ac->bp_r = 0.0f;
+            ac->hp_r = 0.0f;
 
             // First stream feed
             ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio, audio_spec);
@@ -242,7 +267,6 @@ private:
             file_playing = true;
             std::thread lt(GravityEngine_AudioChannel::FeedAudioFileStreamAsync, this, &file_playing, audio_spec, audio_device_id);
             lt.detach();
-            file_thread = &lt;
             // Flag that this sound channel is busy playing
             state = playing;
             // Set whether this channel should loop or not
@@ -264,7 +288,6 @@ private:
             synth_playing = true;
             std::thread st(GravityEngine_Synth::GenerateAudio, gravity_engine_synth_ref, sdl_audio_stream, audio_spec, audio_device_id, &state, &synth_playing);
             st.detach();
-            synth_thread = &st;
             // Attach the audio stream to the channel's audio device
             SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
             // Start playback
@@ -345,7 +368,7 @@ private:
                 std::memcpy(play_data.data(), currently_playing_audio->data() + audio_file_read_offset, to_write);
 
                 // Apply panning effects
-                PanAudio(play_data.data(), to_write, audio_spec);
+                ApplyAudioFX(play_data.data(), to_write, audio_spec);
 
                 // There is no need to write if nothing is going to be written
                 if (to_write > 0)
@@ -373,16 +396,20 @@ private:
         }
 
         // Panning audio function
-        void PanAudio(Uint8* data, int to_write, SDL_AudioSpec audio_spec)
+        // Uint8* data : pointer to audio data
+        // int to_write : amount of data to work on
+        // SDL_AudioSpec : audio specifications to work with
+        void ApplyAudioFX(Uint8* data, int to_write, SDL_AudioSpec audio_spec)
         {
             float this_pan = (panning - 0.5f) * 2.0f; // Panning is 0 to 1 with 0.5 being centered. This converts said format to -1 to 1 with 0 centered.
             int bit_size = SDL_AUDIO_BITSIZE(audio_spec.format);
             bool is_float = SDL_AUDIO_ISFLOAT(audio_spec.format);
 
-            // Apply panning effect
+            // Apply effects
             if (audio_spec.channels == 1)
             {
                 // TODO: % multiply the volume in mono like the Gameboy does (-1 == 0.5 gain, 1 == 0.5 gain, 0 == 1 gain, etc.)
+                // TODO: Audio filters!
             }
             else
             {
@@ -397,6 +424,8 @@ private:
                     // COPILOT : Apply panning to 8-bit audio
                     for (int i = 0; i < to_write; i += 2)
                     {
+                        // Panning --
+
                         // Get the left and right data
                         Uint8 left = data[i];
                         Uint8 right = data[i + 1];
@@ -409,11 +438,24 @@ private:
                         s_left = (int)(s_left * left_gain);
                         s_right = (int)(s_right * right_gain);
 
-                        // TODO: Audio filters!
+                        // Audio filters --
+
+                        // Process filtered out
+                        if (algorithm == FilterAlgorithm::chamberlain)
+                        {
+                            ProcessChamberlainFilter(s_left, cutoff, resonance, audio_spec.freq, &lp_l, &bp_l, &hp_l);
+                            ProcessChamberlainFilter(s_right, cutoff, resonance, audio_spec.freq, &lp_r, &bp_r, &hp_r);
+                        }
+
+                        // Get filtered value based on the type of filter
+                        float filtered_left = (filter == FilterType::lowpass ? lp_l : (filter == FilterType::highpass ? hp_l : (filter == FilterType::bandpass ? bp_l : s_left)));
+
+                        // Get filtered value based on the type of filter
+                        float filtered_right = (filter == FilterType::lowpass ? lp_r : (filter == FilterType::highpass ? hp_r : (filter == FilterType::bandpass ? bp_r : s_right)));
 
                         // Convert back to unsigned
-                        data[i] = (Uint8)(std::clamp(s_left + 128, 0, 255));
-                        data[i + 1] = (Uint8)(std::clamp(s_right + 128, 0, 255));
+                        data[i] = (Uint8)(std::clamp(filtered_left + 128.0, 0.0, 255.0));
+                        data[i + 1] = (Uint8)(std::clamp(filtered_right + 128.0, 0.0, 255.0));
                     }
                 }
                 else if (bit_size == 16)
@@ -429,11 +471,24 @@ private:
                         int16_t& left = samples[i * 2 + 0];
                         int16_t& right = samples[i * 2 + 1];
 
-                        // TODO: Audio filters!
+                        // Audio filters --
+
+                        // Process filtered out
+                        if (algorithm == FilterAlgorithm::chamberlain)
+                        {
+                            ProcessChamberlainFilter(left, cutoff, resonance, audio_spec.freq, &lp_l, &bp_l, &hp_l);
+                            ProcessChamberlainFilter(right, cutoff, resonance, audio_spec.freq, &lp_r, &bp_r, &hp_r);
+                        }
+
+                        // Get filtered value based on the type of filter
+                        float filtered_left = (filter == FilterType::lowpass ? lp_l : (filter == FilterType::highpass ? hp_l : (filter == FilterType::bandpass ? bp_l : left)));
+
+                        // Get filtered value based on the type of filter
+                        float filtered_right = (filter == FilterType::lowpass ? lp_r : (filter == FilterType::highpass ? hp_r : (filter == FilterType::bandpass ? bp_r : right)));
 
                         // Calculate left and right samples to the sample pointers
-                        left = static_cast<int16_t>(left * left_gain);
-                        right = static_cast<int16_t>(right * right_gain);
+                        left = static_cast<int16_t>(filtered_left * left_gain);
+                        right = static_cast<int16_t>(filtered_right * right_gain);
                     }
                 }
                 else if (bit_size == 32 && is_float)
@@ -448,15 +503,55 @@ private:
                         // Get the left and right sample references
                         float& left = samples[i * 2 + 0];
                         float& right = samples[i * 2 + 1];
-                        
-                        // TODO: Audio filters!
+
+                        // Audio filters --
+
+                        // Process filtered out
+                        if (algorithm == FilterAlgorithm::chamberlain)
+                        {
+                            ProcessChamberlainFilter(left, cutoff, resonance, audio_spec.freq, &lp_l, &bp_l, &hp_l);
+                            ProcessChamberlainFilter(right, cutoff, resonance, audio_spec.freq, &lp_r, &bp_r, &hp_r);
+                        }
+
+                        // Get filtered value based on the type of filter
+                        float filtered_left = (filter == FilterType::lowpass ? lp_l : (filter == FilterType::highpass ? hp_l : (filter == FilterType::bandpass ? bp_l : left)));
+
+                        // Get filtered value based on the type of filter
+                        float filtered_right = (filter == FilterType::lowpass ? lp_r : (filter == FilterType::highpass ? hp_r : (filter == FilterType::bandpass ? bp_r : right)));
 
                         // Calculate left and right samples to the sample pointers
-                        left *= left_gain;
-                        right *= right_gain;
+                        left = filtered_left * left_gain;
+                        right = filtered_right * right_gain;
                     }
                 }
             }
+        }
+
+        // Chamerblain filter processing - COPILOT function implemented into a sequestored function
+        // float sample : Current decimal audio position
+        // float cutoff : 0 to 1 freq filter cutoff 
+        // float resonance : 0 to 1 resonance frequency
+        // float sample_rate_freq : Audio sample rate (e.g. 48000hz)
+        // float* lp : Pointer to the lowpass filter state variable
+        // float* bp : Pointer to the bandpass filter state variable
+        // float* hp : Pointer to the highpass filter state variable
+        void ProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
+        {
+            // Apply filter
+            float warped = cutoff * cutoff * cutoff;
+            float cutoff_hz = warped * (sample_rate_freq * 0.5f);
+            float f = std::clamp(2.0f * sinf(PI * cutoff_hz / sample_rate_freq), 0.f, 0.999f);
+            float q = std::clamp(1.0f - resonance, 0.05f, 1.f);
+
+            // Calculate filter
+            (*hp) = sample - (*lp) - q * (*bp);
+            (*bp) = (*bp) + f * (*hp);
+            (*lp) = (*lp) + f * (*bp);
+
+            // Dampen output to prevent feedback looping
+            (*hp) *= 0.999f;
+            (*bp) *= 0.999f;
+            (*lp) *= 0.999f;
         }
 
         // Get state of channel
@@ -488,6 +583,12 @@ private:
             currently_playing_sound_ref = nullptr;
             currently_playing_audio = nullptr;
             SDL_CloseAudioDevice(audio_device_id);
+            // Free up the audio stream
+            if (sdl_audio_stream != nullptr)
+            {
+				SDL_DestroyAudioStream(sdl_audio_stream);
+				sdl_audio_stream = nullptr;
+            }
         };
     };
 
@@ -768,19 +869,44 @@ public:
     ~GravityEngine_Core()
     {
         // Delete all of the layers
+        for (int i = 0; i < canvas_h; i++)
+            delete[] canvas_debug[i];
         delete[] canvas_debug;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] canvas_ui[i];
         delete[] canvas_ui;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] canvas_fg[i];
         delete[] canvas_fg;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] canvas_bg[i];
         delete[] canvas_bg;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] canvas_ent[i];
         delete[] canvas_ent;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] color_ui[i];
         delete[] color_ui;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] color_fg[i];
         delete[] color_fg;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] color_bg[i];
         delete[] color_bg;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] color_ent[i];
         delete[] color_ent;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] color_debug[i];
         delete[] color_debug;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] collision_static[i];
         delete[] collision_static;
+        for (int i = 0; i < canvas_h; i++)
+            delete[] collision_dynamic[i];
         delete[] collision_dynamic;
         delete[] buf_col_screen;
+        delete[] last_buf_col_screen;
         delete[] buf_char_screen;
     }
 
@@ -853,7 +979,42 @@ public:
             SDL_DestroySurface(draw_chars[i]);
         delete[] draw_chars;
         TTF_DestroyRendererTextEngine(engine);
+
+        // Close the font
+        if (sans != nullptr)
+        {
+            TTF_CloseFont(sans);
+            sans = nullptr;
+        }
+
+        // Done with TTF
         TTF_Quit();
+
+        // Destroy all textures
+        if (render_texture != nullptr)
+        {
+            SDL_DestroyTexture(render_texture);
+            render_texture = nullptr;
+        }
+        if (char_texture != nullptr)
+        {
+            SDL_DestroyTexture(char_texture);
+            char_texture = nullptr;
+        }
+
+        // Destroy the window
+        if (window != nullptr)
+        {
+            SDL_DestroyWindow(window);
+            window = nullptr;
+        }
+
+        // Destroy the renderer
+        if (renderer != nullptr)
+        {
+            SDL_DestroyRenderer(renderer);
+            renderer = nullptr;
+        }
 
         // Free audio channels
         for (auto ac : audio_channels)
@@ -1203,7 +1364,7 @@ public:
 
     // Set sound channel pitch ratio
     // int channel : channel to set pitch ratio on
-    // int ratio : pitch ratio to set it to
+    // double ratio : pitch ratio to set it to
     void SetChannelPitchRatio(int channel, double ratio)
     {
         channel = channel % audio_channels.size();
@@ -1212,11 +1373,26 @@ public:
 
     // Set sound channel volume
     // int channel : channel to set pitch ratio on
-    // int volume : Volume to set it to
+    // float volume : Volume to set it to
     void SetChannelVolume(int channel, float volume)
     {
         channel = channel % audio_channels.size();
         audio_channels[channel]->SetVolume(volume);
+    }
+
+    // Set sound channel filter
+    // int channel : channel to set filter on
+    // FilterType filter : type of filter - Bandpass, Lowpass, etc.
+    // FilterAlgorithm algorithm : algorithm to use to make the filter
+    // float cutoff : Filter cutoff position
+    // float resonance : Filter resonance position
+    void SetChannelFilter(int channel, FilterType filter, FilterAlgorithm algorithm, float cutoff, float resonance)
+    {
+        channel = channel % audio_channels.size();
+        audio_channels[channel]->filter = filter;
+        audio_channels[channel]->algorithm = algorithm;
+        audio_channels[channel]->cutoff = cutoff;
+        audio_channels[channel]->resonance = resonance;
     }
 
     // Set sound channel panning
