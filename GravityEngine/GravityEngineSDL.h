@@ -365,7 +365,7 @@ private:
                 std::vector<Uint8> play_data(to_write);
                 std::memcpy(play_data.data(), currently_playing_audio->data() + audio_file_read_offset, to_write);
 
-                // Apply panning effects
+                // Apply effects
                 ApplyAudioFX(play_data.data(), to_write, audio_spec);
 
                 // There is no need to write if nothing is going to be written
@@ -568,15 +568,7 @@ private:
         ~GravityEngine_AudioChannel()
         {
             // Stop the playback
-            SDL_PauseAudioDevice(audio_device_id);
-            // Flag that this sound channel has been stopped and cleared
-            state = stopped;
-            // Wait for the synth thread if this is a synth
-            if (type == ChannelType::synth)
-            {
-                // Wait for the thread to quit
-                while (synth_playing) {}
-            }
+            StopPlayback();
             SDL_Delay(5);
             currently_playing_sound_ref = nullptr;
             currently_playing_audio = nullptr;

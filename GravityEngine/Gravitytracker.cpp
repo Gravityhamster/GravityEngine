@@ -45,6 +45,8 @@ int chain_grid_h; // Height of the Chain Editor UI
 int chain_grid_w; // Width of the Chain Editor UI
 int phrase_grid_h; // Height of the Phrase Editor UI
 int phrase_grid_w; // Width of the Phrase Editor UI
+int table_grid_h; // Height of the Table Editor UI
+int table_grid_w; // Width of the table Editor UI
 bool running = false; // Is the song currently playing?
 std::thread* timing_thread; // Thread to play ticks
 edit_mod leftrightcenter = center; // Editing state for which part of the number we are editing
@@ -55,6 +57,7 @@ int copied_instr = -1; // Clipboard for copying an instrument
 int copied_effect = -1; // Clipboard for copying an instrument
 int copied_effect_param = -1; // Clipboard for copying an instrument
 int copied_smple = -1; // Clipboard for copying a sample
+int copied_tble = -1; // Clipboard for copying a table
 int open_channel = -1; // Track which channel we've opened on
 int open_chain = -1; // Tracking which chain we have open
 int open_chain_index = 0; // Index of chain in the song
@@ -63,6 +66,7 @@ int open_phrase_index = 0; // Index of phrase in the chain in the song
 int playing_channel = -1; // Track which channel we're playing
 int open_instrument = -1; // Tracking which instrument we have open
 int open_sample = -1; // Tracking which sample we have open
+int open_table = -1; // Tracking which table we have open
 char fx[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}; // List of effects
 int min_note = -12; // Minimum note that can be inserted
 int max_note = 107; // Maximum note that can be inserted
@@ -195,9 +199,9 @@ class instrument
     public:
         // Audio parameters
         static const int synth_menu_width = 1;
-        static const int synth_menu_height = 10;
+        static const int synth_menu_height = 11;
         static const int sample_menu_width = 1;
-        static const int sample_menu_height = 14;
+        static const int sample_menu_height = 15;
 
         // Note to self: 0x80 (128) is the middle number in 0xFF (255).
 
@@ -235,6 +239,9 @@ class instrument
         int end_time_ms = 0xFFFFFF;
         int loop = false;
 
+        // Table reference
+        int table_index = -1;
+
         // Methods
         instrument* DeepCopyInstrument()
         {
@@ -265,8 +272,10 @@ class instrument
             i->base_pitch = base_pitch;
             i->sample_index = sample_index;
             i->start_time_ms = start_time_ms;
+            i->mid_time_ms = mid_time_ms;
             i->end_time_ms = end_time_ms;
             i->loop = loop;
+            i->table_index = table_index;
 
             // Return copy
             return i;
@@ -281,6 +290,14 @@ class table
         static const int len_y = 16;
         int arr[len_y][len_x]; // 7w x 16h - List of ticks for sound automation 
 
+        // 0 : 00 to FF - Transpose
+        // 1 : Effect Type
+        // 2 : 0000 to FFFF - Effect Value
+        // 3 : Effect Type
+        // 4 : 0000 to FFFF - Effect Value
+        // 5 : Effect Type
+        // 6 : 0000 to FFFF - Effect Value
+
         // Create phrase
         table()
         {
@@ -292,6 +309,21 @@ class table
 
         // Destruct phrase
         ~table() {};
+
+        // Methods
+        table* DeepCopyTable()
+        {
+            // New sample
+            auto t = new table();
+
+            // Apply parameters
+            for (int i = 0; i < len_y; i++)
+                for (int q = 0; q < len_x; q++)
+					t->arr[i][q] = arr[i][q];
+
+            // Return copy
+            return t;
+        }
 };
 
 // SampleAutomator - Automation related to samples on channels
@@ -449,7 +481,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
             synthlist[channel_index]->filter = instrumentlist[i]->filter;
             geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
         }
-        else if (instrumentlist[i]->type == ChannelType::file)
+        else if (instrumentlist[i]->type == ChannelType::file && instrumentlist[i]->sample_index != -1)
         {
             geptr->SetChannelPitchRatio(channel_index, GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune));
             geptr->SetChannelVolume(channel_index, instrumentlist[i]->volume*4);
@@ -1594,6 +1626,16 @@ void DrawInstrumentUI()
         if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
         ty++;
 
+        // Table reference
+        ty++;
+        geptr->DrawTextString(0, ty, geptr->entity, "TBL:", primary_text_a); // Table
+        outstr = instrumentlist[open_instrument]->table_index == -1 ? "----" : IntToHexString(instrumentlist[open_instrument]->table_index);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5, ty, geptr->entity, outstr,
+            cursor_y == ty - 5 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 5) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+
         if (instrument_edit_y != -1 && instrument_edit_digit_count == 2)
         {
             // Modify left part of the number
@@ -1691,7 +1733,6 @@ void DrawInstrumentUI()
         if (cursor_y == ty - 3) { instrument_edit_y = ty; instrument_edit_digit_count = 4; }
         ty++;
         
-
         // Filter type
         ty++;
         geptr->DrawTextString(0, ty, geptr->entity, "FLT:", primary_text_a); // Lowpass, Bandpass, Highpass, None
@@ -1717,6 +1758,16 @@ void DrawInstrumentUI()
         geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
             cursor_y == ty - 4 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
         if (cursor_y == ty - 4) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
+        ty++;
+
+        // Table reference
+        ty++;
+        geptr->DrawTextString(0, ty, geptr->entity, "TBL:", primary_text_a); // Table
+        outstr = instrumentlist[open_instrument]->table_index == -1 ? "----" : IntToHexString(instrumentlist[open_instrument]->table_index);
+        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+        geptr->DrawTextString(5 + 2, ty, geptr->entity, outstr,
+            cursor_y == ty - 5 && cursor_x == 0 ? primary_text_b : primary_text_a); // Show value
+        if (cursor_y == ty - 5) { instrument_edit_y = ty; instrument_edit_digit_count = 2; }
         ty++;
 
         if (instrument_edit_y != -1 && instrument_edit_digit_count != 4 && instrument_edit_digit_count >= 2)
@@ -2508,7 +2559,7 @@ void EditorControl()
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
 
                     // Movement keys
-                    if (goup || godown || goright || goleft)
+                    if ((goup || godown || goright || goleft) && phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] != -9999)
                     {
                         // Edit note pitch
                         if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] += 12;
@@ -2758,9 +2809,72 @@ void EditorControl()
         // For editing synth instrument
         if (instrumentlist[open_instrument]->type == ChannelType::synth)
         {
+            // Handle deep copy input logic
+            GetDeepCopyInputs();
+
+            // If we have a successful deep copy, do it
+            if (do_deep_copy == 2 && cursor_y == 10 && cursor_x == 0 && GetAt(&tablelist, instrumentlist[open_instrument]->table_index) != nullptr)
+            {
+                // Deep copy the sample
+                auto i = GetAt(&tablelist, instrumentlist[open_instrument]->table_index)->DeepCopyTable();
+                auto index = GetNextEmpty(&tablelist);
+                InsertAt(&tablelist, index, i);
+                instrumentlist[open_instrument]->table_index = index;
+            }
+            else
+            {
+                // Modify value
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                {
+                    // Edit table
+                    if (cursor_y == 10 && cursor_x == 0)
+                    {
+                        // If the sample value is unfilled, insert 0
+                        if (instrumentlist[open_instrument]->table_index == -1)
+                        {
+                            if (copied_smple == -1)
+                            {
+                                // Set UI reference to Hex0
+                                instrumentlist[open_instrument]->table_index = 0x0000;
+                                // If this sample doesn't exist yet, insert it
+                                if (GetAt(&samplelist, instrumentlist[open_instrument]->table_index) == nullptr)
+                                    InsertAt(&samplelist, instrumentlist[open_instrument]->table_index, new sample());
+                            }
+                            else
+                            {
+                                // Set UI reference to copied sample
+                                instrumentlist[open_instrument]->table_index = copied_tble;
+                            }
+                        }
+                        // If double click, add a new sample
+                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                        {
+                            // Set UI reference to the next empty
+                            instrumentlist[open_instrument]->table_index = GetNextEmpty(&tablelist);
+                            // Add the new sample
+                            InsertAt(&tablelist, instrumentlist[open_instrument]->table_index, new table());
+                            // Copy to clipboard
+                            copied_tble = instrumentlist[open_instrument]->table_index;
+                        }
+                        else
+                        {
+                            // Copy to clipboard
+                            copied_tble = instrumentlist[open_instrument]->table_index;
+                        }
+                    }
+                }
+            }
+
             // Editing
             if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
             {
+                // Delete table index
+                if (cursor_y == 10 && cursor_x == 0 && 
+                    dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                {
+                    instrumentlist[open_instrument]->table_index = -1;
+                }
+
                 // Get edit ptr
                 int* edit;
 
@@ -2799,6 +2913,9 @@ void EditorControl()
                     break;
                 case 13: // Filter Resonance
                     edit = &(instrumentlist[open_instrument]->resonance_edit);
+                    break;
+                case 15: // Table Index
+                    edit = &instrumentlist[open_instrument]->table_index;
                     break;
                 }
 
@@ -2849,6 +2966,7 @@ void EditorControl()
                     case 9: // Pitch Sweep
                     case 12: // Filter Cutoff
                     case 13: // Filter Resonance
+                    case 15: // Table index
                         // Wrap the cell between 0x0000 and 0xFFFF
                         if ((*edit) < 0)
                             (*edit) = 0xFFFF + ((*edit) + 1);
@@ -2913,6 +3031,30 @@ void EditorControl()
                 {
                     // TODO: Implement going to the wave editor
                 }
+                // Go to the below page
+                else if (godown)
+                {
+                    // Set open sample
+                    if (cursor_y == 10 && cursor_x == 0 && instrumentlist[open_instrument]->table_index != -1)
+                    {
+                        open_table = instrumentlist[open_instrument]->table_index;
+                    }
+                    // If the open_sample is valid
+                    if (open_table != -1)
+                    {
+                        // Check if the sample does not exist
+                        if (GetAt(&tablelist, open_table) == nullptr)
+                        {
+                            InsertAt(&tablelist, open_table, new table());
+                        }
+                        // Table
+                        state = m_table;
+                        //sample_offset_y = 0;
+                        cursor_x = SDL_clamp(cursor_x, 0, table_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, table_grid_h - 1);
+                        breakend = true;
+                    }
+                }
             }
             // Moving
             else
@@ -2936,6 +3078,59 @@ void EditorControl()
         {
             // Handle deep copy input logic
             GetDeepCopyInputs();
+
+            // If we have a successful deep copy, do it
+            if (do_deep_copy == 2 && cursor_y == 14 && cursor_x == 0 && GetAt(&tablelist, instrumentlist[open_instrument]->table_index) != nullptr)
+            {
+                // Deep copy the sample
+                auto i = GetAt(&tablelist, instrumentlist[open_instrument]->table_index)->DeepCopyTable();
+                auto index = GetNextEmpty(&tablelist);
+                InsertAt(&tablelist, index, i);
+                instrumentlist[open_instrument]->table_index = index;
+            }
+            else
+            {
+                // Modify value
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                {
+                    // Edit table
+                    if (cursor_y == 14 && cursor_x == 0)
+                    {
+                        // If the sample value is unfilled, insert 0
+                        if (instrumentlist[open_instrument]->table_index == -1)
+                        {
+                            if (copied_smple == -1)
+                            {
+                                // Set UI reference to Hex0
+                                instrumentlist[open_instrument]->table_index = 0x0000;
+                                // If this sample doesn't exist yet, insert it
+                                if (GetAt(&samplelist, instrumentlist[open_instrument]->table_index) == nullptr)
+                                    InsertAt(&samplelist, instrumentlist[open_instrument]->table_index, new sample());
+                            }
+                            else
+                            {
+                                // Set UI reference to copied sample
+                                instrumentlist[open_instrument]->table_index = copied_tble;
+                            }
+                        }
+                        // If double click, add a new sample
+                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                        {
+                            // Set UI reference to the next empty
+                            instrumentlist[open_instrument]->table_index = GetNextEmpty(&tablelist);
+                            // Add the new sample
+                            InsertAt(&tablelist, instrumentlist[open_instrument]->table_index, new table());
+                            // Copy to clipboard
+                            copied_tble = instrumentlist[open_instrument]->table_index;
+                        }
+                        else
+                        {
+                            // Copy to clipboard
+                            copied_tble = instrumentlist[open_instrument]->table_index;
+                        }
+                    }
+                }
+            }
 
             // If we have a successful deep copy, do it
             if (do_deep_copy == 2 && cursor_y == 1 && cursor_x == 0 && GetAt(&samplelist, instrumentlist[open_instrument]->sample_index) != nullptr)
@@ -2996,6 +3191,13 @@ void EditorControl()
                 // Editing
                 if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
                 {
+                    // Delete table index
+                    if (cursor_y == 14 && cursor_x == 0 &&
+                        dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    {
+                        instrumentlist[open_instrument]->table_index = -1;
+                    }
+
                     // Get edit ptr
                     int* edit;
 
@@ -3009,7 +3211,7 @@ void EditorControl()
                         edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->type);
                         break;
                     case 4: // Sample Index
-                        edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->sample_index);
+                        edit = &instrumentlist[open_instrument]->sample_index;
                         break;
                     case 5: // Volume
                         edit = &(instrumentlist[open_instrument]->volume_edit);
@@ -3046,6 +3248,9 @@ void EditorControl()
                         break;
                     case 17: // Filter Resonance
                         edit = &(instrumentlist[open_instrument]->resonance_edit);
+                        break;
+                    case 19: // Table Index
+                        edit = &instrumentlist[open_instrument]->table_index;
                         break;
                     }
 
@@ -3152,6 +3357,7 @@ void EditorControl()
                         case 8: // Pitch Sweep
                         case 16: // Filter Cutoff
                         case 17: // Filter Resonance
+                        case 19: // Table index
                             // Wrap the cell between 0x0000 and 0xFFFF
                             if ((*edit) < 0)
                                 (*edit) = 0xFFFF + ((*edit) + 1);
@@ -3235,6 +3441,30 @@ void EditorControl()
                             breakend = true;
                         }
                     }
+                    // Go to the below page
+                    else if (godown)
+                    {
+                        // Set open sample
+                        if (cursor_y == 14 && cursor_x == 0 && instrumentlist[open_instrument]->table_index != -1)
+                        {
+                            open_table = instrumentlist[open_instrument]->table_index;
+                        }
+                        // If the open_sample is valid
+                        if (open_table != -1)
+                        {
+                            // Check if the sample does not exist
+                            if (GetAt(&tablelist, open_table) == nullptr)
+                            {
+                                InsertAt(&tablelist, open_table, new table());
+                            }
+                            // Table
+                            state = m_table;
+                            //sample_offset_y = 0;
+                            cursor_x = SDL_clamp(cursor_x, 0, table_grid_w - 1);
+                            cursor_y = SDL_clamp(cursor_y, 0, table_grid_h - 1);
+                            breakend = true;
+                        }
+                    }
                 }
                 // Moving
                 else
@@ -3264,6 +3494,11 @@ void EditorControl()
 
         // Update UI
         DrawInstrumentUI();
+    }
+
+    // Handle input for the table menu
+    if (state == m_table && !breakend)
+    {
     }
 
     // Handle input for the wave menu
@@ -3406,7 +3641,9 @@ void GameInit()
     song_grid_h = std::min(rowcount, geptr->GetCanvasH() - 4);
     song_grid_w = std::min(channelcount, (geptr->GetCanvasW() - 8) / 5);
     phrase_grid_h = std::min(16, geptr->GetCanvasH() - 4);
-    phrase_grid_w = 8;
+    phrase_grid_w = phrase::len_x;
+    table_grid_h = std::min(16, geptr->GetCanvasH() - 4);
+    table_grid_w = table::len_x;
     chain_grid_h = std::min(16, geptr->GetCanvasH() - 4);
     chain_grid_w = 2;
     file_display_count = song_grid_h - 6;
