@@ -305,10 +305,7 @@ class table
             // Fill the chain with blanks
             for (int y = 0; y < len_y; y++)
                 for (int x = 0; x < len_x; x++)
-                    if (x == 0)
-                        arr[y][x] = -9999;
-                    else
-                        arr[y][x] = -1;
+                    arr[y][x] = (x == 0 ? 0x0000 : -1);
         };
 
         // Destruct phrase
@@ -1859,7 +1856,7 @@ void DrawTableUI(int off_y)
         }
 
         // FX1 -
-        thiscolor = cursor_y == y && cursor_x == 2 ? header_text_b : header_text_a;
+        thiscolor = cursor_y == y && cursor_x == 1 ? header_text_b : header_text_a;
 
         // Get the current table grid value
         int effect1 = tablelist[open_table]->arr[y + off_y][1];
@@ -1877,7 +1874,7 @@ void DrawTableUI(int off_y)
         }
 
         // FX1 Param -
-        thiscolor = cursor_y == y && cursor_x == 3 ? primary_text_b : primary_text_a;
+        thiscolor = cursor_y == y && cursor_x == 2 ? primary_text_b : primary_text_a;
 
         // Get the current table grid value
         int effect1_param = tablelist[open_table]->arr[y + off_y][2];
@@ -1908,7 +1905,7 @@ void DrawTableUI(int off_y)
         }
 
         // FX2 -
-        thiscolor = cursor_y == y && cursor_x == 4 ? header_text_b : header_text_a;
+        thiscolor = cursor_y == y && cursor_x == 3 ? header_text_b : header_text_a;
 
         // Get the current table grid value
         int effect2 = tablelist[open_table]->arr[y + off_y][3];
@@ -1926,7 +1923,7 @@ void DrawTableUI(int off_y)
         }
 
         // FX2 Param -
-        thiscolor = cursor_y == y && cursor_x == 5 ? primary_text_b : primary_text_a;
+        thiscolor = cursor_y == y && cursor_x == 4 ? primary_text_b : primary_text_a;
 
         // Get the current table grid value
         int effect2_param = tablelist[open_table]->arr[y + off_y][4];
@@ -1957,7 +1954,7 @@ void DrawTableUI(int off_y)
         }
 
         // FX3 -
-        thiscolor = cursor_y == y && cursor_x == 6 ? header_text_b : header_text_a;
+        thiscolor = cursor_y == y && cursor_x == 5 ? header_text_b : header_text_a;
 
         // Get the current table grid value
         int effect3 = tablelist[open_table]->arr[y + off_y][5];
@@ -1975,7 +1972,7 @@ void DrawTableUI(int off_y)
         }
 
         // FX3 Param -
-        thiscolor = cursor_y == y && cursor_x == 7 ? primary_text_b : primary_text_a;
+        thiscolor = cursor_y == y && cursor_x == 6 ? primary_text_b : primary_text_a;
 
         // Get the current table grid value
         int effect3_param = tablelist[open_table]->arr[y + off_y][6];
@@ -3713,8 +3710,170 @@ void EditorControl()
     // Handle input for the table menu
     if (state == m_table && !breakend)
     {
+        // Do actions given the context --
+
+        // Editing
+        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        {
+            // Edit transposition pitch
+            if (cursor_x == 0)
+            {
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x1000;
+                        if (godown) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x1000;
+                        if (goright) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x0100;
+                        if (goleft) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x0010;
+                        if (godown) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x0010;
+                        if (goright) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x0001;
+                        if (goleft) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x0001;
+                    }
+
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (tablelist[open_table]->arr[0][cursor_y + table_offset_y] < 0)
+                        tablelist[open_table]->arr[0][cursor_y + table_offset_y] = 0xFFFF + (tablelist[open_table]->arr[0][cursor_y + table_offset_y] + 1);
+                    if (tablelist[open_table]->arr[0][cursor_y + table_offset_y] > 0xFFFF)
+                        tablelist[open_table]->arr[0][cursor_y + table_offset_y] = (tablelist[open_table]->arr[0][cursor_y + table_offset_y] - 1) - 0xFFFF;
+                }
+            }
+
+            // Edit fx1,2,3
+            if (cursor_x == 1 || cursor_x == 3 || cursor_x == 5)
+            {
+                // Set to 0 if it isn't set
+                if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
+
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 5;
+                    if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 5;
+                    if (goright) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 1;
+                    if (goleft) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 1;
+
+                    // Wrap the cell between 0 and effect list length
+                    int effect_list_len = (sizeof(fx) / sizeof(fx[0])) - 1;
+                    if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] < 0)
+                        tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = effect_list_len + (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] + 1);
+                    if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] > effect_list_len)
+                        tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] - 1) - effect_list_len;
+                }
+
+                // Copy to clipboard
+                copied_effect = tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x];
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
+            }
+
+            // Edit fx1,2,3 param
+            if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
+            {
+                // Set to 0 if it isn't set
+                if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
+
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    {
+                        if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x1000;
+                        if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x1000;
+                        if (goright) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0100;
+                        if (goleft) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0100;
+                    }
+                    // Mod the right two digits
+                    else
+                    {
+                        if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0010;
+                        if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0010;
+                        if (goright) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0001;
+                        if (goleft) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0001;
+                    }
+
+                    // Wrap the cell between 0x0000 and 0xFFFF
+                    if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] < 0)
+                        tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = 0xFFFF + (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] + 1);
+                    if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] > 0xFFFF)
+                        tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] - 1) - 0xFFFF;
+                }
+
+                // Copy to clipboard
+                copied_effect_param = tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x];
+
+                // Handle deletes
+                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
+            }
+        }
+        // Goto page
+        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+        {
+            // Go to the above page
+            if (goup)
+            {
+                // If the open_instrument is valid
+                if (open_instrument != -1)
+                {
+                    // Check if the instrument does not exist
+                    if (GetAt(&instrumentlist, open_instrument) == nullptr)
+                    {
+                        InsertAt(&instrumentlist, open_instrument, new instrument());
+                    }
+                    // Instrument
+                    state = m_instrument;
+                    cursor_x = SDL_clamp(cursor_x, 0, GetAt(&instrumentlist, open_instrument)->type == ChannelType::synth ? instrument::synth_menu_width - 1 : instrument::sample_menu_width - 1);
+                    cursor_y = SDL_clamp(cursor_y, 0, GetAt(&instrumentlist, open_instrument)->type == ChannelType::synth ? instrument::synth_menu_height - 1 : instrument::sample_menu_height - 1);
+                    breakend = true;
+                }
+            }
+        }
+        // Moving
+        else
+        {
+            cursor_x += goright - goleft;
+            cursor_y += godown - goup;
+        }
+
+        // wrap the cursor and clamp offsets
+        if (cursor_x > table_grid_w - 1)
+            cursor_x = 0;
+        if (cursor_x < 0)
+            cursor_x = table_grid_w - 1;
+        if (cursor_y + table_offset_y > table::len_y - 1)
+        {
+            cursor_y = 0;
+            table_offset_y = 0;
+        }
+        if (cursor_y + table_offset_y < 0)
+        {
+            cursor_y = table_grid_h - 1;
+            table_offset_y = table::len_y - table_grid_h;
+        }
+
+        // Move the page
+        if (cursor_y > table_grid_h - 1)
+            table_offset_y += 1;
+        if (cursor_y < 0)
+            table_offset_y -= 1;
+
+        cursor_y = SDL_clamp(cursor_y, 0, table_grid_h - 1);
+        table_offset_y = SDL_clamp(table_offset_y, 0, table::len_y - table_grid_h);
+
         // Update UI
-        table_offset_y = 0;
         DrawTableUI(table_offset_y);
     }
 
