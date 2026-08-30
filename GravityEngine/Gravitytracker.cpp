@@ -29,6 +29,7 @@ int offset_x; // X offset of the editor scroll
 int offset_y; // Y offset of the editor scroll
 int chain_offset_y; // Y offset when editing the chain
 int phrase_offset_y; // Y offset of the editor scroll
+int table_offset_y; // Y offset of the editor scroll
 int sample_offset_y; // Y offset of the samples selector scroll
 int inputholdtimer = 0; // The timer for checking if an input should be considered held-down
 int inputholdthreshold = 15; // Frames til in input should start repeating
@@ -304,7 +305,10 @@ class table
             // Fill the chain with blanks
             for (int y = 0; y < len_y; y++)
                 for (int x = 0; x < len_x; x++)
-                    arr[y][x] = -1;
+                    if (x == 0)
+                        arr[y][x] = -9999;
+                    else
+                        arr[y][x] = -1;
         };
 
         // Destruct phrase
@@ -1791,6 +1795,218 @@ void DrawInstrumentUI()
     }
 }
 
+// Draw Table Editor UI
+// off_y : UI offset on the y axis
+void DrawTableUI(int off_y)
+{
+    // Width and height of the screen
+    int h = table_grid_h;
+    int w = table_grid_w;
+
+    // // Song position pointer
+    // if (((open_phrase_index == channellist[playing_channel].phrase_ptr &&
+    //     open_chain_index == channellist[playing_channel].chain_ptr && open_channel == playing_channel) ||
+    //     (channellist[open_channel].phrase_ptr == open_phrase_index && channellist[open_channel].chain_ptr == open_chain_index &&
+    //         channellist[open_channel].cant_play == false && play_context == pt_song)
+    //     ) &&
+    //     pause_song == false)
+    // {
+    //     geptr->DrawChar(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, '>');
+    //     geptr->DrawSetColor(4, 3 + channellist[playing_channel].step_ptr, geptr->entity, primary_text_a);
+    // }
+
+    // Menu title and table number
+    auto outstr = IntToHexString(open_table);
+    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+    geptr->DrawTextString(0, 1, geptr->entity, "TABLE - " + outstr, primary_text_a);
+
+    // Draw the row numbers
+    for (int i = 0; i < h && i + off_y < rowcount; i++)
+    {
+        int tempint = i + off_y;
+
+        auto upperstr = IntToHexString(tempint);
+
+        upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+        geptr->DrawTextString(0, 3 + i, geptr->entity, upperstr, primary_text_a);
+    }
+
+    // Table headers
+    geptr->DrawTextString(5, 2, geptr->entity, "TRSP", header_text_a);
+    geptr->DrawTextString(10, 2, geptr->entity, "EFFT1", header_text_a);
+    geptr->DrawTextString(16, 2, geptr->entity, "EFFT2", header_text_a);
+    geptr->DrawTextString(22, 2, geptr->entity, "EFFT3", header_text_a);
+
+    //Draw the table grid
+    for (int y = 0; y < h && y + off_y < rowcount; y++)
+    {
+        // Note Offset -
+        auto thiscolor = cursor_y == y && cursor_x == 0 ? primary_text_b : primary_text_a;
+
+        // Get the current table grid value
+        int note = tablelist[open_table]->arr[y + off_y][0];
+        if (note == -9999)
+        {
+            // Draw null pitch
+            geptr->DrawTextString(5, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw pitch
+            auto upperstr = IntToHexString(note);
+            upperstr.insert(upperstr.begin(), 4 - upperstr.size(), '0');
+            geptr->DrawTextString(5, 3 + y, geptr->entity, upperstr, thiscolor);
+        }
+
+        // FX1 -
+        thiscolor = cursor_y == y && cursor_x == 2 ? header_text_b : header_text_a;
+
+        // Get the current table grid value
+        int effect1 = tablelist[open_table]->arr[y + off_y][1];
+        if (effect1 == -1)
+        {
+            // Draw null effect
+            geptr->DrawTextString(10, 3 + y, geptr->entity, "-", thiscolor);
+        }
+        else
+        {
+            // Draw effect char
+            std::string outchr = "";
+            outchr += fx[effect1];
+            geptr->DrawTextString(10, 3 + y, geptr->entity, outchr, thiscolor);
+        }
+
+        // FX1 Param -
+        thiscolor = cursor_y == y && cursor_x == 3 ? primary_text_b : primary_text_a;
+
+        // Get the current table grid value
+        int effect1_param = tablelist[open_table]->arr[y + off_y][2];
+        if (effect1_param == -1)
+        {
+            // Draw null parameter
+            geptr->DrawTextString(11, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw effect parameter
+            auto outstr = IntToHexString(effect1_param);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(11, 3 + y, geptr->entity, outstr, thiscolor);
+        }
+
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(11, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(12, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(13, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(14, 3 + y, geptr->entity, primary_text_a);
+        }
+
+        // FX2 -
+        thiscolor = cursor_y == y && cursor_x == 4 ? header_text_b : header_text_a;
+
+        // Get the current table grid value
+        int effect2 = tablelist[open_table]->arr[y + off_y][3];
+        if (effect2 == -1)
+        {
+            // Draw null effect
+            geptr->DrawTextString(16, 3 + y, geptr->entity, "-", thiscolor);
+        }
+        else
+        {
+            // Draw effect char
+            std::string outchr = "";
+            outchr += fx[effect2];
+            geptr->DrawTextString(16, 3 + y, geptr->entity, outchr, thiscolor);
+        }
+
+        // FX2 Param -
+        thiscolor = cursor_y == y && cursor_x == 5 ? primary_text_b : primary_text_a;
+
+        // Get the current table grid value
+        int effect2_param = tablelist[open_table]->arr[y + off_y][4];
+        if (effect2_param == -1)
+        {
+            // Draw null parameter
+            geptr->DrawTextString(17, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw effect parameter
+            auto outstr = IntToHexString(effect2_param);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(17, 3 + y, geptr->entity, outstr, thiscolor);
+        }
+
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(17, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(18, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(19, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(20, 3 + y, geptr->entity, primary_text_a);
+        }
+
+        // FX3 -
+        thiscolor = cursor_y == y && cursor_x == 6 ? header_text_b : header_text_a;
+
+        // Get the current table grid value
+        int effect3 = tablelist[open_table]->arr[y + off_y][5];
+        if (effect3 == -1)
+        {
+            // Draw null effect
+            geptr->DrawTextString(22, 3 + y, geptr->entity, "-", thiscolor);
+        }
+        else
+        {
+            // Draw effect char
+            std::string outchr = "";
+            outchr += fx[effect3];
+            geptr->DrawTextString(22, 3 + y, geptr->entity, outchr, thiscolor);
+        }
+
+        // FX3 Param -
+        thiscolor = cursor_y == y && cursor_x == 7 ? primary_text_b : primary_text_a;
+
+        // Get the current table grid value
+        int effect3_param = tablelist[open_table]->arr[y + off_y][6];
+        if (effect3_param == -1)
+        {
+            // Draw null parameter
+            geptr->DrawTextString(23, 3 + y, geptr->entity, "----", thiscolor);
+        }
+        else
+        {
+            // Draw effect parameter
+            auto outstr = IntToHexString(effect3_param);
+            outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+            geptr->DrawTextString(23, 3 + y, geptr->entity, outstr, thiscolor);
+        }
+
+        // Modify right part of the number
+        if (leftrightcenter == left)
+        {
+            geptr->DrawSetColor(23, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(24, 3 + y, geptr->entity, primary_text_a);
+        }
+        // Modify left part of the number
+        else if (leftrightcenter == right)
+        {
+            geptr->DrawSetColor(25, 3 + y, geptr->entity, primary_text_a);
+            geptr->DrawSetColor(26, 3 + y, geptr->entity, primary_text_a);
+        }
+    }
+}
+
 // Draw Instrument Editor UI
 void DrawWaveUI()
 {
@@ -1928,8 +2144,6 @@ void TrackTicks()
             // Break if we have no more time
             if (rem <= std::chrono::nanoseconds(0))
                 break;
-
-			// TODO: Test using thread sleep instead of sdl delay
 
             // Should we sleep or nah?
             if (rem > std::chrono::milliseconds(5))
@@ -2403,7 +2617,7 @@ void EditorControl()
                         {
                             InsertAt(&phraselist, open_phrase, new phrase());
                         }
-                        // Chain
+                        // Phrase
                         state = m_phrase;
                         cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
                         cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
@@ -3499,6 +3713,9 @@ void EditorControl()
     // Handle input for the table menu
     if (state == m_table && !breakend)
     {
+        // Update UI
+        table_offset_y = 0;
+        DrawTableUI(table_offset_y);
     }
 
     // Handle input for the wave menu
