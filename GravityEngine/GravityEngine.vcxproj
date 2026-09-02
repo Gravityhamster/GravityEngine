@@ -24,7 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Gravitytracker.cpp" />
-    <ClCompile Include="TrackerClasses.cpp" />
+    <ClCompile Include="TrackerTypes.cpp" />
     <ClCompile Include="TrackerFunctionDefinitions.cpp" />
     <ClCompile Include="TrackerFunctionSignatures.cpp" />
   </ItemGroup>

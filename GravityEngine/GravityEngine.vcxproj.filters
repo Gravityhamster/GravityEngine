@@ -26,7 +26,7 @@
     <ClCompile Include="Gravitytracker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TrackerClasses.cpp">
+    <ClCompile Include="TrackerTypes.cpp">
       <Filter>Header Files</Filter>
     </ClCompile>
     <ClCompile Include="TrackerFunctionSignatures.cpp">
