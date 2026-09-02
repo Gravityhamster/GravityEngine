@@ -447,11 +447,14 @@ GetNextEmpty(std::vector<T*>* vec)
 // Channel list type pointer
 ChannelType* channellisttypeptr[channelcount];
 
+// Uninitialized method
+void ApplyChainTransposition(int channel_index, int* f);
+
 // Play step phrase
 // channelnumber : The particular channel to play the step on
 // playing_phrase : Phrase to play
 // step_ptr : Phrase progress index
-void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double pitch_offset = 1)
+void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 {
     // Get frequency to play
     auto f = phraselist[playing_phrase]->arr[step_ptr][0];
@@ -462,6 +465,10 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr, double 
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
         (*channellisttypeptr[channel_index]) = instrumentlist[i]->type;
+        // Get playing chain tranposition
+        if (play_context != pt_phrase && play_context != pt_phrase_all && running && !pause_song)
+		    ApplyChainTransposition(channel_index, &f);
+        // Play step on channel
         if (instrumentlist[i]->type == ChannelType::synth)
         {
             geptr->SetChannelVolume(channel_index, 1);
@@ -726,6 +733,31 @@ private:
 
 // Channel sequencer variable
 channelsequencer channellist[channelcount];
+
+// Apply playing chain transposition - Implementation
+// channel_index : The channel to get the transposition from
+// f : The original frequency
+void ApplyChainTransposition(int channel_index, int* f)
+{
+    int playing_chain_index = channellist[channel_index].playing_chain;
+    // If the context is not within a playing channel, then break
+    if (playing_chain_index == -1)
+		return;
+    int transpose = chainlist[playing_chain_index]->arr_transpose[channellist[channel_index].phrase_ptr];
+    // Mirror transpose along 0 such that FFFF becomes -1, FFFE becomes -2, etc. until 8001 is -32767, and 8000 is 32768, and 7FFF is 32767, 
+    // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc. until 7FFE is 32766, and 7FFF is 32767
+    if (transpose > 0x8000)
+        transpose = -((0x8000 - transpose) + 0x8000);
+    (*f) += transpose;
+    // Wrap f into the note range
+    while ((*f) < min_note || (*f) > max_note)
+    {
+        if ((*f) > max_note)
+            (*f) = min_note + ((*f) - max_note) - 1;
+        else if ((*f) < min_note)
+            (*f) = max_note - (min_note - (*f)) + 1;
+    }
+}
 
 // Deep Copy Phrase
 // phrase_index : The ID of the phrase
@@ -2562,16 +2594,16 @@ void EditorControl()
                         // Mod the left two digits
                         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
                         {
-                            if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x1000;
-                            if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x1000;
+                            if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0C00;
+                            if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0C00;
                             if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0100;
                             if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0100;
                         }
                         // Mod the right two digits
                         else
                         {
-                            if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0010;
-                            if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0010;
+                            if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x000C;
+                            if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x000C;
                             if (goright) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0001;
                             if (goleft) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0001;
                         }
@@ -3724,25 +3756,25 @@ void EditorControl()
                     // Mod the left two digits
                     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
                     {
-                        if (goup) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x1000;
-                        if (godown) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x1000;
-                        if (goright) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x0100;
-                        if (goleft) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x0100;
+                        if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0C00;
+                        if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0C00;
+                        if (goright) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0100;
+                        if (goleft) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0100;
                     }
                     // Mod the right two digits
                     else
                     {
-                        if (goup) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x0010;
-                        if (godown) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x0010;
-                        if (goright) tablelist[open_table]->arr[0][cursor_y + table_offset_y] += 0x0001;
-                        if (goleft) tablelist[open_table]->arr[0][cursor_y + table_offset_y] -= 0x0001;
+                        if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x000C;
+                        if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x000C;
+                        if (goright) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0001;
+                        if (goleft) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0001;
                     }
 
                     // Wrap the cell between 0x0000 and 0xFFFF
-                    if (tablelist[open_table]->arr[0][cursor_y + table_offset_y] < 0)
-                        tablelist[open_table]->arr[0][cursor_y + table_offset_y] = 0xFFFF + (tablelist[open_table]->arr[0][cursor_y + table_offset_y] + 1);
-                    if (tablelist[open_table]->arr[0][cursor_y + table_offset_y] > 0xFFFF)
-                        tablelist[open_table]->arr[0][cursor_y + table_offset_y] = (tablelist[open_table]->arr[0][cursor_y + table_offset_y] - 1) - 0xFFFF;
+                    if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] < 0)
+                        tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = 0xFFFF + (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] + 1);
+                    if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] > 0xFFFF)
+                        tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] - 1) - 0xFFFF;
                 }
             }
 
