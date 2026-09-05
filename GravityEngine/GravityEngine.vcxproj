@@ -24,9 +24,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Gravitytracker.cpp" />
-    <ClCompile Include="TrackerTypes.cpp" />
+    <ClCompile Include="TrackerTypesAndVariables.h" />
     <ClCompile Include="TrackerFunctionDefinitions.cpp" />
-    <ClCompile Include="TrackerFunctionSignatures.cpp" />
+    <ClCompile Include="TrackerFunctionSignatures.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

@@ -1,3 +1,4 @@
+#pragma once
 #include "GravitySynthSDL.h"
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
@@ -523,33 +524,6 @@ private:
                     }
                 }
             }
-        }
-
-        // Chamerblain filter processing - COPILOT function implemented into a sequestored function
-        // float sample : Current decimal audio position
-        // float cutoff : 0 to 1 freq filter cutoff 
-        // float resonance : 0 to 1 resonance frequency
-        // float sample_rate_freq : Audio sample rate (e.g. 48000hz)
-        // float* lp : Pointer to the lowpass filter state variable
-        // float* bp : Pointer to the bandpass filter state variable
-        // float* hp : Pointer to the highpass filter state variable
-        void ProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
-        {
-            // Apply filter
-            float warped = cutoff * cutoff * cutoff;
-            float cutoff_hz = warped * (sample_rate_freq * 0.5f);
-            float f = std::clamp(2.0f * sinf(PI * cutoff_hz / sample_rate_freq), 0.f, 0.999f);
-            float q = std::clamp(1.0f - resonance, 0.05f, 1.f);
-
-            // Calculate filter
-            (*hp) = sample - (*lp) - q * (*bp);
-            (*bp) = (*bp) + f * (*hp);
-            (*lp) = (*lp) + f * (*bp);
-
-            // Dampen output to prevent feedback looping
-            (*hp) *= 0.999f;
-            (*bp) *= 0.999f;
-            (*lp) *= 0.999f;
         }
 
         // Get state of channel

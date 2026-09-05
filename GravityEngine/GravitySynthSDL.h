@@ -1,3 +1,4 @@
+#pragma once
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
@@ -35,7 +36,7 @@ enum class FilterType
 // float* lp : Pointer to the lowpass filter state variable
 // float* bp : Pointer to the bandpass filter state variable
 // float* hp : Pointer to the highpass filter state variable
-void ProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
+inline void ProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
 {
     // Apply filter
     float warped = cutoff * cutoff * cutoff;
@@ -84,7 +85,7 @@ enum class FilterAlgorithm
 };
 
 // Conversion map for waveforms
-std::map<SynthWaveForm, std::string> waveform_to_string = {
+inline std::map<SynthWaveForm, std::string> waveform_to_string = {
     {SynthWaveForm::sine, "SINE"},
     {SynthWaveForm::square, "SQUARE"},
     {SynthWaveForm::pulse, "PULSE"},
