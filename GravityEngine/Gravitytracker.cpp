@@ -133,12 +133,6 @@ void GameInit()
 
     // Get the length of the tick
     ticklength = BpmToTicklength(bpm);
-
-    // Start tick tracker
-    running = true;
-    std::thread tt(TrackTicks);
-    tt.detach();
-    timing_thread = &tt;
 }
 
 // Master pre code
@@ -166,8 +160,7 @@ void PostGameLoop()
 void ExitGameLoop()
 {
     // Stop playing
-    running = false;
-    while (play_thread) {};
+    StopSequenceThread();
 }
 
 int main()

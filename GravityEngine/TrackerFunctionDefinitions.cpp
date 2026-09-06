@@ -104,9 +104,26 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
     {
         // TODO: Implement instrument parameters
         // TODO: Sub-step on preview so that we can preview the table commands as well
+        // TODO: This shouldn't be necessary after the restructure. 
+        //       That is the ptr. Should be able to direct access.
         (*channellisttypeptr[channel_index]) = instrumentlist[i]->type;
+        // Copy the settings that the channels needs to know to keep doing the transposition beyond the start
+        channellist[channel_index].playing_table = instrumentlist[i]->table_index;
+        channellist[channel_index].init_play = true;
+        channellist[channel_index].base_freq = f;
+        channellist[channel_index].playing_instr = i;
+        // Table logic
+        auto t = GetAt(&tablelist, channellist[channel_index].playing_table);
+        if (t != nullptr)
+        {
+            // Apply table transposition
+            channellist[channel_index].active_transposition = t->arr[0][0];
+            ApplyTableTransposition(channel_index, &f);
+
+            // TODO: Get and apply other functions from the table
+        }
         // Get playing chain tranposition
-        if (play_context != pt_phrase && play_context != pt_phrase_all && running && !pause_song)
+        if (play_context != pt_phrase && play_context != pt_phrase_all && play_context != pt_preview && running && !pause_song)
             ApplyChainTransposition(channel_index, &f);
         // Play step on channel
         if (instrumentlist[i]->type == ChannelType::synth)
@@ -148,6 +165,35 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
     }
 }
 
+// Update playing step - Pitch
+// channelnumber : The particular channel to play the step on
+// playing_phrase : Phrase to play
+// step_ptr : Phrase progress index
+void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr)
+{
+    // Get frequency to play
+    auto f = channellist[channel_index].base_freq.load();
+    auto i = channellist[channel_index].playing_instr.load();
+    // If no note is present, no need to play
+    if (f != -9999 && GetAt(&instrumentlist, i) != nullptr)
+    {
+        // Apply playing chain transposition
+        if (play_context != pt_phrase && play_context != pt_phrase_all && running && !pause_song)
+            ApplyChainTransposition(channel_index, &f);
+        // Get playing table transposition
+        ApplyTableTransposition(channel_index, &f);
+        // Update step on channel
+        if (instrumentlist[i]->type == ChannelType::synth)
+        {
+            synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
+        }
+        else if (instrumentlist[i]->type == ChannelType::file)
+        {
+            sampleautomatorlist[channel_index].freq = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
+        }
+    }
+}
+
 // Play step chain
 // channelnumber : The particular channel to play the step on
 // playing_chain : Chain to play
@@ -183,9 +229,36 @@ void ApplyChainTransposition(int channel_index, int* f)
     // If the context is not within a playing channel, then break
     if (playing_chain_index == -1)
         return;
+    
+    // Get transposition sources and add them together
     int transpose = chainlist[playing_chain_index]->arr_transpose[channellist[channel_index].phrase_ptr];
+    int channelsequencer_trsp = channellist[channel_index].active_transposition;
+    transpose += channelsequencer_trsp;
+
     // Mirror transpose along 0 such that FFFF becomes -1, FFFE becomes -2, etc. until 8001 is -32767, and 8000 is 32768, and 7FFF is 32767, 
-    // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc. until 7FFE is 32766, and 7FFF is 32767
+    // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc.
+    if (transpose > 0x8000)
+        transpose = -((0x8000 - transpose) + 0x8000);
+    (*f) += transpose;
+    // Wrap f into the note range
+    while ((*f) < min_note || (*f) > max_note)
+    {
+        if ((*f) > max_note)
+            (*f) = min_note + ((*f) - max_note) - 1;
+        else if ((*f) < min_note)
+            (*f) = max_note - (min_note - (*f)) + 1;
+    }
+}
+
+// Apply playing table transposition - Implementation
+// channel_index : The channel to get the transposition from
+// f : The original frequency
+void ApplyTableTransposition(int channel_index, int* f)
+{
+    // Get transposition sources and add them together
+    int transpose = channellist[channel_index].active_transposition;
+    // Mirror transpose along 0 such that FFFF becomes -1, FFFE becomes -2, etc. until 8001 is -32767, and 8000 is 32768, and 7FFF is 32767, 
+    // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc.
     if (transpose > 0x8000)
         transpose = -((0x8000 - transpose) + 0x8000);
     (*f) += transpose;
@@ -313,7 +386,8 @@ void DoTick()
     // Tick the channel sequencers
     for (int i = 0; i < channelcount; i++)
     {
-        if (!pause_song) channellist[i].sub_step();
+        if (!pause_song || play_context == pt_preview) 
+            channellist[i].sub_step();
         if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(); // Run synth automation on animated variables
         if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation(); // Run sample automation on animated variables
     }
@@ -1484,6 +1558,24 @@ void StopAllChannels()
         geptr->StopChannel(i);
 }
 
+// Start the sequence thread
+void StartSequenceThread()
+{
+    // Start tick tracker
+    running = true;
+    std::thread tt(TrackTicks);
+    tt.detach();
+    timing_thread = &tt;
+}
+
+// Stop the sequence thread
+void StopSequenceThread()
+{
+    // Stop playing
+    running = false;
+    while (play_thread) {};
+}
+
 // Handle deep copy inputs
 void GetDeepCopyInputs()
 {
@@ -1531,8 +1623,12 @@ void EditorControl()
 
     // Handle play button
     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == false)
+    {
         // Pause the song playback
         willpause = true;
+        // Stop the playing thread
+        StopSequenceThread();
+    }
 
     // Move the cursor
     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed() ||
@@ -1592,6 +1688,8 @@ void EditorControl()
                     // Unpause the song playback
                     pause_song = false;
                 }
+                // Start the playing thread
+                StartSequenceThread();
             }
 
             // Modify value
@@ -1759,10 +1857,13 @@ void EditorControl()
                 channellist[playing_channel].playing_phrase = -1;
                 channellist[playing_channel].step_ptr = 0;
                 channellist[playing_channel].tick_ptr = 0;
+                ticknumber = 0;
                 // Set the scope of play to only this phrase
                 play_context = pt_chain;
                 // Unpause the song playback
                 pause_song = false;
+                // Start the playing thread
+                StartSequenceThread();
             }
 
             // Modify value
@@ -1987,10 +2088,13 @@ void EditorControl()
                 channellist[playing_channel].playing_phrase = open_phrase;
                 channellist[playing_channel].step_ptr = 0;
                 channellist[playing_channel].tick_ptr = 0;
+                ticknumber = 0;
                 // Set the scope of play to only this phrase
                 play_context = pt_phrase;
                 // Unpause the song playback
                 pause_song = false;
+                // Start the playing thread
+                StartSequenceThread();
             }
 
             // Modify value
@@ -2085,8 +2189,17 @@ void EditorControl()
                     copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1];
 
                     // Preview note
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft)
+                    if (pause_song && (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft))
+                    {
+                        // pt_preview allows sub-step to run regardless of if the song is paused
+                        play_context = pt_preview;
+                        channellist[open_channel].tick_ptr = 0;
+                        ticknumber = 0;
+                        // Play the note
                         PlayStepPhrase(open_channel, open_phrase, cursor_y + phrase_offset_y);
+                        // Start the playing thread
+                        StartSequenceThread();
+                    }
 
                     // Handle deletes
                     if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
@@ -2260,9 +2373,14 @@ void EditorControl()
             }
 
             // Stop previewing
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
+            if (pause_song && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
             {
+                // Reset play context because if you don't, play_context will keep going
+                play_context = pt_song;
+                // Stop audio
                 StopAllChannels();
+                // Stop the playing thread
+                StopSequenceThread();
             }
 
             // Next and last phrase

@@ -55,10 +55,21 @@ void PlayStepChain(int channel_index, int playing_chain, int phrase_ptr, int ste
 // step_ptr : Phrase progress index
 void PlayStepSong(int channel_index, int chain_ptr, int phrase_ptr, int step_ptr);
 
+// Update playing step - Pitch
+// channelnumber : The particular channel to play the step on
+// playing_phrase : Phrase to play
+// step_ptr : Phrase progress index
+void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr);
+
 // Apply playing chain transposition - Implementation
 // channel_index : The channel to get the transposition from
 // f : The original frequency
 void ApplyChainTransposition(int channel_index, int* f);
+
+// Apply playing table transposition - Implementation
+// channel_index : The channel to get the transposition from
+// f : The original frequency
+void ApplyTableTransposition(int channel_index, int* f);
 
 // Deep Copy Phrase
 // phrase_index : The ID of the phrase
@@ -81,6 +92,12 @@ double BpmToTicklength(int b);
 // This is the tick loop; All song execution should go inside this function
 // Table>Phrase>Chain>Song <- Per channel
 void DoTick();
+
+// Start the sequence thread
+void StartSequenceThread();
+
+// Stop the sequence thread
+void StopSequenceThread();
 
 // Convert i to hex string
 // int i : Number to convert

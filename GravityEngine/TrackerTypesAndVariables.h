@@ -22,7 +22,8 @@ enum playing_type
     pt_chain,
     pt_phrase,
     pt_chain_all,
-    pt_phrase_all
+    pt_phrase_all,
+    pt_preview
 };
 
 // Song editor menu
@@ -360,6 +361,9 @@ public:
 // List of chains and phrases
 extern std::vector<chain*> chainlist;
 extern std::vector<phrase*> phraselist;
+extern std::vector<instrument*> instrumentlist;
+extern std::vector<sample*> samplelist;
+extern std::vector<table*> tablelist;
 
 // ChannelSequencer - Track position of the channel in time in the song
 class channelsequencer
@@ -373,7 +377,12 @@ public:
     std::atomic<int> tick_ptr = 0; // Int position of the channel in the table
     std::atomic<int> playing_chain = -1;
     std::atomic<int> playing_phrase = -1;
+    std::atomic<int> playing_table = -1;
+    std::atomic<int> playing_instr = -1;
+    std::atomic<int> base_freq = -9999;
+    std::atomic<bool> init_play = true;
     std::atomic<bool> cant_play = false;
+    std::atomic<int> active_transposition = 0;
 
     // Count tick
     void sub_step()
@@ -382,7 +391,21 @@ public:
         if (cant_play == true && play_context == pt_song)
             return;
 
-        // TODO : Substep-level effects
+        // Handle transposition
+        if (playing_table != -1 && init_play == false)
+		{
+			auto t = GetAt(&tablelist, playing_table);
+			if (t != nullptr)
+			{
+				// Apply transposition
+				active_transposition = t->arr[tick_ptr][0];
+                UpdateStepPitch(channelnumber, playing_phrase, step_ptr);
+			}
+            
+            // TODO: Get and apply other functions
+		}
+        // No need to act on init_play
+        init_play = false;
 
         // Increment tick in table
         tick_ptr++;
@@ -431,6 +454,7 @@ public:
         phrase_ptr = 0;
         step_ptr = 0;
         tick_ptr = 0;
+        ticknumber = 0;
 
         // Keep moving back til we get to a valid play point to play at
         do
@@ -719,9 +743,6 @@ public:
 };
 
 // Data structures --
-extern std::vector<instrument*> instrumentlist;
-extern std::vector<sample*> samplelist;
-extern std::vector<table*> tablelist;
 extern GravityEngine_Synth* synthlist[channelcount];
 extern ChannelType* channellisttypeptr[channelcount];
 extern channelsequencer channellist[channelcount];
