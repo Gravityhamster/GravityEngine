@@ -7,6 +7,7 @@
 #include <future>
 #include <thread>
 #include <vector>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <random>
@@ -94,16 +95,28 @@ inline std::map<SynthWaveForm, std::string> waveform_to_string = {
     {SynthWaveForm::noise, "NOISE"}
 };
 
+// Struct for submitting changes to the synth parameters from the main thread to the audio thread
+struct live_change
+{
+    double freq = -9999.0;
+};
+
 // Template for synth objects
 class GravityEngine_Synth
 {
-public:
 
     // Synth parameters
+private:
     std::atomic<float> freq = 50.0;
     std::atomic<float> volume = 1;
     std::atomic<float> panning = 0.5;
     std::atomic<float> pulse_width = 0.5;
+
+public:
+	std::queue<live_change> live_changes;
+    std::atomic<bool> start_playing = false;
+    std::atomic<int> frame_counter = 0;
+    std::atomic<float> frames_per_tick = 0;
 
     std::atomic<float> pitch_freq = 0;
     std::atomic<float> volume_freq = 0;
@@ -157,6 +170,7 @@ public:
         int buffer_bytes = buffer_samples * sizeof(float);
         float* buffer = (float*)SDL_malloc(buffer_bytes);
         float phase = 0.;
+        float last_freq = 0;
         float pan_phase = synth->panning;
         float pw_phase = synth->pulse_width;
         SDL_SetAudioStreamGain(stream, 1.0f);
@@ -185,15 +199,35 @@ public:
             // So that would be 2 samples per frame.
             // This is why we are looping frame-by-frame. 
             // We are calculating all samples per frame in one loop cycle.
-            int threshold_frames = synth->sample_frames * 2;
+            int threshold_frames = synth->sample_frames;
+            int get_frames = synth->sample_frames;
+            //printf("%d\n", synth->sample_frames);
             int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
 
             // Check available data
-            if (available_frames < threshold_frames)
+            if (available_frames < threshold_frames && synth->start_playing)
             {
                 // Fill in audio data
-                for (int frame = 0; frame < synth->sample_frames; frame++)
+                for (int frame = 0; frame < get_frames; frame++)
                 {
+                    // Get any changes in my mailbox
+                    if (synth->frame_counter >= synth->frames_per_tick)
+                    {
+						synth->frame_counter -= synth->frames_per_tick;
+                        // Get next in queue
+						if (synth->live_changes.size() > 0)
+						{
+                            // Get the change list
+							live_change change = synth->live_changes.front();
+                            synth->live_changes.pop();
+
+                            // Get any frequency chagnes
+							if (change.freq != -9999)
+								synth->freq = change.freq;
+						}
+                    }
+                    synth->frame_counter++;
+
                     // The pitch of the sound is determined by sound wave cycles
                     // per second. Thus, we take the number of samples in a second
                     // And divide the pitch frequency across sample rate.
@@ -270,6 +304,14 @@ public:
                     {
                         phase -= 1.;
                     }
+
+                    float this_freq = synth->freq.load();
+
+                    if (this_freq != last_freq)
+                    {
+                        printf("audio sees %f\n", this_freq);
+                        last_freq = this_freq;
+                    }
                 }
 
                 // Push buffer to stream
@@ -283,10 +325,15 @@ public:
         // End sequence
         SDL_free(buffer);
         (*synth_playing) = false;
+        
+		// Reset synth state and action queue
+        synth->start_playing = false;
+        while (synth->live_changes.empty() == false)
+            synth->live_changes.pop();
     }
 
     // Automate the synth modulation variables (Effected by call rate)
-    void SynthAutomation()
+    void SynthAutomation(double* new_freq)
     {
         // Step panning
         if (pan_freq > 0)
@@ -308,9 +355,9 @@ public:
         if (pitch_freq != 0)
         {
             if (pitch_freq > 0)
-                freq = freq * (pitch_freq + 1);
+                (*new_freq) = freq * (pitch_freq + 1); // Stage the new freq change
             if (pitch_freq < 0)
-                freq = freq / (abs(pitch_freq) + 1);
+                (*new_freq) = freq / (abs(pitch_freq) + 1); // Stage the new freq change
         }
         // Step volumne
         if (volume_freq != 0)

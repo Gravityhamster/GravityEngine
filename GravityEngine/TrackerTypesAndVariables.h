@@ -43,6 +43,7 @@ const int channelcount = 64; // How many audio channels in the song
 
 // Global Variables --
 
+extern int step_has_happened;
 extern playing_type play_context; // What type of play are we doing
 extern int ticknumber; // Track tick progress
 extern int cursor_x; // X location of the user's cursor
@@ -378,34 +379,34 @@ public:
     std::atomic<int> playing_chain = -1;
     std::atomic<int> playing_phrase = -1;
     std::atomic<int> playing_table = -1;
-    std::atomic<int> playing_instr = -1;
-    std::atomic<int> base_freq = -9999;
-    std::atomic<bool> init_play = true;
+    // std::atomic<int> playing_instr = -1;
+    // std::atomic<int> base_freq = -9999;
     std::atomic<bool> cant_play = false;
-    std::atomic<int> active_transposition = 0;
+    // std::atomic<int> active_transposition = 0;
 
     // Count tick
-    void sub_step()
+    void sub_step(double* freq)
     {
         // If channel is in a locked state, do not play in the song context
         if (cant_play == true && play_context == pt_song)
             return;
 
         // Handle transposition
-        if (playing_table != -1 && init_play == false)
+        if (playing_table != -1)
 		{
 			auto t = GetAt(&tablelist, playing_table);
 			if (t != nullptr)
 			{
 				// Apply transposition
-				active_transposition = t->arr[tick_ptr][0];
-                UpdateStepPitch(channelnumber, playing_phrase, step_ptr);
+                int table_trsp = t->arr[tick_ptr][0];
+                UpdateStepPitch(channelnumber, 
+                    play_context == pt_preview ? open_phrase : playing_phrase.load(),
+                    play_context == pt_preview ? cursor_y + offset_y : step_ptr.load(),
+                    table_trsp, freq);
 			}
             
             // TODO: Get and apply other functions
 		}
-        // No need to act on init_play
-        init_play = false;
 
         // Increment tick in table
         tick_ptr++;

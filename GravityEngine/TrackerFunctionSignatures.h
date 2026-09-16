@@ -59,7 +59,9 @@ void PlayStepSong(int channel_index, int chain_ptr, int phrase_ptr, int step_ptr
 // channelnumber : The particular channel to play the step on
 // playing_phrase : Phrase to play
 // step_ptr : Phrase progress index
-void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr);
+// tt : Table transposition to apply
+// freq : Frequency to update with the step's pitch
+void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr, int tt, double* new_freq);
 
 // Apply playing chain transposition - Implementation
 // channel_index : The channel to get the transposition from
@@ -69,7 +71,8 @@ void ApplyChainTransposition(int channel_index, int* f);
 // Apply playing table transposition - Implementation
 // channel_index : The channel to get the transposition from
 // f : The original frequency
-void ApplyTableTransposition(int channel_index, int* f);
+// tt : The table transposition to apply
+void ApplyTableTransposition(int channel_index, int* f, int tt);
 
 // Deep Copy Phrase
 // phrase_index : The ID of the phrase

@@ -86,7 +86,7 @@ GetNextEmpty(std::vector<T*>* vec)
         // Inc index
         index++;
     }
-    // Returnt he last index
+    // Return the last index
     return index;
 }
 
@@ -109,19 +109,11 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         (*channellisttypeptr[channel_index]) = instrumentlist[i]->type;
         // Copy the settings that the channels needs to know to keep doing the transposition beyond the start
         channellist[channel_index].playing_table = instrumentlist[i]->table_index;
-        channellist[channel_index].init_play = true;
-        channellist[channel_index].base_freq = f;
-        channellist[channel_index].playing_instr = i;
+        //channellist[channel_index].base_freq = f;
+        //channellist[channel_index].playing_instr = i;
+        channellist[channel_index].tick_ptr = 0;
         // Table logic
         auto t = GetAt(&tablelist, channellist[channel_index].playing_table);
-        if (t != nullptr)
-        {
-            // Apply table transposition
-            channellist[channel_index].active_transposition = t->arr[0][0];
-            ApplyTableTransposition(channel_index, &f);
-
-            // TODO: Get and apply other functions from the table
-        }
         // Get playing chain tranposition
         if (play_context != pt_phrase && play_context != pt_phrase_all && play_context != pt_preview && running && !pause_song)
             ApplyChainTransposition(channel_index, &f);
@@ -132,18 +124,27 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             geptr->SetChannelPitchRatio(channel_index, 1);
             geptr->SetChannelPanning(channel_index, 0.5f);
             geptr->SetChannelFilter(channel_index, FilterType::none, FilterAlgorithm::chamberlain, 1.0f, 0.0f);
-            synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
-            synthlist[channel_index]->volume = instrumentlist[i]->volume;
+            // TODO: These commented out property sets will be set on the synth's first queued table change
+            //synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
+            //synthlist[channel_index]->volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
-            synthlist[channel_index]->panning = instrumentlist[i]->panning;
+            //synthlist[channel_index]->panning = instrumentlist[i]->panning;
             synthlist[channel_index]->pan_freq = instrumentlist[i]->pan_freq;
-            synthlist[channel_index]->pulse_width = instrumentlist[i]->pulse_width;
+            //synthlist[channel_index]->pulse_width = instrumentlist[i]->pulse_width;
             synthlist[channel_index]->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
             synthlist[channel_index]->pitch_freq = instrumentlist[i]->pitch_freq;
             synthlist[channel_index]->cutoff = instrumentlist[i]->cutoff;
             synthlist[channel_index]->resonance = instrumentlist[i]->resonance;
             synthlist[channel_index]->waveform = instrumentlist[i]->waveform;
             synthlist[channel_index]->filter = instrumentlist[i]->filter;
+
+            // Prepare synth queueing variables
+            double ticks_per_second = (bpm * tps * 4) / 60;
+            double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
+            synthlist[channel_index]->frame_counter = frames_per_tick;
+            synthlist[channel_index]->frames_per_tick = frames_per_tick;
+
+            // Play synth
             geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
         }
         else if (instrumentlist[i]->type == ChannelType::file && instrumentlist[i]->sample_index != -1)
@@ -161,6 +162,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             sampleautomatorlist[channel_index].panning = instrumentlist[i]->panning;
             sampleautomatorlist[channel_index].pan_phase = 0.0f;
             sampleautomatorlist[channel_index].pan_freq = instrumentlist[i]->pan_freq;
+
+			// TODO : Implement sample table change queueing just like how we do for synths
         }
     }
 }
@@ -169,11 +172,13 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 // channelnumber : The particular channel to play the step on
 // playing_phrase : Phrase to play
 // step_ptr : Phrase progress index
-void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr)
+// tt : Table transposition to apply
+// freq : Frequency to update
+void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr, int tt, double* new_freq)
 {
     // Get frequency to play
-    auto f = channellist[channel_index].base_freq.load();
-    auto i = channellist[channel_index].playing_instr.load();
+    auto f = phraselist[playing_phrase]->arr[step_ptr][0];
+    auto i = phraselist[playing_phrase]->arr[step_ptr][1];
     // If no note is present, no need to play
     if (f != -9999 && GetAt(&instrumentlist, i) != nullptr)
     {
@@ -181,15 +186,15 @@ void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr)
         if (play_context != pt_phrase && play_context != pt_phrase_all && running && !pause_song)
             ApplyChainTransposition(channel_index, &f);
         // Get playing table transposition
-        ApplyTableTransposition(channel_index, &f);
-        // Update step on channel
+        ApplyTableTransposition(channel_index, &f, tt);
+        // Update the frequency change that will be written later on
         if (instrumentlist[i]->type == ChannelType::synth)
         {
-            synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
+            (*new_freq) = NoteFreq(f) + instrumentlist[i]->detune;
         }
         else if (instrumentlist[i]->type == ChannelType::file)
         {
-            sampleautomatorlist[channel_index].freq = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
+            (*new_freq) = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
         }
     }
 }
@@ -230,10 +235,8 @@ void ApplyChainTransposition(int channel_index, int* f)
     if (playing_chain_index == -1)
         return;
     
-    // Get transposition sources and add them together
+    // Get transposition from the chain
     int transpose = chainlist[playing_chain_index]->arr_transpose[channellist[channel_index].phrase_ptr];
-    int channelsequencer_trsp = channellist[channel_index].active_transposition;
-    transpose += channelsequencer_trsp;
 
     // Mirror transpose along 0 such that FFFF becomes -1, FFFE becomes -2, etc. until 8001 is -32767, and 8000 is 32768, and 7FFF is 32767, 
     // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc.
@@ -253,10 +256,11 @@ void ApplyChainTransposition(int channel_index, int* f)
 // Apply playing table transposition - Implementation
 // channel_index : The channel to get the transposition from
 // f : The original frequency
-void ApplyTableTransposition(int channel_index, int* f)
+// tt : The table transposition to apply
+void ApplyTableTransposition(int channel_index, int* f, int tt)
 {
     // Get transposition sources and add them together
-    int transpose = channellist[channel_index].active_transposition;
+    int transpose = tt;
     // Mirror transpose along 0 such that FFFF becomes -1, FFFE becomes -2, etc. until 8001 is -32767, and 8000 is 32768, and 7FFF is 32767, 
     // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc.
     if (transpose > 0x8000)
@@ -383,13 +387,30 @@ void DoTick()
 
     // Do Sub-step Code --
 
+    auto test = 0;
+
     // Tick the channel sequencers
     for (int i = 0; i < channelcount; i++)
     {
+		// Staging variables for the changes that will be written to the synths and samples
+        double new_freq = -9999;
+
+        // Get all changes to the sound
         if (!pause_song || play_context == pt_preview) 
-            channellist[i].sub_step();
-        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(); // Run synth automation on animated variables
+            channellist[i].sub_step(&new_freq);
+        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(&new_freq); // Run synth automation on animated variables
         if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation(); // Run sample automation on animated variables
+
+        // Submit changes throughout the substep
+        if (channellist[i].type == ChannelType::synth)
+        {
+            live_change s =
+            {
+                new_freq // Frequency changes
+            };
+            synthlist[i]->live_changes.push(s);
+            synthlist[i]->start_playing = true;
+        }
     }
 
     // Increment global song position in ticks --
@@ -1511,13 +1532,13 @@ void TrackTicks()
             if (rem <= std::chrono::nanoseconds(0))
                 break;
 
-            // Should we sleep or nah?
-            if (rem > std::chrono::milliseconds(5))
-                SDL_Delay(1); // Sleep the thread to relieve the CPU
-            else
-            {
-                /* Spin in place until the clock hits the next frame */
-            }
+             // Should we sleep or nah?
+             if (rem > std::chrono::milliseconds(5))
+                 SDL_Delay(1); // Sleep the thread to relieve the CPU
+             else
+             {
+                 /* Spin in place until the clock hits the next frame */
+             }
         }
     }
 
@@ -2191,6 +2212,8 @@ void EditorControl()
                     // Preview note
                     if (pause_song && (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft))
                     {
+                        // Stop the playing thread
+                        StopSequenceThread();
                         // pt_preview allows sub-step to run regardless of if the song is paused
                         play_context = pt_preview;
                         channellist[open_channel].tick_ptr = 0;

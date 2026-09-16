@@ -558,7 +558,6 @@ private:
 
     // Gravity Engine Private Attributes
 private:
-    struct SDL_AudioSpec global_audio_spec; // = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
     std::vector<GravityEngine_Object*> entity_list; // This is the list of GravityEngine objects that the engine will track and execute
     bool game_running = false; // Is the game running or no?
     int canvas_w; // Game canvas width
@@ -597,7 +596,7 @@ private:
     const char* game_version; // The version of the game
     int scr_w; // W of screen
     int scr_h; // H of screen
-    int SDL_window_props = SDL_WINDOW_FULLSCREEN; //0;
+    int SDL_window_props = SDL_WINDOW_ALWAYS_ON_TOP; //0;
     bool screen_updated = false; // The flag that tells the game if it should update the screen or not
     std::string font_path; // Location of the font to use for the text on screen
     SDL_Window* window = NULL; // Pointer to the SDL window object
@@ -616,6 +615,7 @@ private:
 
     // Gravity Engine Public Attributes
 public:
+    struct SDL_AudioSpec global_audio_spec; // = { SDL_AUDIO_S32LE,2,48000 }; // Set the format that all audio should be converted to
     bool debug_mode = false; // Show debug overlay
     bool debug_complex = false; // Show complex debug overlay
 

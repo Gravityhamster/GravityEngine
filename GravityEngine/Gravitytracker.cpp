@@ -19,7 +19,7 @@ int inputholdtimer = 0;
 int inputholdthreshold = 15;
 int inputholddelay = 2;
 int rowcount = 0xffff;
-int bpm = 170;
+int bpm = 295;
 int tps = 6;
 int fps = 60;
 double ticklength = 0;
@@ -146,8 +146,7 @@ void PreGameLoop()
         std::to_string(channellist[0].chain_ptr) + " - " +
         std::to_string(channellist[0].phrase_ptr) + " - " +
         std::to_string(channellist[0].step_ptr) + " - " +
-        std::to_string(channellist[0].tick_ptr) + " " + 
-        std::to_string(do_deep_copy) + "   ",
+        std::to_string(channellist[0].tick_ptr) + "     ",
         primary_text_a);
 }
 
@@ -168,7 +167,7 @@ int main()
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
     auto cw = 96 / 2 + 1;
     auto ch = 54 / 2;
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 37), std::max(ch, 28), fps, 1920, 1080, "./GameFont.ttf", channelcount);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 37), std::max(ch, 28), fps, 1920/2, 1080/2, "./GameFont.ttf", channelcount);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information
