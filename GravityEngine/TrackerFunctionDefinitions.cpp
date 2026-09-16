@@ -3402,7 +3402,7 @@ void EditorControl()
             }
             if (cursor_y + sample_offset_y < 0)
             {
-                cursor_y = file_display_count - 1;
+                cursor_y = std::min(current_dir_length - 1, file_display_count - 1);
                 sample_offset_y = std::max(0, current_dir_length - file_display_count);
             }
 
