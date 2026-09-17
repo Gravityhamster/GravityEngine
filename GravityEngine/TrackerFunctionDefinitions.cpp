@@ -109,8 +109,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         (*channellisttypeptr[channel_index]) = instrumentlist[i]->type;
         // Copy the settings that the channels needs to know to keep doing the transposition beyond the start
         channellist[channel_index].playing_table = instrumentlist[i]->table_index;
-        //channellist[channel_index].base_freq = f;
-        //channellist[channel_index].playing_instr = i;
+        channellist[channel_index].playing_freq = f;
+        channellist[channel_index].playing_instrument = i;
         channellist[channel_index].tick_ptr = 0;
         // Table logic
         auto t = GetAt(&tablelist, channellist[channel_index].playing_table);
@@ -125,12 +125,12 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             geptr->SetChannelPanning(channel_index, 0.5f);
             geptr->SetChannelFilter(channel_index, FilterType::none, FilterAlgorithm::chamberlain, 1.0f, 0.0f);
             // TODO: These commented out property sets will be set on the synth's first queued table change
-            //synthlist[channel_index]->freq = NoteFreq(f) + instrumentlist[i]->detune;
-            //synthlist[channel_index]->volume = instrumentlist[i]->volume;
+            synthlist[channel_index]->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+            synthlist[channel_index]->stg_volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
-            //synthlist[channel_index]->panning = instrumentlist[i]->panning;
+            synthlist[channel_index]->stg_panning = instrumentlist[i]->panning;
             synthlist[channel_index]->pan_freq = instrumentlist[i]->pan_freq;
-            //synthlist[channel_index]->pulse_width = instrumentlist[i]->pulse_width;
+            synthlist[channel_index]->stg_pulse_width = instrumentlist[i]->pulse_width;
             synthlist[channel_index]->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
             synthlist[channel_index]->pitch_freq = instrumentlist[i]->pitch_freq;
             synthlist[channel_index]->cutoff = instrumentlist[i]->cutoff;
@@ -177,8 +177,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr, int tt, double* new_freq)
 {
     // Get frequency to play
-    auto f = phraselist[playing_phrase]->arr[step_ptr][0];
-    auto i = phraselist[playing_phrase]->arr[step_ptr][1];
+    auto f = channellist[channel_index].playing_freq.load();
+    auto i = channellist[channel_index].playing_instrument.load();
     // If no note is present, no need to play
     if (f != -9999 && GetAt(&instrumentlist, i) != nullptr)
     {
@@ -393,20 +393,26 @@ void DoTick()
     for (int i = 0; i < channelcount; i++)
     {
 		// Staging variables for the changes that will be written to the synths and samples
-        double new_freq = -9999;
+        double new_freq = synthlist[i]->stg_base_freq;
+        double new_pan = synthlist[i]->stg_panning;
+        double new_vol = synthlist[i]->stg_volume;
+        double new_pw = synthlist[i]->stg_pulse_width;
 
         // Get all changes to the sound
-        if (!pause_song || play_context == pt_preview) 
+        if (!pause_song || play_context == pt_preview)
             channellist[i].sub_step(&new_freq);
-        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(&new_freq); // Run synth automation on animated variables
+        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(&new_freq, &new_pan, &new_pw, &new_vol); // Run synth automation on animated variables
         if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation(); // Run sample automation on animated variables
 
         // Submit changes throughout the substep
         if (channellist[i].type == ChannelType::synth)
         {
-            live_change s =
+            live_change_synth s =
             {
-                new_freq // Frequency changes
+                new_freq // Frequency changes,
+				, new_pan // Panning changes,
+				, new_vol // Volume changes,
+				, new_pw // Pulse width changes
             };
             synthlist[i]->live_changes.push(s);
             synthlist[i]->start_playing = true;

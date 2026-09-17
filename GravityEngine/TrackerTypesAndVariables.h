@@ -379,10 +379,9 @@ public:
     std::atomic<int> playing_chain = -1;
     std::atomic<int> playing_phrase = -1;
     std::atomic<int> playing_table = -1;
-    // std::atomic<int> playing_instr = -1;
-    // std::atomic<int> base_freq = -9999;
+    std::atomic<int> playing_freq = -9999;
+    std::atomic<int> playing_instrument = -1;
     std::atomic<bool> cant_play = false;
-    // std::atomic<int> active_transposition = 0;
 
     // Count tick
     void sub_step(double* freq)
@@ -401,7 +400,7 @@ public:
                 int table_trsp = t->arr[tick_ptr][0];
                 UpdateStepPitch(channelnumber, 
                     play_context == pt_preview ? open_phrase : playing_phrase.load(),
-                    play_context == pt_preview ? cursor_y + offset_y : step_ptr.load(),
+                    play_context == pt_preview ? cursor_y + offset_y : step_ptr.load() - 1,
                     table_trsp, freq);
 			}
             

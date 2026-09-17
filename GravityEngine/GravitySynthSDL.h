@@ -18,6 +18,15 @@
 // TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
 // TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
 
+// Struct for submitting changes to the synth parameters from the main thread to the audio thread
+struct live_change_synth
+{
+    double freq = -9999.0;
+    double pan = -2.0;
+    double vol = -1.0;
+    double pw = -1.0;
+};
+
 // Enum to define the type of filter applied to audio channel
 enum class FilterType
 {
@@ -95,25 +104,29 @@ inline std::map<SynthWaveForm, std::string> waveform_to_string = {
     {SynthWaveForm::noise, "NOISE"}
 };
 
-// Struct for submitting changes to the synth parameters from the main thread to the audio thread
-struct live_change
-{
-    double freq = -9999.0;
-};
-
 // Template for synth objects
 class GravityEngine_Synth
 {
 
     // Synth parameters
-private:
+public:
+	// Actual audio values that are used in the audio thread
     std::atomic<float> freq = 50.0;
     std::atomic<float> volume = 1;
     std::atomic<float> panning = 0.5;
     std::atomic<float> pulse_width = 0.5;
 
-public:
-	std::queue<live_change> live_changes;
+    // Staging values that are only used in tracking position in incremental changes to the synth parameters. 
+    // These are used to all movement to be smoother. So basically, the tracker thread will make a change to the
+    // audio values, then write the change to the queue and then write the change to these staging values so that
+    // it can continue from the last queue write value, even if the synth has not yet applied its changes.
+    std::atomic<float> stg_base_freq = 50.0;
+    std::atomic<float> stg_swpd_freq = 0.0;
+    std::atomic<float> stg_volume = 1;
+    std::atomic<float> stg_panning = 0.5;
+    std::atomic<float> stg_pulse_width = 0.5;
+
+	std::queue<live_change_synth> live_changes;
     std::atomic<bool> start_playing = false;
     std::atomic<int> frame_counter = 0;
     std::atomic<float> frames_per_tick = 0;
@@ -156,6 +169,12 @@ public:
     // bool* synth_playing : Flag to indicate the thread has successfully finished
     static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* synth_playing)
     {
+        synth->freq = synth->stg_base_freq.load();
+        synth->volume = synth->stg_volume.load();
+        synth->panning = synth->stg_panning.load();
+        synth->pulse_width = synth->stg_pulse_width.load();
+        synth->stg_swpd_freq = synth->stg_base_freq.load();
+
         // Crop panning
         synth->panning = std::clamp<float>(synth->panning, 0.f, 1.f);
         // Get sample frames
@@ -218,12 +237,18 @@ public:
 						if (synth->live_changes.size() > 0)
 						{
                             // Get the change list
-							live_change change = synth->live_changes.front();
+                            live_change_synth change = synth->live_changes.front();
                             synth->live_changes.pop();
 
-                            // Get any frequency chagnes
+                            // Get any changes
 							if (change.freq != -9999)
 								synth->freq = change.freq;
+                            if (change.pan != -2)
+                                synth->panning = change.pan;
+                            if (change.pw != -1)
+                                synth->pulse_width = change.pw;
+                            if (change.vol != -1)
+                                synth->volume = change.vol;
 						}
                     }
                     synth->frame_counter++;
@@ -304,14 +329,6 @@ public:
                     {
                         phase -= 1.;
                     }
-
-                    float this_freq = synth->freq.load();
-
-                    if (this_freq != last_freq)
-                    {
-                        printf("audio sees %f\n", this_freq);
-                        last_freq = this_freq;
-                    }
                 }
 
                 // Push buffer to stream
@@ -333,36 +350,43 @@ public:
     }
 
     // Automate the synth modulation variables (Effected by call rate)
-    void SynthAutomation(double* new_freq)
+    void SynthAutomation(double* new_freq, double* new_pan, double* new_pw, double* new_vol)
     {
         // Step panning
         if (pan_freq > 0)
         {
             pan_phase += pan_freq / 100;
-            panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
+            (*new_pan) = (sin(pan_phase * 2. * PI) / 2) + 0.5;
             if (pan_phase > 1.)
                 pan_phase -= 1.;
+			stg_panning = (*new_pan);
         }
         // Step pulse width
         if (pulse_width_freq > 0)
         {
             pw_phase += pulse_width_freq / 100;
-            pulse_width = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
+            (*new_pw) = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
             if (pw_phase > 1.)
                 pw_phase -= 1.;
+            stg_pulse_width = (*new_pw);
         }
         // Step note
         if (pitch_freq != 0)
         {
             if (pitch_freq > 0)
-                (*new_freq) = freq * (pitch_freq + 1); // Stage the new freq change
+                stg_swpd_freq = stg_swpd_freq * (pitch_freq + 1); // Stage the new freq change
             if (pitch_freq < 0)
-                (*new_freq) = freq / (abs(pitch_freq) + 1); // Stage the new freq change
+                stg_swpd_freq = stg_swpd_freq / (abs(pitch_freq) + 1); // Stage the new freq change
+            auto freq_swp_ofst = stg_swpd_freq - stg_base_freq;
+			(*new_freq) += freq_swp_ofst;
         }
         // Step volumne
         if (volume_freq != 0)
-            volume += volume_freq / 100;
-        if (volume < 0)
-            volume = 0;
+        {
+            (*new_vol) = stg_volume + volume_freq / 100;
+            if (stg_volume < 0)
+                (*new_vol) = 0;
+            stg_volume = (*new_vol);
+        }
     }
 };
