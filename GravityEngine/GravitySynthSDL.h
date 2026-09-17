@@ -384,7 +384,7 @@ public:
         if (volume_freq != 0)
         {
             (*new_vol) = stg_volume + volume_freq / 100;
-            if (stg_volume < 0)
+            if ((*new_vol) < 0)
                 (*new_vol) = 0;
             stg_volume = (*new_vol);
         }
