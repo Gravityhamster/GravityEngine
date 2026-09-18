@@ -287,10 +287,6 @@ private:
             synth_playing = true;
             std::thread st(GravityEngine_Synth::GenerateAudio, gravity_engine_synth_ref, sdl_audio_stream, audio_spec, audio_device_id, &state, &synth_playing);
             st.detach();
-            // Attach the audio stream to the channel's audio device
-            SDL_BindAudioStream(audio_device_id, sdl_audio_stream);
-            // Start playback
-            SDL_ResumeAudioDevice(audio_device_id);
             // Change the provider type
             type = ChannelType::synth;
         }

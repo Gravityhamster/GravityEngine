@@ -192,6 +192,8 @@ public:
         float last_freq = 0;
         float pan_phase = synth->panning;
         float pw_phase = synth->pulse_width;
+        bool first = true;
+
         SDL_SetAudioStreamGain(stream, 1.0f);
 
         synth->hp_l = 0.0f;
@@ -335,9 +337,16 @@ public:
                 SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
             }
 
-            // Yield CPU and prevent overfilling the audio buffer 
-            std::this_thread::yield();
-
+            // Start the synth playback but only if this is the first time starting
+            if (first == true && synth->start_playing)
+            {
+                // Attach the audio stream to the channel's audio device
+                SDL_BindAudioStream(dev, stream);
+                // Start playback
+                SDL_ResumeAudioDevice(dev);
+                // Audio is bound, don't do this again.
+                first = false;
+            }
         }
         // End sequence
         SDL_free(buffer);

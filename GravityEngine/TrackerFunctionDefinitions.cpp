@@ -392,11 +392,24 @@ void DoTick()
     // Tick the channel sequencers
     for (int i = 0; i < channelcount; i++)
     {
+        if ((play_context == pt_preview || play_context == pt_phrase || play_context == pt_chain) && i != playing_channel)
+            continue;
+        if ((play_context == pt_song || play_context == pt_phrase_all || play_context == pt_chain_all) && channellist[i].cant_play)
+            continue;
+
+        double new_freq;
+        double new_pan;
+        double new_vol;
+        double new_pw;
+
 		// Staging variables for the changes that will be written to the synths and samples
-        double new_freq = synthlist[i]->stg_base_freq;
-        double new_pan = synthlist[i]->stg_panning;
-        double new_vol = synthlist[i]->stg_volume;
-        double new_pw = synthlist[i]->stg_pulse_width;
+        if (channellist[i].type == ChannelType::synth)
+        {
+            new_freq = synthlist[i]->stg_base_freq;
+            new_pan = synthlist[i]->stg_panning;
+            new_vol = synthlist[i]->stg_volume;
+            new_pw = synthlist[i]->stg_pulse_width;
+        }
 
         // Get all changes to the sound
         if (!pause_song || play_context == pt_preview)
@@ -2221,6 +2234,7 @@ void EditorControl()
                         // Stop the playing thread
                         StopSequenceThread();
                         // pt_preview allows sub-step to run regardless of if the song is paused
+                        playing_channel = open_channel;
                         play_context = pt_preview;
                         channellist[open_channel].tick_ptr = 0;
                         ticknumber = 0;
