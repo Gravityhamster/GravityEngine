@@ -311,54 +311,6 @@ public:
     }
 };
 
-// SampleAutomator - Automation related to samples on channels
-class sampleautomator
-{
-public:
-    int channelnumber = -1; // Which channel is this automator assigned to?
-    float volume = 1.0f;
-    float volume_freq = 0.0f;
-    int base_pitch = 0;
-    float freq = 1.0f;
-    float pitch_freq = 0.0f;
-    float panning = 0.5f;
-    float pan_freq = 0.0f;
-    float pan_phase = 0.0f;
-
-    // Run the channel automation
-    void ChannelAutomation()
-    {
-        // Step volumne
-        if (volume_freq != 0)
-            volume += volume_freq / 100;
-        if (volume < 0)
-            volume = 0;
-        // Step pitch
-        if (pitch_freq != 0)
-        {
-            if (pitch_freq > 0)
-                freq = freq * (pitch_freq + 1);
-            if (pitch_freq < 0)
-                freq = freq / (abs(pitch_freq) + 1);
-        }
-        // Step pan
-        if (pan_freq != 0)
-        {
-            pan_phase += pan_freq / 100;
-            panning = (sin(pan_phase * 2. * PI) / 2) + 0.5;
-            if (pan_phase > 1.)
-                pan_phase -= 1.;
-        }
-
-        // Apply volume changes
-        geptr->SetChannelVolume(channelnumber, volume * 4);
-        // Apply pitch changes
-        geptr->SetChannelPitchRatio(channelnumber, freq);
-        // Apply pan changes
-        geptr->SetChannelPanning(channelnumber, panning);
-    }
-};
-
 // List of chains and phrases
 extern std::vector<chain*> chainlist;
 extern std::vector<phrase*> phraselist;
@@ -743,10 +695,10 @@ public:
 };
 
 // Data structures --
-extern GravityEngine_Synth* synthlist[channelcount];
+extern GravityEngine_Synth* audiosynth;
+extern GravityEngine_Sampler* audiosampler;
 extern ChannelType* channellisttypeptr[channelcount];
 extern channelsequencer channellist[channelcount];
-extern sampleautomator sampleautomatorlist[channelcount];
 
 // Tracker colors --
 extern color primary_text_a;

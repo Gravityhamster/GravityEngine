@@ -17,11 +17,11 @@
 
 #define PI 3.14159265358979323846f
 
-// TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
+// TODO: Any effects related directly to instrument automation should be implemented directly into the sampler (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
 // TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
 
-// Struct for submitting changes to the synth parameters from the main thread to the audio thread
-struct live_change_synth
+// Struct for submitting changes to the sampler parameters from the main thread to the audio thread
+struct live_change_sample
 {
     double freq = -9999.0;
     double pan = -2.0;
@@ -30,7 +30,7 @@ struct live_change_synth
 };
 
 // Enum to define the type of filter applied to audio channel
-enum class FilterType
+enum class SampleFilterType
 {
     lowpass,
     highpass,
@@ -48,7 +48,7 @@ enum class FilterType
 // float* lp : Pointer to the lowpass filter state variable
 // float* bp : Pointer to the bandpass filter state variable
 // float* hp : Pointer to the highpass filter state variable
-inline void ProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
+inline void SamplerProcessChamberlainFilter(float sample, float cutoff, float resonance, float sample_rate_freq, float* lp, float* bp, float* hp)
 {
     // Apply filter
     float warped = cutoff * cutoff * cutoff;
@@ -67,41 +67,41 @@ inline void ProcessChamberlainFilter(float sample, float cutoff, float resonance
     (*lp) *= 0.999f;
 }
 
-// Enum to define the wave forms on a synth
-enum class SynthWaveForm
+// Enum to define the wave forms on a sampler
+enum class SampleWaveForm
 {
-    sine,
-    square,
-    pulse,
-    sawtooth,
-    triangle,
-    noise,
-    min = sine,
-    max = noise
+    sample_sine,
+    sample_square,
+    sample_pulse,
+    sample_sawtooth,
+    sample_triangle,
+    sample_noise,
+    min = sample_sine,
+    max = sample_noise
 };
 
 // Enum to define filter algorithm
-enum class FilterAlgorithm
+enum class SampleFilterAlgorithm
 {
     chamberlain
 };
 
 // Conversion map for waveforms
-inline std::map<SynthWaveForm, std::string> waveform_to_string = {
-    {SynthWaveForm::sine, "SINE"},
-    {SynthWaveForm::square, "SQUARE"},
-    {SynthWaveForm::pulse, "PULSE"},
-    {SynthWaveForm::sawtooth, "SAWTOOTH"},
-    {SynthWaveForm::triangle, "TRIANGLE"},
-    {SynthWaveForm::noise, "NOISE"}
+inline std::map<SampleWaveForm, std::string> sample_waveform_to_string = {
+    {SampleWaveForm::sample_sine, "SINE"},
+    {SampleWaveForm::sample_square, "SQUARE"},
+    {SampleWaveForm::sample_pulse, "PULSE"},
+    {SampleWaveForm::sample_sawtooth, "SAWTOOTH"},
+    {SampleWaveForm::sample_triangle, "TRIANGLE"},
+    {SampleWaveForm::sample_noise, "NOISE"}
 };
 
 // Voice structure
-class GravityEngine_SynthVoice
+class GravityEngine_SamplerVoice
 {
 
 public:
-    SpscQueue<live_change_synth, 1024> live_changes;
+    SpscQueue<live_change_sample, 1024> live_changes;
     std::atomic<int> frame_counter = 0;
     std::atomic<float> frames_per_tick = 0;
 
@@ -111,10 +111,10 @@ public:
     std::atomic<float> panning = 0.5;
     std::atomic<float> pulse_width = 0.5;
 
-    // Staging values that are only used in tracking position in incremental changes to the synth parameters. 
+    // Staging values that are only used in tracking position in incremental changes to the sampler parameters. 
     // These are used to all movement to be smoother. So basically, the tracker thread will make a change to the
     // audio values, then write the change to the queue and then write the change to these staging values so that
-    // it can continue from the last queue write value, even if the synth has not yet applied its changes.
+    // it can continue from the last queue write value, even if the sampler has not yet applied its changes.
     std::atomic<float> stg_base_freq = 50.0;
     std::atomic<float> stg_swpd_freq = 0.0;
     std::atomic<float> stg_volume = 1;
@@ -141,9 +141,9 @@ public:
     float bp_r = 0.0f;
     float hp_r = 0.0f;
 
-    SynthWaveForm waveform = SynthWaveForm::sine;
-    FilterType filter = FilterType::none;
-    FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
+    SampleWaveForm waveform = SampleWaveForm::sample_sine;
+    SampleFilterType filter = SampleFilterType::none;
+    SampleFilterAlgorithm algorithm = SampleFilterAlgorithm::chamberlain;
 
     // Other state variables
     float pan_phase = 0.f;
@@ -156,34 +156,34 @@ public:
     float last_freq = 0;
 };
 
-// Template for synth objects
-class GravityEngine_Synth
+// Template for sampler objects
+class GravityEngine_Sampler
 {
 
-    // Synth parameters
+    // sampler parameters
 public:
 
-    std::vector<GravityEngine_SynthVoice*> voices;
+    std::vector<GravityEngine_SamplerVoice*> voices;
     int sample_frames;
 
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
-    // It simply generates a waveform. Never call this indepentently please. Use BindSynthToChannel in the engine instead.
-    // GravityEngine_Synth* synth : Synth object reference
-    // SDL_AudioStream* stream : Audio stream that the synth audio plays on
+    // It simply generates a waveform. Never call this indepentently please. Use BindsamplerToChannel in the engine instead.
+    // GravityEngine_sampler* sampler : sampler object reference
+    // SDL_AudioStream* stream : Audio stream that the sampler audio plays on
     // SDL_AudioSpec* spec : Audio spec to format the audio with
     // SDL_AudioDeviceID dev : Device the audio will play on
     // ChannelStates* state : Current state of the channel
-    // bool* synth_playing : Flag to indicate the thread has successfully finished
-    static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* synth_playing)
+    // bool* sampler_playing : Flag to indicate the thread has successfully finished
+    static void GenerateAudio(GravityEngine_Sampler* sampler, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* sampler_playing)
     {
         // Get sample frames
-        SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
+        SDL_GetAudioDeviceFormat(dev, spec, &sampler->sample_frames);
         // Initialize a random number generator
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> distrib(-10000, 10000);
         // Get buffer size
-        int buffer_frames = synth->sample_frames;
+        int buffer_frames = sampler->sample_frames;
         int buffer_samples = buffer_frames * spec->channels;
         int buffer_bytes = buffer_samples * sizeof(float);
         float* buffer = (float*)SDL_malloc(buffer_bytes);
@@ -194,7 +194,7 @@ public:
         // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
 
-            // If the synth is paused, do not play the synth
+            // If the sampler is paused, do not play the sampler
             if ((*state) == paused)
             {
                 std::this_thread::yield();
@@ -208,19 +208,19 @@ public:
             // So that would be 2 samples per frame.
             // This is why we are looping frame-by-frame. 
             // We are calculating all samples per frame in one loop cycle.
-            int threshold_frames = synth->sample_frames;
-            int get_frames = synth->sample_frames;
-            //printf("%d\n", synth->sample_frames);
+            int threshold_frames = sampler->sample_frames;
+            int get_frames = sampler->sample_frames;
+            //printf("%d\n", sampler->sample_frames);
             int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
 
             // Check available data
             if (available_frames < threshold_frames)
             {
                 // Fill in audio data
-				SDL_memset(buffer, 0, buffer_bytes);
+                SDL_memset(buffer, 0, buffer_bytes);
                 for (int frame = 0; frame < get_frames; frame++)
                 {
-                    for (auto v : synth->voices)
+                    for (auto v : sampler->voices)
                     {
                         if (v->will_start_playing)
                         {
@@ -243,15 +243,15 @@ public:
                             v->bp_r = 0.0f;
                             v->lp_r = 0.0f;
 
-							v->will_start_playing = false;
-							v->start_playing = true;
+                            v->will_start_playing = false;
+                            v->start_playing = true;
                         }
 
                         // Get any changes in my mailbox
                         if (v->frame_counter >= v->frames_per_tick && v->start_playing)
                         {
                             v->frame_counter -= v->frames_per_tick;
-                            live_change_synth change;
+                            live_change_sample change;
                             // Get next in queue
                             if (v->live_changes.pop(change) && v->start_playing)
                             {
@@ -288,17 +288,17 @@ public:
 
                             // Set sample based on wave form
                             float sample = 0.;
-                            if (v->waveform == SynthWaveForm::sine)
+                            if (v->waveform == SampleWaveForm::sample_sine)
                                 sample = sin(one);
-                            else if (v->waveform == SynthWaveForm::square)
+                            else if (v->waveform == SampleWaveForm::sample_square)
                                 sample = (sin(one) > 0 ? 1 : -1);
-                            else if (v->waveform == SynthWaveForm::pulse)
+                            else if (v->waveform == SampleWaveForm::sample_pulse)
                                 sample = (sin(one) > v->pulse_width ? 1 : -1);
-                            else if (v->waveform == SynthWaveForm::sawtooth)
+                            else if (v->waveform == SampleWaveForm::sample_sawtooth)
                                 sample = (v->phase * 2.f - 1.f);
-                            else if (v->waveform == SynthWaveForm::triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
+                            else if (v->waveform == SampleWaveForm::sample_triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
                                 sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                            else if (v->waveform == SynthWaveForm::noise)
+                            else if (v->waveform == SampleWaveForm::sample_noise)
                                 sample = (distrib(gen) / 10000.);
 
                             // Apply panning volume and global volume
@@ -316,17 +316,17 @@ public:
                             auto right_sample = right_pan * (v->volume) * sample;
 
                             // Process filtered out
-                            if (v->algorithm == FilterAlgorithm::chamberlain)
+                            if (v->algorithm == SampleFilterAlgorithm::chamberlain)
                             {
                                 ProcessChamberlainFilter(left_sample, v->cutoff, v->resonance, spec->freq, &v->lp_l, &v->bp_l, &v->hp_l);
                                 ProcessChamberlainFilter(right_sample, v->cutoff, v->resonance, spec->freq, &v->lp_r, &v->bp_r, &v->hp_r);
                             }
 
                             // Get filtered value based on the type of filter
-                            float filtered_left = (v->filter == FilterType::lowpass ? v->lp_l : (v->filter == FilterType::highpass ? v->hp_l : (v->filter == FilterType::bandpass ? v->bp_l : left_sample)));
+                            float filtered_left = (v->filter == SampleFilterType::lowpass ? v->lp_l : (v->filter == SampleFilterType::highpass ? v->hp_l : (v->filter == SampleFilterType::bandpass ? v->bp_l : left_sample)));
 
                             // Get filtered value based on the type of filter
-                            float filtered_right = (v->filter == FilterType::lowpass ? v->lp_r : (v->filter == FilterType::highpass ? v->hp_r : (v->filter == FilterType::bandpass ? v->bp_r : right_sample)));
+                            float filtered_right = (v->filter == SampleFilterType::lowpass ? v->lp_r : (v->filter == SampleFilterType::highpass ? v->hp_r : (v->filter == SampleFilterType::bandpass ? v->bp_r : right_sample)));
 
                             // Fill the buffer differently depending on channel
                             if (spec->channels == 1)
@@ -355,7 +355,7 @@ public:
                 SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
             }
 
-            // Start the synth playback but only if this is the first time starting
+            // Start the sampler playback but only if this is the first time starting
             if (first == true)
             {
                 // Attach the audio stream to the channel's audio device
@@ -368,11 +368,11 @@ public:
         }
         // End sequence
         SDL_free(buffer);
-        (*synth_playing) = false;
+        (*sampler_playing) = false;
     }
 
-    // Automate the synth modulation variables (Effected by call rate)
-    void SynthAutomation(double* new_freq, double* new_pan, double* new_pw, double* new_vol, int voice_index)
+    // Automate the sampler modulation variables (Effected by call rate)
+    void SampleAutomation(double* new_freq, double* new_pan, double* new_pw, double* new_vol, int voice_index)
     {
         // Step panning
         if (voices[voice_index]->pan_freq > 0)

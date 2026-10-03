@@ -1,5 +1,6 @@
 #pragma once
 #include "GravitySynthSDL.h"
+#include "GravitySamplerSDL.h"
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
@@ -121,14 +122,8 @@ private:
         // -= Attributes =-
         SDL_AudioStream* sdl_audio_stream = nullptr; // SDL audio streaming object
         SDL_AudioDeviceID audio_device_id; // SDL audio playback device object
-        std::atomic<ChannelStates> state = uninit; // Playback state of this audio channel
-        ChannelType type = ChannelType::file; // Sound type currently playing
-        std::vector<Uint8>* currently_playing_audio = nullptr; // Saved audio for feeding loop
-        bool looping = false; // Loop audio
-        std::atomic<bool> synth_playing = false; // Flag if synth audio is playing
-        std::atomic<bool> file_playing = false; // Flag if file audio is playing
-        bool file_first_loop = false; // First loop of the audio file
-        long audio_file_read_offset = 0; // Read pointer for the audio file load
+        std::atomic<ChannelStates> state = ChannelStates::uninit; // Playback state of this audio channel
+        std::atomic<bool> playing = false; // Flag if audio is playing
         std::atomic<double> pitch_ratio = 1;
         std::atomic<float> channel_volume = 1.0f;
 
@@ -148,31 +143,6 @@ private:
         }
 
     public:
-        // -= Attributes =-
-        long start_time_ms = 0;
-        long mid_time_ms = 0;
-        long end_time_ms = -1;
-        std::atomic<float> panning = 0.5;
-        GravityEngine_Sound* currently_playing_sound_ref = nullptr; // Sound playing ref
-
-        // Filter variables
-        int sample_frames;
-        FilterType filter = FilterType::none;
-        FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
-
-        // Filter
-        float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
-        float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
-
-        // Filter state
-        float lp_l = 0.0f;
-        float bp_l = 0.0f;
-        float hp_l = 0.0f;
-        float lp_r = 0.0f;
-        float bp_r = 0.0f;
-        float hp_r = 0.0f;
-
-        // -= Methods =-
 
         // Construct audio
         // SDL_AudioSpec audio_spec : Audio specification for the game engine
@@ -183,52 +153,8 @@ private:
             // Create the audio stream
             sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &audio_spec);
             // Flag the the audio channel is ready for playback
-            state = init;
+            state = ChannelStates::init;
         };
-
-        // Feed the looping audio for the sound file
-        // GravityEngine_AudioChannel* ac : Pointer to the audio channel to loop
-        // bool* is_looping : Pointer to the variable to determine if the channel is still looping
-        static void FeedAudioFileStreamAsync(GravityEngine_AudioChannel* ac, std::atomic<bool>* file_playing, SDL_AudioSpec audio_spec, SDL_AudioDeviceID audio_device_id)
-        {
-            // Get sample frames
-            int sample_frames;
-            SDL_GetAudioDeviceFormat(audio_device_id, &audio_spec, &sample_frames);
-            if (audio_spec.channels > 2)
-                audio_spec.channels = 2;
-            // Get buffer size
-            int bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8;
-            int buffer_size = sample_frames * audio_spec.channels * bytes_per_sample;
-            buffer_size *= SDL_GetAudioStreamFrequencyRatio(ac->sdl_audio_stream);
-
-            // Reset filter state
-            ac->lp_l = 0.0f;
-            ac->bp_l = 0.0f;
-            ac->hp_l = 0.0f;
-            ac->lp_r = 0.0f;
-            ac->bp_r = 0.0f;
-            ac->hp_r = 0.0f;
-
-            // First stream feed
-            ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio, audio_spec);
-            // Attach the audio stream to the channel's audio device
-            SDL_BindAudioStream(audio_device_id, ac->sdl_audio_stream);
-            // Start playback
-            SDL_ResumeAudioDevice(audio_device_id);
-
-            while (ac->GetType() == ChannelType::file && (ac->GetState() == playing || ac->GetState() == paused))
-            {
-                // If the synth is paused, do not play the synth
-                if (ac->GetState() == paused)
-                {
-                    std::this_thread::yield(); // Yield to CPU
-                    continue;
-                }
-                ac->FeedAudioFileStream(buffer_size, ac->pitch_ratio, audio_spec);
-            }
-            (*file_playing) = false;
-            ac->StopPlayback();
-        }
 
         // Set pitch offset
         // double ratio : 0.01 - 100.00
@@ -247,33 +173,6 @@ private:
             SDL_SetAudioStreamGain(sdl_audio_stream, volume);
         }
 
-        // Play a sound on this channel
-        // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
-        // GravityEngine_Sound* gravity_engine_sound_ref : Audio sound file data container
-        // bool loop : Whether or not audio should loop indefinitely
-        void PlaySound(SDL_AudioSpec audio_spec, GravityEngine_Sound* gravity_engine_sound_ref, bool loop = false)
-        {
-            // If any audio is currently playing, stop it
-            StopPlayback();
-            // Set the audio file start point
-            audio_file_read_offset = milliseconds_to_bytes(start_time_ms, audio_spec);
-            // Save the audio bound to this channel so we can feed the channel later
-            currently_playing_sound_ref = gravity_engine_sound_ref;
-            currently_playing_audio = &gravity_engine_sound_ref->converted_audio;
-            // Set the starting flag
-            file_first_loop = true;
-            // Start loop thread
-            file_playing = true;
-            std::thread lt(GravityEngine_AudioChannel::FeedAudioFileStreamAsync, this, &file_playing, audio_spec, audio_device_id);
-            lt.detach();
-            // Flag that this sound channel is busy playing
-            state = playing;
-            // Set whether this channel should loop or not
-            looping = loop;
-            // Change the provider type
-            type = ChannelType::file;
-        }
-
         // Play a synth on this channel
         // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
         // GravityEngine_Synth* gravity_engine_synth_ref : Audio sound file data container
@@ -282,38 +181,39 @@ private:
             // If any audio is currently playing, stop it
             StopPlayback();
             // Flag that this sound channel is busy playing
-            state = playing;
+            state = ChannelStates::playing;
             // Start synth thread
-            synth_playing = true;
-            std::thread st(GravityEngine_Synth::GenerateAudio, gravity_engine_synth_ref, sdl_audio_stream, audio_spec, audio_device_id, &state, &synth_playing);
+            playing = true;
+            std::thread st(GravityEngine_Synth::GenerateAudio, gravity_engine_synth_ref, sdl_audio_stream, audio_spec, audio_device_id, &state, &playing);
             st.detach();
-            // Change the provider type
-            type = ChannelType::synth;
+        }
+
+        // Play a sampler on this channel
+        // SDL_AudioSpec audio_spec : Audio specification to play the audio at (this should probably be the global audio spec in the engine)
+        // GravityEngine_Sampler* gravity_engine_sampler_ref : Audio sound file data container
+        void PlaySampler(SDL_AudioSpec* audio_spec, GravityEngine_Sampler* gravity_engine_sampler_ref)
+        {
+            // If any audio is currently playing, stop it
+            StopPlayback();
+            // Flag that this sound channel is busy playing
+            state = ChannelStates::playing;
+            // Start sampler thread
+            playing = true;
+            std::thread st(GravityEngine_Sampler::GenerateAudio, gravity_engine_sampler_ref, sdl_audio_stream, audio_spec, audio_device_id, &state, &playing);
+            st.detach();
         }
 
         // Stop audio
         void StopPlayback()
         {
             // Flag that this sound channel has been stopped and cleared
-            state = stopped;
-            // Wait for the synth thread if this is a synth
-            if (type == ChannelType::synth)
-            {
-                // Wait for the thread to quit
-                while (synth_playing) {}
-            }
-            // Wait for the loop thread if this is a file
-            if (type == ChannelType::file)
-            {
-                // Wait for the thread to quit
-                while (file_playing) {}
-            }
+            state = ChannelStates::stopped;
+            // Wait for the provider thread to quit
+            while (playing) {}
             // Stop the playback
             SDL_PauseAudioDevice(audio_device_id);
             // Empty the audio stream data
             SDL_ClearAudioStream(sdl_audio_stream);
-            // If this channel was set to loop, set it to stop looping
-            looping = false;
         }
 
         // Pause audio
@@ -322,7 +222,7 @@ private:
             // Pause the playback, but do not forget the position
             SDL_PauseAudioDevice(audio_device_id);
             // Flag that this sound channel has been paused
-            state = paused;
+            state = ChannelStates::paused;
         }
 
         // Continue audio
@@ -331,195 +231,7 @@ private:
             // Continue audio playback
             SDL_ResumeAudioDevice(audio_device_id);
             // Flag that this sound channel is busy playing
-            state = playing;
-        }
-
-        // Cancel loop
-        void CancelLoop()
-        {
-            // Stop looping without stopping the sound altogether
-            looping = false;
-        }
-
-        // Feed the channel with loop audio
-        // int buffer_size : Size of the channel's audio buffer
-        void FeedAudioFileStream(int buffer_size, double pitch_ratio, SDL_AudioSpec audio_spec)
-        {
-            double safety = 8;
-            size_t playable_file_size = std::min(currently_playing_audio->size(), (end_time_ms != -1 ? milliseconds_to_bytes(end_time_ms, audio_spec) : currently_playing_audio->size()));
-            
-            // Only get data while it's needed -
-            // Copilot suggested looping while the queue needs data instead of overfilling and 
-            // busy waiting for the audio stream to have less data than the buffer
-            while (SDL_GetAudioStreamAvailable(sdl_audio_stream) < buffer_size * safety)
-            {
-                // Get the remaining amount of audio data
-                int remaining = playable_file_size - audio_file_read_offset;
-                // Either get the next chunk or get the rest of the audio file
-                int to_write = std::min((int)std::ceil(buffer_size * safety), remaining);
-
-                // Copy data to temp vector
-                std::vector<Uint8> play_data(to_write);
-                std::memcpy(play_data.data(), currently_playing_audio->data() + audio_file_read_offset, to_write);
-
-                // Apply effects
-                ApplyAudioFX(play_data.data(), to_write, audio_spec);
-
-                // There is no need to write if nothing is going to be written
-                if (to_write > 0)
-                {
-                    // Insert the audio data into the audio stream
-                    SDL_PutAudioStreamData(sdl_audio_stream, play_data.data(), to_write);
-                }
-
-                // Increment the file read offset
-                audio_file_read_offset += to_write;
-
-                // Have we surpassed the audio file input?
-                if (audio_file_read_offset >= playable_file_size)
-                {
-                    // Are we supposed loop the audio or quit at the end?
-                    if (looping)
-                        audio_file_read_offset = milliseconds_to_bytes(mid_time_ms, audio_spec); // Go back to start
-                    else
-                    {
-                        if (SDL_GetAudioStreamAvailable(sdl_audio_stream) <= 0) state = stopped; // End the channel audio
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Panning audio function
-        // Uint8* data : pointer to audio data
-        // int to_write : amount of data to work on
-        // SDL_AudioSpec : audio specifications to work with
-        void ApplyAudioFX(Uint8* data, int to_write, SDL_AudioSpec audio_spec)
-        {
-            float this_pan = (panning - 0.5f) * 2.0f; // Panning is 0 to 1 with 0.5 being centered. This converts said format to -1 to 1 with 0 centered.
-            int bit_size = SDL_AUDIO_BITSIZE(audio_spec.format);
-            bool is_float = SDL_AUDIO_ISFLOAT(audio_spec.format);
-
-            // Apply effects
-            if (audio_spec.channels == 1)
-            {
-                // TODO: % multiply the volume in mono like the Gameboy does (-1 == 0.5 gain, 1 == 0.5 gain, 0 == 1 gain, etc.)
-                // TODO: Audio filters!
-            }
-            else
-            {
-                // Equal-power panning
-                float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
-                float left_gain = std::cos(angle);
-                float right_gain = std::sin(angle);
-
-                // Do pan differently depending on the data type
-                if (bit_size == 8)
-                {
-                    // COPILOT : Apply panning to 8-bit audio
-                    for (int i = 0; i < to_write; i += 2)
-                    {
-                        // Panning --
-
-                        // Get the left and right data
-                        Uint8 left = data[i];
-                        Uint8 right = data[i + 1];
-
-                        // Convert from unigned 8-bit (0-255) to signed (-128 to +127)
-                        int s_left = (int)left - 128;
-                        int s_right = (int)right - 128;
-
-                        // Apply gain
-                        s_left = (int)(s_left * left_gain);
-                        s_right = (int)(s_right * right_gain);
-
-                        // Audio filters --
-
-                        // Process filtered out
-                        if (algorithm == FilterAlgorithm::chamberlain)
-                        {
-                            ProcessChamberlainFilter(s_left, cutoff, resonance, audio_spec.freq, &lp_l, &bp_l, &hp_l);
-                            ProcessChamberlainFilter(s_right, cutoff, resonance, audio_spec.freq, &lp_r, &bp_r, &hp_r);
-                        }
-
-                        // Get filtered value based on the type of filter
-                        float filtered_left = (filter == FilterType::lowpass ? lp_l : (filter == FilterType::highpass ? hp_l : (filter == FilterType::bandpass ? bp_l : s_left)));
-
-                        // Get filtered value based on the type of filter
-                        float filtered_right = (filter == FilterType::lowpass ? lp_r : (filter == FilterType::highpass ? hp_r : (filter == FilterType::bandpass ? bp_r : s_right)));
-
-                        // Convert back to unsigned
-                        data[i] = (Uint8)(std::clamp(filtered_left + 128.0, 0.0, 255.0));
-                        data[i + 1] = (Uint8)(std::clamp(filtered_right + 128.0, 0.0, 255.0));
-                    }
-                }
-                else if (bit_size == 16)
-                {
-                    // COPILOT : Apply panning to 16-bit audio
-                    int16_t* samples = reinterpret_cast<int16_t*>(data);
-                    int frames = to_write / 4; // 2 Channels * 2 Bytes each
-
-                    // Loop through all the samples
-                    for (int i = 0; i < frames; i++)
-                    {
-                        // Get the left and right sample references
-                        int16_t& left = samples[i * 2 + 0];
-                        int16_t& right = samples[i * 2 + 1];
-
-                        // Audio filters --
-
-                        // Process filtered out
-                        if (algorithm == FilterAlgorithm::chamberlain)
-                        {
-                            ProcessChamberlainFilter(left, cutoff, resonance, audio_spec.freq, &lp_l, &bp_l, &hp_l);
-                            ProcessChamberlainFilter(right, cutoff, resonance, audio_spec.freq, &lp_r, &bp_r, &hp_r);
-                        }
-
-                        // Get filtered value based on the type of filter
-                        float filtered_left = (filter == FilterType::lowpass ? lp_l : (filter == FilterType::highpass ? hp_l : (filter == FilterType::bandpass ? bp_l : left)));
-
-                        // Get filtered value based on the type of filter
-                        float filtered_right = (filter == FilterType::lowpass ? lp_r : (filter == FilterType::highpass ? hp_r : (filter == FilterType::bandpass ? bp_r : right)));
-
-                        // Calculate left and right samples to the sample pointers
-                        left = static_cast<int16_t>(filtered_left * left_gain);
-                        right = static_cast<int16_t>(filtered_right * right_gain);
-                    }
-                }
-                else if (bit_size == 32 && is_float)
-                {
-                    // COPILOT : Apply panning to 32-bit audio
-                    float* samples = reinterpret_cast<float*>(data);
-                    int frames = to_write / (sizeof(float) * 2);
-
-                    // Loop through all the samples
-                    for (int i = 0; i < frames; i++)
-                    {
-                        // Get the left and right sample references
-                        float& left = samples[i * 2 + 0];
-                        float& right = samples[i * 2 + 1];
-
-                        // Audio filters --
-
-                        // Process filtered out
-                        if (algorithm == FilterAlgorithm::chamberlain)
-                        {
-                            ProcessChamberlainFilter(left, cutoff, resonance, audio_spec.freq, &lp_l, &bp_l, &hp_l);
-                            ProcessChamberlainFilter(right, cutoff, resonance, audio_spec.freq, &lp_r, &bp_r, &hp_r);
-                        }
-
-                        // Get filtered value based on the type of filter
-                        float filtered_left = (filter == FilterType::lowpass ? lp_l : (filter == FilterType::highpass ? hp_l : (filter == FilterType::bandpass ? bp_l : left)));
-
-                        // Get filtered value based on the type of filter
-                        float filtered_right = (filter == FilterType::lowpass ? lp_r : (filter == FilterType::highpass ? hp_r : (filter == FilterType::bandpass ? bp_r : right)));
-
-                        // Calculate left and right samples to the sample pointers
-                        left = filtered_left * left_gain;
-                        right = filtered_right * right_gain;
-                    }
-                }
-            }
+            state = ChannelStates::playing;
         }
 
         // Get state of channel
@@ -528,20 +240,12 @@ private:
             return state;
         }
 
-        // Get type of channel
-        ChannelType GetType()
-        {
-            return type;
-        }
-
         // Destruct audio channel
         ~GravityEngine_AudioChannel()
         {
             // Stop the playback
             StopPlayback();
             SDL_Delay(5);
-            currently_playing_sound_ref = nullptr;
-            currently_playing_audio = nullptr;
             SDL_CloseAudioDevice(audio_device_id);
             // Free up the audio stream
             if (sdl_audio_stream != nullptr)
@@ -1340,48 +1044,6 @@ public:
         audio_channels[channel]->SetVolume(volume);
     }
 
-    // Set sound channel filter
-    // int channel : channel to set filter on
-    // FilterType filter : type of filter - Bandpass, Lowpass, etc.
-    // FilterAlgorithm algorithm : algorithm to use to make the filter
-    // float cutoff : Filter cutoff position
-    // float resonance : Filter resonance position
-    void SetChannelFilter(int channel, FilterType filter, FilterAlgorithm algorithm, float cutoff, float resonance)
-    {
-        channel = channel % audio_channels.size();
-        audio_channels[channel]->filter = filter;
-        audio_channels[channel]->algorithm = algorithm;
-        audio_channels[channel]->cutoff = cutoff;
-        audio_channels[channel]->resonance = resonance;
-    }
-
-    // Set sound channel panning
-    // int channel : channel to set pitch ratio on
-    // int pan : audio paning offset
-    void SetChannelPanning(int channel, float pan)
-    {
-        audio_channels[channel]->panning = pan;
-    }
-
-    // Set sound channel time offsets
-    // int channel : channel to set offsets on
-    // long start_time_ms : audio start time in milliseconds
-    // long mid_time_ms : audio mid loop reset time in milliseconds
-    // long end_time_ms : audio end time in milliseconds
-    void SetChannelTimeOffsets(int channel, long start_time_ms, long mid_time_ms, long end_time_ms)
-    {
-        // Clean the input
-        if (start_time_ms < 0) start_time_ms = 0;
-        if (mid_time_ms < 0) mid_time_ms = 0;
-        if (end_time_ms < -1) end_time_ms = -1;
-        if (end_time_ms != -1 && end_time_ms <= std::max(start_time_ms, mid_time_ms)) end_time_ms = std::max(start_time_ms, mid_time_ms) + 1;
-
-        // Apply the input
-        audio_channels[channel]->start_time_ms = start_time_ms;
-        audio_channels[channel]->mid_time_ms = mid_time_ms;
-        audio_channels[channel]->end_time_ms = end_time_ms;
-    }
-
     // Add sounds to the sound list
     // const char* path : Path to sound file
     int AddSound(const char* path)
@@ -1406,12 +1068,11 @@ public:
     // int index : Integer index to where the sound is stored
     void DeleteSound(int index)
     {
-        // Stop any channel playing this sound
+        // Stop all channels
         int i = 0;
         for (auto c : audio_channels)
         {
-            if (c->currently_playing_sound_ref == sounds[index])
-                StopChannel(i);
+            StopChannel(i);
             i++;
         }
         // Delete the sound objects
@@ -1420,28 +1081,22 @@ public:
         sounds[index] = nullptr;
     }
 
-    // Play a sound on a channel
-    // int audio_index : Integer index to where the sound is stored
-    // int channel : Integer channel index to play the sound at the index on
-    // bool loop : Whether the sound should loop or not
-    void PlaySoundOnChannel(int audio_index, int channel, bool loop = false)
-    {
-        // Check if the sound exists
-        if (CheckSound(audio_index))
-        {
-            channel = channel % audio_channels.size();
-            audio_channels[channel]->PlaySound(global_audio_spec, sounds[audio_index], loop);
-        }
-    }
-
     // Bind a synth to a channel
-    // int audio_index : Integer index to where the sound is stored
+	// GravityEngine_Synth* s : Pointer to the synth to bind to the channel
     // int channel : Integer channel index to play the sound at the index on
-    // bool loop : Whether the sound should loop or not
     void BindSynthToChannel(GravityEngine_Synth* s, int channel)
     {
         channel = channel % audio_channels.size();
         audio_channels[channel]->PlaySynth(&global_audio_spec, s);
+    }
+
+    // Bind a sampler to a channel
+    // GravityEngine_Sampler* s : Pointer to the sampler to bind to the channel
+    // int channel : Integer channel index to play the sound at the index on
+    void BindSamplerToChannel(GravityEngine_Sampler* s, int channel)
+    {
+        channel = channel % audio_channels.size();
+        audio_channels[channel]->PlaySampler(&global_audio_spec, s);
     }
 
     // Pause channel
@@ -1470,13 +1125,6 @@ public:
     ChannelStates GetChannelState(int channel)
     {
         return audio_channels[channel]->GetState();
-    }
-
-    // Cancel channel's looping status
-    // int channel : Integer channel index
-    void CancelChannelLoop(int channel)
-    {
-        audio_channels[channel]->CancelLoop();
     }
 
 private:

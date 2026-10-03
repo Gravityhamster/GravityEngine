@@ -21,6 +21,15 @@
     <ClInclude Include="GravitySynthSDL.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SPSC_Queue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GravitySamplerSDL.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GravityEngineTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Gravitytracker.cpp">

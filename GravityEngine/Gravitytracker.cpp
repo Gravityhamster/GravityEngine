@@ -77,10 +77,10 @@ std::vector<sample*> samplelist;
 std::vector<chain*> chainlist;
 std::vector<phrase*> phraselist;
 std::vector<table*> tablelist;
-GravityEngine_Synth* synthlist[channelcount];
+GravityEngine_Synth* audiosynth;
+GravityEngine_Sampler* audiosampler;
 ChannelType* channellisttypeptr[channelcount];
 channelsequencer channellist[channelcount];
-sampleautomator sampleautomatorlist[channelcount];
 
 // Tracker colors
 color primary_text_a = { {255, 255, 255}, {0, 0, 0} };
@@ -104,14 +104,23 @@ void GameInit()
     chain_grid_w = 2;
     file_display_count = song_grid_h - 6;
 
+	// Init synth
+	audiosynth = new GravityEngine_Synth();
+	audiosampler = new GravityEngine_Sampler();
+
     // Init channel sequencers
     for (int i = 0; i < channelcount; i++)
     {
         channellist[i].channelnumber = i;
         channellisttypeptr[i] = &(channellist[i].type);
-        sampleautomatorlist[i].channelnumber = i;
-        synthlist[i] = new GravityEngine_Synth();
+		audiosynth->voices.insert(audiosynth->voices.end(), new GravityEngine_SynthVoice());
+		audiosampler->voices.insert(audiosampler->voices.end(), new GravityEngine_SamplerVoice());
     }
+
+	// Bind the synth to channel 0
+    geptr->BindSynthToChannel(audiosynth, 0);
+	// Bind the sampler to channel 1
+    geptr->BindSamplerToChannel(audiosampler, 1);
 
     // Init song phrase list
     songgrid = new int* [rowcount];
@@ -167,7 +176,7 @@ int main()
     // Init engine - 128x72 is generally the largest you can get and still maintain good performance
     auto cw = 96 / 2 + 1;
     auto ch = 54 / 2;
-    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 37), std::max(ch, 28), fps, 1920/2, 1080/2, "./GameFont.ttf", channelcount);
+    GravityEngine_Core ge_inst = GravityEngine_Core("Game", "com.example.game", "1.0", std::max(cw, 37), std::max(ch, 28), fps, 1920/2, 1080/2, "./GameFont.ttf", 2);
 
     ge_inst.debug_mode = true; // Show debug overlay
     ge_inst.debug_complex = false; // Show all information

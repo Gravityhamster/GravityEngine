@@ -117,72 +117,71 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
         // Get playing chain tranposition
         if (play_context != pt_phrase && play_context != pt_phrase_all && play_context != pt_preview && running && !pause_song)
             ApplyChainTransposition(channel_index, &f);
+
+        // Reset synth state and action queue
+        audiosynth->voices[channel_index]->start_playing = false;
+        while (audiosynth->voices[channel_index]->live_changes.pop()) {}
+
+        // Reset sampler state and action queue
+        audiosampler->voices[channel_index]->start_playing = false;
+        while (audiosampler->voices[channel_index]->live_changes.pop()) {}
+
         // Play step on channel
         if (instrumentlist[i]->type == ChannelType::synth)
         {
-            geptr->SetChannelVolume(channel_index, 1);
-            geptr->SetChannelPitchRatio(channel_index, 1);
-            geptr->SetChannelPanning(channel_index, 0.5f);
-            geptr->SetChannelFilter(channel_index, FilterType::none, FilterAlgorithm::chamberlain, 1.0f, 0.0f);
+            geptr->SetChannelVolume(0, 1);
+            geptr->SetChannelPitchRatio(0, 1);
 
-            // TEST
-            if (synthlist[channel_index]->voices.size() == 0)
-            {
-                auto v = new GravityEngine_SynthVoice();
-                synthlist[channel_index]->voices.insert(synthlist[channel_index]->voices.end(), v);
-                v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
-                v->stg_volume = instrumentlist[i]->volume;
-                v->volume_freq = instrumentlist[i]->volume_freq;
-                v->stg_panning = instrumentlist[i]->panning;
-                v->pan_freq = instrumentlist[i]->pan_freq;
-                v->stg_pulse_width = instrumentlist[i]->pulse_width;
-                v->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
-                v->pitch_freq = instrumentlist[i]->pitch_freq;
-                v->cutoff = instrumentlist[i]->cutoff;
-                v->resonance = instrumentlist[i]->resonance;
-                v->waveform = instrumentlist[i]->waveform;
-                v->filter = instrumentlist[i]->filter;
-				v->will_start_playing = true;
-            }
-            /*synthlist[channel_index]->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
-            synthlist[channel_index]->stg_volume = instrumentlist[i]->volume;
-            synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
-            synthlist[channel_index]->stg_panning = instrumentlist[i]->panning;
-            synthlist[channel_index]->pan_freq = instrumentlist[i]->pan_freq;
-            synthlist[channel_index]->stg_pulse_width = instrumentlist[i]->pulse_width;
-            synthlist[channel_index]->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
-            synthlist[channel_index]->pitch_freq = instrumentlist[i]->pitch_freq;
-            synthlist[channel_index]->cutoff = instrumentlist[i]->cutoff;
-            synthlist[channel_index]->resonance = instrumentlist[i]->resonance;
-            synthlist[channel_index]->waveform = instrumentlist[i]->waveform;
-            synthlist[channel_index]->filter = instrumentlist[i]->filter;*/
+            // Init voice
+            auto v = audiosynth->voices[channel_index];
+
+            v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+            v->stg_volume = instrumentlist[i]->volume;
+            v->volume_freq = instrumentlist[i]->volume_freq;
+            v->stg_panning = instrumentlist[i]->panning;
+            v->pan_freq = instrumentlist[i]->pan_freq;
+            v->stg_pulse_width = instrumentlist[i]->pulse_width;
+            v->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
+            v->pitch_freq = instrumentlist[i]->pitch_freq;
+            v->cutoff = instrumentlist[i]->cutoff;
+            v->resonance = instrumentlist[i]->resonance;
+            v->waveform = instrumentlist[i]->waveform;
+            v->filter = instrumentlist[i]->filter;
 
             // Prepare synth queueing variables
             double ticks_per_second = (bpm * tps * 4) / 60;
             double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
-            // synthlist[channel_index]->frame_counter = frames_per_tick;
-            // synthlist[channel_index]->frames_per_tick = frames_per_tick;
+            v->frame_counter = frames_per_tick;
+            v->frames_per_tick = frames_per_tick;
 
-            // Play synth
-            geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
+			v->will_start_playing = true;
         }
         else if (instrumentlist[i]->type == ChannelType::file && instrumentlist[i]->sample_index != -1)
         {
-            geptr->SetChannelPitchRatio(channel_index, GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune));
-            geptr->SetChannelVolume(channel_index, instrumentlist[i]->volume * 4);
-            geptr->SetChannelTimeOffsets(channel_index, instrumentlist[i]->start_time_ms, instrumentlist[i]->mid_time_ms, instrumentlist[i]->end_time_ms);
-            geptr->SetChannelPanning(channel_index, instrumentlist[i]->panning);
-            geptr->PlaySoundOnChannel(samplelist[instrumentlist[i]->sample_index]->sound_index, channel_index, instrumentlist[i]->loop);
-            geptr->SetChannelFilter(channel_index, instrumentlist[i]->filter, FilterAlgorithm::chamberlain, instrumentlist[i]->cutoff, instrumentlist[i]->resonance);
-            sampleautomatorlist[channel_index].volume = instrumentlist[i]->volume;
-            sampleautomatorlist[channel_index].volume_freq = instrumentlist[i]->volume_freq;
-            sampleautomatorlist[channel_index].freq = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
-            sampleautomatorlist[channel_index].pitch_freq = instrumentlist[i]->pitch_freq;
-            sampleautomatorlist[channel_index].panning = instrumentlist[i]->panning;
-            sampleautomatorlist[channel_index].pan_phase = 0.0f;
-            sampleautomatorlist[channel_index].pan_freq = instrumentlist[i]->pan_freq;
+            geptr->SetChannelVolume(1, 1);
+            geptr->SetChannelPitchRatio(1, 1);
 
-			// TODO : Implement sample table change queueing just like how we do for synths
+            // Init voice
+            auto v = audiosampler->voices[channel_index];
+
+            v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+            v->stg_volume = instrumentlist[i]->volume;
+            v->volume_freq = instrumentlist[i]->volume_freq;
+            v->stg_panning = instrumentlist[i]->panning;
+            v->pan_freq = instrumentlist[i]->pan_freq;
+            v->stg_pulse_width = instrumentlist[i]->pulse_width;
+            v->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
+            v->pitch_freq = instrumentlist[i]->pitch_freq;
+            v->cutoff = instrumentlist[i]->cutoff;
+            v->resonance = instrumentlist[i]->resonance;
+
+            // Prepare synth queueing variables
+            double ticks_per_second = (bpm * tps * 4) / 60;
+            double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
+            v->frame_counter = frames_per_tick;
+            v->frames_per_tick = frames_per_tick;
+
+            v->will_start_playing = true;
         }
     }
 }
@@ -207,14 +206,7 @@ void UpdateStepPitch(int channel_index, int playing_phrase, int step_ptr, int tt
         // Get playing table transposition
         ApplyTableTransposition(channel_index, &f, tt);
         // Update the frequency change that will be written later on
-        if (instrumentlist[i]->type == ChannelType::synth)
-        {
-            (*new_freq) = NoteFreq(f) + instrumentlist[i]->detune;
-        }
-        else if (instrumentlist[i]->type == ChannelType::file)
-        {
-            (*new_freq) = GetSampleRatioChange(instrumentlist[i]->base_pitch, f, instrumentlist[i]->detune);
-        }
+        (*new_freq) = NoteFreq(f) + instrumentlist[i]->detune;
     }
 }
 
@@ -424,17 +416,24 @@ void DoTick()
 		// Staging variables for the changes that will be written to the synths and samples
         if (channellist[i].type == ChannelType::synth)
         {
-            // new_freq = synthlist[i]->stg_base_freq;
-            // new_pan = synthlist[i]->stg_panning;
-            // new_vol = synthlist[i]->stg_volume;
-            // new_pw = synthlist[i]->stg_pulse_width;
+            new_freq = audiosynth->voices[i]->stg_base_freq;
+            new_pan = audiosynth->voices[i]->stg_panning;
+            new_vol = audiosynth->voices[i]->stg_volume;
+            new_pw = audiosynth->voices[i]->stg_pulse_width;
+        }
+        else
+        {
+            new_freq = audiosampler->voices[i]->stg_base_freq;
+            new_pan = audiosampler->voices[i]->stg_panning;
+            new_vol = audiosampler->voices[i]->stg_volume;
+            new_pw = audiosampler->voices[i]->stg_pulse_width;
         }
 
         // Get all changes to the sound
         if (!pause_song || play_context == pt_preview)
             channellist[i].sub_step(&new_freq);
-        if (channellist[i].type == ChannelType::synth) synthlist[i]->SynthAutomation(&new_freq, &new_pan, &new_pw, &new_vol); // Run synth automation on animated variables
-        if (channellist[i].type == ChannelType::file && state != m_wave) sampleautomatorlist[i].ChannelAutomation(); // Run sample automation on animated variables
+        if (channellist[i].type == ChannelType::synth) audiosynth->SynthAutomation(&new_freq, &new_pan, &new_pw, &new_vol, i); // Run synth automation on animated variables
+        if (channellist[i].type == ChannelType::file) audiosampler->SampleAutomation(&new_freq, &new_pan, &new_pw, &new_vol, i); // Run sample automation on animated variables
 
         // Submit changes throughout the substep
         if (channellist[i].type == ChannelType::synth)
@@ -446,8 +445,18 @@ void DoTick()
 				, new_vol // Volume changes,
 				, new_pw // Pulse width changes
             };
-            // synthlist[i]->live_changes.push(s);
-            // synthlist[i]->start_playing = true;
+            audiosynth->voices[i]->live_changes.push(s);
+        }
+        else
+        {
+            live_change_sample s =
+            {
+                new_freq // Frequency changes,
+                , new_pan // Panning changes,
+                , new_vol // Volume changes,
+                , new_pw // Pulse width changes
+            };
+            audiosampler->voices[i]->live_changes.push(s);
         }
     }
 
@@ -1610,11 +1619,26 @@ void HandleMovementRepeaters()
         inputholdtimer = 0;
 }
 
+// Stop a specific channel
+void StopChannel(int channel)
+{
+    if (*channellisttypeptr[channel] == ChannelType::synth)
+    {
+        // Stop synth voice
+        audiosynth->voices[channel]->start_playing = false;
+    }
+    else
+    {
+        // Stop sampler voice
+        audiosampler->voices[channel]->start_playing = false;
+    }
+}
+
 // Stop all audio playback
 void StopAllChannels()
 {
     for (int i = 0; i < channelcount; i++)
-        geptr->StopChannel(i);
+        StopChannel(i);
 }
 
 // Start the sequence thread
@@ -3386,8 +3410,6 @@ void EditorControl()
                     // Preview the audio
                     geptr->SetChannelPitchRatio(open_channel, 1);
                     geptr->SetChannelVolume(open_channel, 1);
-                    geptr->SetChannelPanning(open_channel, 0.5);
-                    geptr->PlaySoundOnChannel(samplelist[open_sample]->sound_index, open_channel, false);
                 }
             }
             // Go up a directory
@@ -3462,7 +3484,7 @@ void EditorControl()
         // Stop previewing the audio
         if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
         {
-            geptr->StopChannel(open_channel);
+            StopChannel(open_channel);
         }
 
         // Update UI

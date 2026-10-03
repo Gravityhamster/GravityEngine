@@ -142,6 +142,9 @@ void TrackTicks();
 // Handle repeating movements
 void HandleMovementRepeaters();
 
+// Stop a channel
+void StopChannel(int channel);
+
 // Stop all audio playback
 void StopAllChannels();
 
