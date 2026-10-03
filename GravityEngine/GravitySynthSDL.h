@@ -104,13 +104,15 @@ inline std::map<SynthWaveForm, std::string> waveform_to_string = {
     {SynthWaveForm::noise, "NOISE"}
 };
 
-// Template for synth objects
-class GravityEngine_Synth
+// Voice structure
+class GravityEngine_SynthVoice
 {
-
-    // Synth parameters
 public:
-	// Actual audio values that are used in the audio thread
+    std::queue<live_change_synth> live_changes;
+    std::atomic<int> frame_counter = 0;
+    std::atomic<float> frames_per_tick = 0;
+
+    // Actual audio values that are used in the audio thread
     std::atomic<float> freq = 50.0;
     std::atomic<float> volume = 1;
     std::atomic<float> panning = 0.5;
@@ -126,11 +128,6 @@ public:
     std::atomic<float> stg_panning = 0.5;
     std::atomic<float> stg_pulse_width = 0.5;
 
-	std::queue<live_change_synth> live_changes;
-    std::atomic<bool> start_playing = false;
-    std::atomic<int> frame_counter = 0;
-    std::atomic<float> frames_per_tick = 0;
-
     std::atomic<float> pitch_freq = 0;
     std::atomic<float> volume_freq = 0;
     std::atomic<float> pan_freq = 0.0;
@@ -138,10 +135,6 @@ public:
 
     // float vibrato_freq = 0; -- Not yet implemented
     // float vibrato_amp = 0; -- Not yet implemented
-    int sample_frames;
-    SynthWaveForm waveform = SynthWaveForm::sine;
-    FilterType filter = FilterType::none;
-    FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
 
     // Filter
     float cutoff = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
@@ -155,9 +148,27 @@ public:
     float bp_r = 0.0f;
     float hp_r = 0.0f;
 
+    SynthWaveForm waveform = SynthWaveForm::sine;
+    FilterType filter = FilterType::none;
+    FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
+
     // Other state variables
     float pan_phase = 0.f;
     float pw_phase = 0.f;
+
+    std::atomic<bool> will_start_playing = false;
+    std::atomic<bool> start_playing = false;
+};
+
+// Template for synth objects
+class GravityEngine_Synth
+{
+
+    // Synth parameters
+public:
+
+    std::vector<GravityEngine_SynthVoice*> voices;
+    int sample_frames;
 
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
     // It simply generates a waveform. Never call this indepentently please. Use BindSynthToChannel in the engine instead.
@@ -169,14 +180,6 @@ public:
     // bool* synth_playing : Flag to indicate the thread has successfully finished
     static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* synth_playing)
     {
-        synth->freq = synth->stg_base_freq.load();
-        synth->volume = synth->stg_volume.load();
-        synth->panning = synth->stg_panning.load();
-        synth->pulse_width = synth->stg_pulse_width.load();
-        synth->stg_swpd_freq = synth->stg_base_freq.load();
-
-        // Crop panning
-        synth->panning = std::clamp<float>(synth->panning, 0.f, 1.f);
         // Get sample frames
         SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
         // Initialize a random number generator
@@ -188,20 +191,11 @@ public:
         int buffer_samples = buffer_frames * spec->channels;
         int buffer_bytes = buffer_samples * sizeof(float);
         float* buffer = (float*)SDL_malloc(buffer_bytes);
-        float phase = 0.;
+        float phase = 0.; // TODO: Phase tracking needs to be moved to the voice
         float last_freq = 0;
-        float pan_phase = synth->panning;
-        float pw_phase = synth->pulse_width;
         bool first = true;
 
         SDL_SetAudioStreamGain(stream, 1.0f);
-
-        synth->hp_l = 0.0f;
-        synth->bp_l = 0.0f;
-        synth->lp_l = 0.0f;
-        synth->hp_r = 0.0f;
-        synth->bp_r = 0.0f;
-        synth->lp_r = 0.0f;
 
         // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
@@ -226,110 +220,144 @@ public:
             int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
 
             // Check available data
-            if (available_frames < threshold_frames && synth->start_playing)
+            if (available_frames < threshold_frames)
             {
                 // Fill in audio data
                 for (int frame = 0; frame < get_frames; frame++)
                 {
-                    // Get any changes in my mailbox
-                    if (synth->frame_counter >= synth->frames_per_tick)
+					// Init buffer to 0.0f for this frame. This is important because we are adding all voices together into the same buffer.
+                    buffer[frame] = 0.0f;
+                    for (auto v : synth->voices)
                     {
-						synth->frame_counter -= synth->frames_per_tick;
-                        // Get next in queue
-						if (synth->live_changes.size() > 0)
-						{
-                            // Get the change list
-                            live_change_synth change = synth->live_changes.front();
-                            synth->live_changes.pop();
+                        if (v->will_start_playing)
+                        {
+                            v->freq = v->stg_base_freq.load();
+                            v->volume = v->stg_volume.load();
+                            v->panning = v->stg_panning.load();
+                            v->pulse_width = v->stg_pulse_width.load();
+                            v->stg_swpd_freq = v->stg_base_freq.load();
 
-                            // Get any changes
-							if (change.freq != -9999)
-								synth->freq = change.freq;
-                            if (change.pan != -2)
-                                synth->panning = change.pan;
-                            if (change.pw != -1)
-                                synth->pulse_width = change.pw;
-                            if (change.vol != -1)
-                                synth->volume = change.vol;
-						}
-                    }
-                    synth->frame_counter++;
+                            // Crop panning
+                            v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
 
-                    // The pitch of the sound is determined by sound wave cycles
-                    // per second. Thus, we take the number of samples in a second
-                    // And divide the pitch frequency across sample rate.
-                    // Every time we get an audio frame, we add the pitch/number of samples
-                    // to the phase to move forward at the proper rate to make that sound freq.
-                    // We make the range of this phase 0 to 1. The range of
-                    // a trig function input is 0 to 2PI. So we take the phase
-                    // and map it to the cycle of the trig function by multiplying
-                    // it by 2PI.
-                    // Basically, phase is the normalized position in the cycle. 
-                    // A cycle of a wave is 0 to 2PI.
-                    // The faster the phase moves, the faster the wave cycles, and the higher the pitch.
-                    // Phase is normalized because 2PI and 0 are the same position on a wave in trig.
-                    float one = phase * 2. * PI;
+                            float pan_phase = v->panning;
+                            float pw_phase = v->pulse_width;
 
-                    // Set sample based on wave form
-                    float sample = 0.;
-                    if (synth->waveform == SynthWaveForm::sine)
-                        sample = sin(one);
-                    else if (synth->waveform == SynthWaveForm::square)
-                        sample = (sin(one) > 0 ? 1 : -1);
-                    else if (synth->waveform == SynthWaveForm::pulse)
-                        sample = (sin(one) > synth->pulse_width ? 1 : -1);
-                    else if (synth->waveform == SynthWaveForm::sawtooth)
-                        sample = (phase * 2.f - 1.f);
-                    else if (synth->waveform == SynthWaveForm::triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
-                        sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                    else if (synth->waveform == SynthWaveForm::noise)
-                        sample = (distrib(gen) / 10000.);
+                            v->hp_l = 0.0f;
+                            v->bp_l = 0.0f;
+                            v->lp_l = 0.0f;
+                            v->hp_r = 0.0f;
+                            v->bp_r = 0.0f;
+                            v->lp_r = 0.0f;
 
-                    // Apply panning volume and global volume
-                    // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
-                    // That way, panning still effects the audio output in mono.
-                    // This is how the Gameboy does panning on its mono speaker.
-                    float this_pan = (synth->panning - 0.5f) * 2.0f;
-                    float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
-                    float left_gain = std::cos(angle);
-                    float right_gain = std::sin(angle);
-                    float left_pan = spec->channels == 2 ? 
-                        left_gain : 1 - abs(0.5 - synth->panning);
-                    float right_pan = right_gain;
-                    auto left_sample = left_pan * (synth->volume) * sample;
-                    auto right_sample = right_pan * (synth->volume) * sample;
+							v->will_start_playing = false;
+							v->start_playing = true;
+                        }
 
-                    // Process filtered out
-                    if (synth->algorithm == FilterAlgorithm::chamberlain)
-                    {
-                        ProcessChamberlainFilter(left_sample, synth->cutoff, synth->resonance, spec->freq, &synth->lp_l, &synth->bp_l, &synth->hp_l);
-                        ProcessChamberlainFilter(right_sample, synth->cutoff, synth->resonance, spec->freq, &synth->lp_r, &synth->bp_r, &synth->hp_r);
-                    }
+                        // Get any changes in my mailbox
+                        if (v->frame_counter >= v->frames_per_tick)
+                        {
+                            v->frame_counter -= v->frames_per_tick;
+                            // Get next in queue
+                            if (v->live_changes.size() > 0)
+                            {
+                                // Get the change list
+                                live_change_synth change = v->live_changes.front();
+                                v->live_changes.pop();
 
-                    // Get filtered value based on the type of filter
-                    float filtered_left = (synth->filter == FilterType::lowpass ? synth->lp_l : (synth->filter == FilterType::highpass ? synth->hp_l : (synth->filter == FilterType::bandpass ? synth->bp_l : left_sample)));
+                                // Get any changes
+                                if (change.freq != -9999)
+                                    v->freq = change.freq;
+                                if (change.pan != -2)
+                                    v->panning = change.pan;
+                                if (change.pw != -1)
+                                    v->pulse_width = change.pw;
+                                if (change.vol != -1)
+                                    v->volume = change.vol;
+                            }
+                        }
+                        v->frame_counter++;
 
-                    // Get filtered value based on the type of filter
-                    float filtered_right = (synth->filter == FilterType::lowpass ? synth->lp_r : (synth->filter == FilterType::highpass ? synth->hp_r : (synth->filter == FilterType::bandpass ? synth->bp_r : right_sample)));
+                        // Only add this to the frame if it's playing
+                        if (v->start_playing)
+                        {
+                            // The pitch of the sound is determined by sound wave cycles
+                            // per second. Thus, we take the number of samples in a second
+                            // And divide the pitch frequency across sample rate.
+                            // Every time we get an audio frame, we add the pitch/number of samples
+                            // to the phase to move forward at the proper rate to make that sound freq.
+                            // We make the range of this phase 0 to 1. The range of
+                            // a trig function input is 0 to 2PI. So we take the phase
+                            // and map it to the cycle of the trig function by multiplying
+                            // it by 2PI.
+                            // Basically, phase is the normalized position in the cycle. 
+                            // A cycle of a wave is 0 to 2PI.
+                            // The faster the phase moves, the faster the wave cycles, and the higher the pitch.
+                            // Phase is normalized because 2PI and 0 are the same position on a wave in trig.
+                            float one = phase * 2. * PI;
 
-                    // Fill the buffer differently depending on channel
-                    if (spec->channels == 1)
-                        buffer[frame] = filtered_left;
-                    else
-                    {
-                        // Every frame is made up of a left sample and a right sample.
-                        // We place the left sample into the buffer.
-                        // Then the right sample.
-                        buffer[frame * 2 + 0] = filtered_left;
-                        buffer[frame * 2 + 1] = filtered_right;
-                    }
+                            // Set sample based on wave form
+                            float sample = 0.;
+                            if (v->waveform == SynthWaveForm::sine)
+                                sample = sin(one);
+                            else if (v->waveform == SynthWaveForm::square)
+                                sample = (sin(one) > 0 ? 1 : -1);
+                            else if (v->waveform == SynthWaveForm::pulse)
+                                sample = (sin(one) > v->pulse_width ? 1 : -1);
+                            else if (v->waveform == SynthWaveForm::sawtooth)
+                                sample = (phase * 2.f - 1.f);
+                            else if (v->waveform == SynthWaveForm::triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
+                                sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
+                            else if (v->waveform == SynthWaveForm::noise)
+                                sample = (distrib(gen) / 10000.);
 
-                    // Step
-                    phase += synth->freq / spec->freq;
-                    // Normalize phase
-                    if (phase > 1.)
-                    {
-                        phase -= 1.;
+                            // Apply panning volume and global volume
+                            // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
+                            // That way, panning still effects the audio output in mono.
+                            // This is how the Gameboy does panning on its mono speaker.
+                            float this_pan = (v->panning - 0.5f) * 2.0f;
+                            float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
+                            float left_gain = std::cos(angle);
+                            float right_gain = std::sin(angle);
+                            float left_pan = spec->channels == 2 ?
+                                left_gain : 1 - abs(0.5 - v->panning);
+                            float right_pan = right_gain;
+                            auto left_sample = left_pan * (v->volume) * sample;
+                            auto right_sample = right_pan * (v->volume) * sample;
+
+                            // Process filtered out
+                            if (v->algorithm == FilterAlgorithm::chamberlain)
+                            {
+                                ProcessChamberlainFilter(left_sample, v->cutoff, v->resonance, spec->freq, &v->lp_l, &v->bp_l, &v->hp_l);
+                                ProcessChamberlainFilter(right_sample, v->cutoff, v->resonance, spec->freq, &v->lp_r, &v->bp_r, &v->hp_r);
+                            }
+
+                            // Get filtered value based on the type of filter
+                            float filtered_left = (v->filter == FilterType::lowpass ? v->lp_l : (v->filter == FilterType::highpass ? v->hp_l : (v->filter == FilterType::bandpass ? v->bp_l : left_sample)));
+
+                            // Get filtered value based on the type of filter
+                            float filtered_right = (v->filter == FilterType::lowpass ? v->lp_r : (v->filter == FilterType::highpass ? v->hp_r : (v->filter == FilterType::bandpass ? v->bp_r : right_sample)));
+
+                            // Fill the buffer differently depending on channel
+                            if (spec->channels == 1)
+                                buffer[frame] = filtered_left;
+                            else
+                            {
+                                // Every frame is made up of a left sample and a right sample.
+                                // We place the left sample into the buffer.
+                                // Then the right sample.
+                                buffer[frame * 2 + 0] = filtered_left;
+                                buffer[frame * 2 + 1] = filtered_right;
+                            }
+
+                            // Step
+                            phase += v->freq / spec->freq;
+                            // Normalize phase
+                            if (phase > 1.)
+                            {
+                                phase -= 1.;
+                            }
+                        }
                     }
                 }
 
@@ -338,7 +366,7 @@ public:
             }
 
             // Start the synth playback but only if this is the first time starting
-            if (first == true && synth->start_playing)
+            if (first == true)
             {
                 // Attach the audio stream to the channel's audio device
                 SDL_BindAudioStream(dev, stream);
@@ -351,51 +379,57 @@ public:
         // End sequence
         SDL_free(buffer);
         (*synth_playing) = false;
-        
-		// Reset synth state and action queue
-        synth->start_playing = false;
-        while (synth->live_changes.empty() == false)
-            synth->live_changes.pop();
+
+        for (auto v : synth->voices)
+        {
+            // Reset synth state and action queue
+            v->start_playing = false;
+            while (v->live_changes.empty() == false)
+                v->live_changes.pop();
+        }
     }
 
     // Automate the synth modulation variables (Effected by call rate)
     void SynthAutomation(double* new_freq, double* new_pan, double* new_pw, double* new_vol)
     {
-        // Step panning
-        if (pan_freq > 0)
+        for (auto v : voices)
         {
-            pan_phase += pan_freq / 100;
-            (*new_pan) = (sin(pan_phase * 2. * PI) / 2) + 0.5;
-            if (pan_phase > 1.)
-                pan_phase -= 1.;
-			stg_panning = (*new_pan);
-        }
-        // Step pulse width
-        if (pulse_width_freq > 0)
-        {
-            pw_phase += pulse_width_freq / 100;
-            (*new_pw) = (sin(pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
-            if (pw_phase > 1.)
-                pw_phase -= 1.;
-            stg_pulse_width = (*new_pw);
-        }
-        // Step note
-        if (pitch_freq != 0)
-        {
-            if (pitch_freq > 0)
-                stg_swpd_freq = stg_swpd_freq * (pitch_freq + 1); // Stage the new freq change
-            if (pitch_freq < 0)
-                stg_swpd_freq = stg_swpd_freq / (abs(pitch_freq) + 1); // Stage the new freq change
-            auto freq_swp_ofst = stg_swpd_freq - stg_base_freq;
-			(*new_freq) += freq_swp_ofst;
-        }
-        // Step volumne
-        if (volume_freq != 0)
-        {
-            (*new_vol) = stg_volume + volume_freq / 100;
-            if ((*new_vol) < 0)
-                (*new_vol) = 0;
-            stg_volume = (*new_vol);
+            // Step panning
+            if (v->pan_freq > 0)
+            {
+                v->pan_phase += v->pan_freq / 100;
+                (*new_pan) = (sin(v->pan_phase * 2. * PI) / 2) + 0.5;
+                if (v->pan_phase > 1.)
+                    v->pan_phase -= 1.;
+                v->stg_panning = (*new_pan);
+            }
+            // Step pulse width
+            if (v->pulse_width_freq > 0)
+            {
+                v->pw_phase += v->pulse_width_freq / 100;
+                (*new_pw) = (sin(v->pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
+                if (v->pw_phase > 1.)
+                    v->pw_phase -= 1.;
+                v->stg_pulse_width = (*new_pw);
+            }
+            // Step note
+            if (v->pitch_freq != 0)
+            {
+                if (v->pitch_freq > 0)
+                    v->stg_swpd_freq = v->stg_swpd_freq * (v->pitch_freq + 1); // Stage the new freq change
+                if (v->pitch_freq < 0)
+                    v->stg_swpd_freq = v->stg_swpd_freq / (abs(v->pitch_freq) + 1); // Stage the new freq change
+                auto freq_swp_ofst = v->stg_swpd_freq - v->stg_base_freq;
+                (*new_freq) += freq_swp_ofst;
+            }
+            // Step volumne
+            if (v->volume_freq != 0)
+            {
+                (*new_vol) = v->stg_volume + v->volume_freq / 100;
+                if ((*new_vol) < 0)
+                    (*new_vol) = 0;
+                v->stg_volume = (*new_vol);
+            }
         }
     }
 };

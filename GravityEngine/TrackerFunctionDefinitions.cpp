@@ -124,8 +124,27 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             geptr->SetChannelPitchRatio(channel_index, 1);
             geptr->SetChannelPanning(channel_index, 0.5f);
             geptr->SetChannelFilter(channel_index, FilterType::none, FilterAlgorithm::chamberlain, 1.0f, 0.0f);
-            // TODO: These commented out property sets will be set on the synth's first queued table change
-            synthlist[channel_index]->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+
+            // TEST
+            if (synthlist[channel_index]->voices.size() == 0)
+            {
+                auto v = new GravityEngine_SynthVoice();
+                synthlist[channel_index]->voices.insert(synthlist[channel_index]->voices.end(), v);
+                v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+                v->stg_volume = instrumentlist[i]->volume;
+                v->volume_freq = instrumentlist[i]->volume_freq;
+                v->stg_panning = instrumentlist[i]->panning;
+                v->pan_freq = instrumentlist[i]->pan_freq;
+                v->stg_pulse_width = instrumentlist[i]->pulse_width;
+                v->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
+                v->pitch_freq = instrumentlist[i]->pitch_freq;
+                v->cutoff = instrumentlist[i]->cutoff;
+                v->resonance = instrumentlist[i]->resonance;
+                v->waveform = instrumentlist[i]->waveform;
+                v->filter = instrumentlist[i]->filter;
+				v->will_start_playing = true;
+            }
+            /*synthlist[channel_index]->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
             synthlist[channel_index]->stg_volume = instrumentlist[i]->volume;
             synthlist[channel_index]->volume_freq = instrumentlist[i]->volume_freq;
             synthlist[channel_index]->stg_panning = instrumentlist[i]->panning;
@@ -136,13 +155,13 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             synthlist[channel_index]->cutoff = instrumentlist[i]->cutoff;
             synthlist[channel_index]->resonance = instrumentlist[i]->resonance;
             synthlist[channel_index]->waveform = instrumentlist[i]->waveform;
-            synthlist[channel_index]->filter = instrumentlist[i]->filter;
+            synthlist[channel_index]->filter = instrumentlist[i]->filter;*/
 
             // Prepare synth queueing variables
             double ticks_per_second = (bpm * tps * 4) / 60;
             double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
-            synthlist[channel_index]->frame_counter = frames_per_tick;
-            synthlist[channel_index]->frames_per_tick = frames_per_tick;
+            // synthlist[channel_index]->frame_counter = frames_per_tick;
+            // synthlist[channel_index]->frames_per_tick = frames_per_tick;
 
             // Play synth
             geptr->BindSynthToChannel(synthlist[channel_index], channel_index);
@@ -405,10 +424,10 @@ void DoTick()
 		// Staging variables for the changes that will be written to the synths and samples
         if (channellist[i].type == ChannelType::synth)
         {
-            new_freq = synthlist[i]->stg_base_freq;
-            new_pan = synthlist[i]->stg_panning;
-            new_vol = synthlist[i]->stg_volume;
-            new_pw = synthlist[i]->stg_pulse_width;
+            // new_freq = synthlist[i]->stg_base_freq;
+            // new_pan = synthlist[i]->stg_panning;
+            // new_vol = synthlist[i]->stg_volume;
+            // new_pw = synthlist[i]->stg_pulse_width;
         }
 
         // Get all changes to the sound
@@ -427,8 +446,8 @@ void DoTick()
 				, new_vol // Volume changes,
 				, new_pw // Pulse width changes
             };
-            synthlist[i]->live_changes.push(s);
-            synthlist[i]->start_playing = true;
+            // synthlist[i]->live_changes.push(s);
+            // synthlist[i]->start_playing = true;
         }
     }
 
