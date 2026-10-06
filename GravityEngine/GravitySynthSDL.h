@@ -29,17 +29,6 @@ struct live_change_synth
     double pw = -1.0;
 };
 
-// Enum to define the type of filter applied to audio channel
-enum class FilterType
-{
-    lowpass,
-    highpass,
-    bandpass,
-    none,
-    min = lowpass,
-    max = none
-};
-
 // Chamerblain filter processing - COPILOT function implemented into a sequestored function
 // float sample : Current decimal audio position
 // float cutoff : 0 to 1 freq filter cutoff 
@@ -78,12 +67,6 @@ enum class SynthWaveForm
     noise,
     min = sine,
     max = noise
-};
-
-// Enum to define filter algorithm
-enum class FilterAlgorithm
-{
-    chamberlain
 };
 
 // Conversion map for waveforms
@@ -178,6 +161,8 @@ public:
     {
         // Get sample frames
         SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
+        if (spec->channels > 2)
+            spec->channels = 2;
         // Initialize a random number generator
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -232,9 +217,6 @@ public:
 
                             // Crop panning
                             v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
-
-                            v->pan_phase = v->panning;
-                            v->pw_phase = v->pulse_width;
 
                             v->hp_l = 0.0f;
                             v->bp_l = 0.0f;
@@ -350,6 +332,10 @@ public:
                         }
                     }
                 }
+
+				// Clamp the buffer to -1.0 to 1.0 to prevent clipping and distortion
+                for (int i = 0; i < buffer_samples; i++)
+                    buffer[i] = std::clamp(buffer[i], -1.0f, 1.0f);
 
                 // Push buffer to stream
                 SDL_PutAudioStreamData(stream, buffer, buffer_bytes);

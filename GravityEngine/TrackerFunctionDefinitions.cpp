@@ -139,6 +139,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             v->stg_volume = instrumentlist[i]->volume;
             v->volume_freq = instrumentlist[i]->volume_freq;
             v->stg_panning = instrumentlist[i]->panning;
+            v->pan_phase = 0.5f - asinf(std::clamp((instrumentlist[i]->panning - 0.5f) * 2.0f, -1.0f, 1.0f)) / (2.0f * PI);
+            v->pw_phase = 0.5f - asinf(std::clamp((instrumentlist[i]->pulse_width - 0.5f) / 0.495f, -1.0f, 1.0f)) / (2.0f * PI);
             v->pan_freq = instrumentlist[i]->pan_freq;
             v->stg_pulse_width = instrumentlist[i]->pulse_width;
             v->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
@@ -164,16 +166,25 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             // Init voice
             auto v = audiosampler->voices[channel_index];
 
-            v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+            v->stg_step_freq = NoteFreq(f) + instrumentlist[i]->detune;
+			v->base_freq = NoteFreq(instrumentlist[i]->base_pitch);
             v->stg_volume = instrumentlist[i]->volume;
             v->volume_freq = instrumentlist[i]->volume_freq;
             v->stg_panning = instrumentlist[i]->panning;
+            v->pan_phase = 0.5f - asinf(std::clamp((instrumentlist[i]->panning - 0.5f) * 2.0f, -1.0f, 1.0f)) / (2.0f * PI);
             v->pan_freq = instrumentlist[i]->pan_freq;
-            v->stg_pulse_width = instrumentlist[i]->pulse_width;
-            v->pulse_width_freq = instrumentlist[i]->pulse_width_freq;
             v->pitch_freq = instrumentlist[i]->pitch_freq;
             v->cutoff = instrumentlist[i]->cutoff;
             v->resonance = instrumentlist[i]->resonance;
+			v->start_time_ms = instrumentlist[i]->start_time_ms;
+			v->end_time_ms = instrumentlist[i]->end_time_ms;
+			v->mid_time_ms = instrumentlist[i]->mid_time_ms;
+			v->looping = instrumentlist[i]->loop;
+			v->sound = geptr->GetSound(samplelist[instrumentlist[i]->sample_index]->sound_index);
+
+            v->cutoff = instrumentlist[i]->cutoff;
+            v->resonance = instrumentlist[i]->resonance;
+            v->filter = instrumentlist[i]->filter;
 
             // Prepare synth queueing variables
             double ticks_per_second = (bpm * tps * 4) / 60;
@@ -423,17 +434,16 @@ void DoTick()
         }
         else
         {
-            new_freq = audiosampler->voices[i]->stg_base_freq;
+            new_freq = audiosampler->voices[i]->stg_step_freq;
             new_pan = audiosampler->voices[i]->stg_panning;
             new_vol = audiosampler->voices[i]->stg_volume;
-            new_pw = audiosampler->voices[i]->stg_pulse_width;
         }
 
         // Get all changes to the sound
         if (!pause_song || play_context == pt_preview)
             channellist[i].sub_step(&new_freq);
         if (channellist[i].type == ChannelType::synth) audiosynth->SynthAutomation(&new_freq, &new_pan, &new_pw, &new_vol, i); // Run synth automation on animated variables
-        if (channellist[i].type == ChannelType::file) audiosampler->SampleAutomation(&new_freq, &new_pan, &new_pw, &new_vol, i); // Run sample automation on animated variables
+        if (channellist[i].type == ChannelType::file) audiosampler->SampleAutomation(&new_freq, &new_pan, &new_vol, i); // Run sample automation on animated variables
 
         // Submit changes throughout the substep
         if (channellist[i].type == ChannelType::synth)
@@ -454,7 +464,6 @@ void DoTick()
                 new_freq // Frequency changes,
                 , new_pan // Panning changes,
                 , new_vol // Volume changes,
-                , new_pw // Pulse width changes
             };
             audiosampler->voices[i]->live_changes.push(s);
         }
@@ -3404,7 +3413,10 @@ void EditorControl()
 
                     // Load sample audio into memory and assign index to sample object
                     if (samplelist[open_sample]->sound_index != -1 && geptr->CheckSound(samplelist[open_sample]->sound_index) == true)
+                    {
+                        StopAllChannels();
                         geptr->DeleteSound(samplelist[open_sample]->sound_index);
+                    }
                     samplelist[open_sample]->sound_index = geptr->AddSound(samplelist[open_sample]->path.c_str());
 
                     // Preview the audio

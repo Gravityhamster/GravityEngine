@@ -12,13 +12,63 @@
 #include <unordered_map>
 #include <random>
 #include <map>
+#include <climits>
 #include "SPSC_Queue.h"
 #include "GravityEngineTypes.h"
 
 #define PI 3.14159265358979323846f
 
+// Gravity Engine sound class
+class GravityEngine_Sound
+{
+private:
+    // Copilot help on this one
+    // Convert the audio in the audio buffer to a different audio spec
+    // Uint8* audio_buf : The buffer for the audio data
+    // Uint32 audio_len : The length of the audio in the audio buffer
+    // SDL_AudioSpec wav_audio_spec : Audio specifications of the audio to be converted
+    // SDL_AudioSpec audio_spec : Audio specifications to convert the audio to
+    std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
+    {
+        // Convert audio to spec
+        auto sdl_audio_stream_conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
+        SDL_PutAudioStreamData(sdl_audio_stream_conv, audio_buf, audio_len);
+        SDL_FlushAudioStream(sdl_audio_stream_conv);
+        std::vector<Uint8> converted_data;
+        Uint8 temp[4096];
+        int bytesRead;
+        while ((bytesRead = SDL_GetAudioStreamData(sdl_audio_stream_conv, temp, sizeof(temp))) > 0) {
+            converted_data.insert(converted_data.end(), temp, temp + bytesRead);
+        }
+        SDL_DestroyAudioStream(sdl_audio_stream_conv);
+        return converted_data;
+    }
+
+public:
+    // -= Attributes =-
+    std::vector<Uint8> converted_audio; // Buffer for the final converted audio data
+
+    // -= Methods =-
+
+    // Construct audio
+    // const char* path : File path of the audio
+    // SDL_AudioSpec audio_spec : Audio specification to convert the audio to (this should be the global audio spec in the engine)
+    GravityEngine_Sound(const char* path, SDL_AudioSpec audio_spec)
+    {
+        Uint8* audio_buf;
+        Uint32 audio_len;
+        SDL_AudioSpec wav_audio_spec;
+        // Load the wav file
+        SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
+        // Convert the audio
+        converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
+    };
+
+    // Destruct audio
+    ~GravityEngine_Sound() {};
+};
+
 // TODO: Any effects related directly to instrument automation should be implemented directly into the sampler (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
-// TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
 
 // Struct for submitting changes to the sampler parameters from the main thread to the audio thread
 struct live_change_sample
@@ -27,17 +77,6 @@ struct live_change_sample
     double pan = -2.0;
     double vol = -1.0;
     double pw = -1.0;
-};
-
-// Enum to define the type of filter applied to audio channel
-enum class SampleFilterType
-{
-    lowpass,
-    highpass,
-    bandpass,
-    none,
-    min = lowpass,
-    max = none
 };
 
 // Chamerblain filter processing - COPILOT function implemented into a sequestored function
@@ -67,35 +106,6 @@ inline void SamplerProcessChamberlainFilter(float sample, float cutoff, float re
     (*lp) *= 0.999f;
 }
 
-// Enum to define the wave forms on a sampler
-enum class SampleWaveForm
-{
-    sample_sine,
-    sample_square,
-    sample_pulse,
-    sample_sawtooth,
-    sample_triangle,
-    sample_noise,
-    min = sample_sine,
-    max = sample_noise
-};
-
-// Enum to define filter algorithm
-enum class SampleFilterAlgorithm
-{
-    chamberlain
-};
-
-// Conversion map for waveforms
-inline std::map<SampleWaveForm, std::string> sample_waveform_to_string = {
-    {SampleWaveForm::sample_sine, "SINE"},
-    {SampleWaveForm::sample_square, "SQUARE"},
-    {SampleWaveForm::sample_pulse, "PULSE"},
-    {SampleWaveForm::sample_sawtooth, "SAWTOOTH"},
-    {SampleWaveForm::sample_triangle, "TRIANGLE"},
-    {SampleWaveForm::sample_noise, "NOISE"}
-};
-
 // Voice structure
 class GravityEngine_SamplerVoice
 {
@@ -109,22 +119,19 @@ public:
     std::atomic<float> freq = 50.0;
     std::atomic<float> volume = 1;
     std::atomic<float> panning = 0.5;
-    std::atomic<float> pulse_width = 0.5;
 
     // Staging values that are only used in tracking position in incremental changes to the sampler parameters. 
     // These are used to all movement to be smoother. So basically, the tracker thread will make a change to the
     // audio values, then write the change to the queue and then write the change to these staging values so that
     // it can continue from the last queue write value, even if the sampler has not yet applied its changes.
-    std::atomic<float> stg_base_freq = 50.0;
+    std::atomic<float> stg_step_freq = 50.0;
     std::atomic<float> stg_swpd_freq = 0.0;
     std::atomic<float> stg_volume = 1;
     std::atomic<float> stg_panning = 0.5;
-    std::atomic<float> stg_pulse_width = 0.5;
 
     std::atomic<float> pitch_freq = 0;
     std::atomic<float> volume_freq = 0;
     std::atomic<float> pan_freq = 0.0;
-    std::atomic<float> pulse_width_freq = 0.0;
 
     // float vibrato_freq = 0; -- Not yet implemented
     // float vibrato_amp = 0; -- Not yet implemented
@@ -141,19 +148,31 @@ public:
     float bp_r = 0.0f;
     float hp_r = 0.0f;
 
-    SampleWaveForm waveform = SampleWaveForm::sample_sine;
-    SampleFilterType filter = SampleFilterType::none;
-    SampleFilterAlgorithm algorithm = SampleFilterAlgorithm::chamberlain;
+    FilterType filter = FilterType::none;
+    FilterAlgorithm algorithm = FilterAlgorithm::chamberlain;
 
     // Other state variables
     float pan_phase = 0.f;
-    float pw_phase = 0.f;
 
     std::atomic<bool> will_start_playing = false;
     std::atomic<bool> start_playing = false;
 
-    float phase = 0.;
+    long start_time_ms = 0;
+    long mid_time_ms = 0;
+    long end_time_ms = -1;
+
     float last_freq = 0;
+
+	GravityEngine_Sound* sound = nullptr;
+    bool looping = false;
+
+    // Frequency of the original sampled audio (0 = don't pitch shift, play at original speed)
+    std::atomic<float> base_freq = 0.f;
+
+    // Replaces `long read_ptr`: playback position in FRAMES, fractional
+    double read_pos = 0.0;
+    // Playback rate at the end of the previous buffer (used for smooth ramping)
+    double cur_rate = 1.0;
 };
 
 // Template for sampler objects
@@ -166,8 +185,36 @@ public:
     std::vector<GravityEngine_SamplerVoice*> voices;
     int sample_frames;
 
-    // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
-    // It simply generates a waveform. Never call this indepentently please. Use BindsamplerToChannel in the engine instead.
+    // time : Milliseconds to convert to bytes
+    // audio_spec : Channel audio spec
+    static size_t milliseconds_to_bytes(long time, SDL_AudioSpec audio_spec)
+    {
+        // Bytes in every sample
+        double bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8.0 * audio_spec.channels;
+        // Samples in ever second
+        double samples_per_second = audio_spec.freq;
+        // Bytes per second
+        double bytes_per_second = bytes_per_sample * samples_per_second;
+        // Bytes per millisecond
+        return (size_t)floor(time * (bytes_per_second / 1000.0));
+    }
+
+    // Claude - Milliseconds to (fractional) frames
+    static double milliseconds_to_frames(long time, const SDL_AudioSpec& audio_spec)
+    {
+        return time * (audio_spec.freq / 1000.0);
+    }
+
+    // Claude - Playback speed needed to turn a sample recorded at base_freq into freq
+    static double PlaybackRate(float freq, float base_freq)
+    {
+        if (base_freq <= 0.f)
+            return 1.0; // no root pitch set, play as recorded
+        return std::clamp((double)freq / (double)base_freq, 0.0, 16.0);
+    }
+
+    // Mostly Claude reworked
+	// Reads a sample from the sound at a fractional frame position, using linear interpolation.
     // GravityEngine_sampler* sampler : sampler object reference
     // SDL_AudioStream* stream : Audio stream that the sampler audio plays on
     // SDL_AudioSpec* spec : Audio spec to format the audio with
@@ -176,203 +223,215 @@ public:
     // bool* sampler_playing : Flag to indicate the thread has successfully finished
     static void GenerateAudio(GravityEngine_Sampler* sampler, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* sampler_playing)
     {
+        bool first = true;
+
         // Get sample frames
         SDL_GetAudioDeviceFormat(dev, spec, &sampler->sample_frames);
-        // Initialize a random number generator
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distrib(-10000, 10000);
-        // Get buffer size
-        int buffer_frames = sampler->sample_frames;
-        int buffer_samples = buffer_frames * spec->channels;
-        int buffer_bytes = buffer_samples * sizeof(float);
-        float* buffer = (float*)SDL_malloc(buffer_bytes);
-        bool first = true;
+        if (spec->channels > 2)
+            spec->channels = 2;
+
+        const int channels = spec->channels;
+        const int buffer_frames = sampler->sample_frames;
+        const int bytes_per_sample = SDL_AUDIO_BITSIZE(spec->format) / 8;
+        const int buffer_size = buffer_frames * channels * bytes_per_sample;
+        const size_t frame_bytes = sizeof(float) * channels;
+        std::vector<Uint8> buffer(buffer_size);
 
         SDL_SetAudioStreamGain(stream, 1.0f);
 
-        // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
 
-            // If the sampler is paused, do not play the sampler
             if ((*state) == paused)
             {
                 std::this_thread::yield();
                 continue;
             }
 
-            // Get the available stream in frames
-            // ----------------------------------
-            // A sample is one decimal. For mono that would be 1 sample per frame. 
-            // However in Stereo, it's 1 sample per speaker per frame. 
-            // So that would be 2 samples per frame.
-            // This is why we are looping frame-by-frame. 
-            // We are calculating all samples per frame in one loop cycle.
             int threshold_frames = sampler->sample_frames;
-            int get_frames = sampler->sample_frames;
-            //printf("%d\n", sampler->sample_frames);
-            int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
+            int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * channels);
 
-            // Check available data
             if (available_frames < threshold_frames)
             {
-                // Fill in audio data
-                SDL_memset(buffer, 0, buffer_bytes);
-                for (int frame = 0; frame < get_frames; frame++)
+                SDL_memset(buffer.data(), 0, buffer_size);
+
+                for (auto v : sampler->voices)
                 {
-                    for (auto v : sampler->voices)
+                    // Voice was just triggered: initialise its state
+                    if (v->will_start_playing)
                     {
-                        if (v->will_start_playing)
+                        v->freq = v->stg_step_freq.load();
+                        v->volume = v->stg_volume.load();
+                        v->panning = v->stg_panning.load();
+                        v->stg_swpd_freq = v->stg_step_freq.load();
+
+                        v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
+
+                        v->hp_l = v->bp_l = v->lp_l = 0.0f;
+                        v->hp_r = v->bp_r = v->lp_r = 0.0f;
+
+                        v->read_pos = v->start_time_ms != -1
+                            ? milliseconds_to_frames(v->start_time_ms, *spec)
+                            : 0.0;
+
+                        // Start at the right speed so there's no pitch glide into the note
+                        v->cur_rate = PlaybackRate(v->freq.load(), v->base_freq.load());
+
+                        v->frame_counter = 0;
+
+                        v->will_start_playing = false;
+                        v->start_playing = true;
+                    }
+
+                    if (!v->start_playing || !v->sound)
+                        continue;
+
+                    // -= Apply queued parameter changes =-
+                    const int fpt = std::max(1, (int)v->frames_per_tick.load());
+                    if (v->frames_per_tick.load() > 0)
+                    {
+                        v->frame_counter += sampler->sample_frames;
+                        while (v->frame_counter >= fpt)
                         {
-                            v->freq = v->stg_base_freq.load();
-                            v->volume = v->stg_volume.load();
-                            v->panning = v->stg_panning.load();
-                            v->pulse_width = v->stg_pulse_width.load();
-                            v->stg_swpd_freq = v->stg_base_freq.load();
+                            v->frame_counter -= fpt;
 
-                            // Crop panning
-                            v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
-
-                            v->pan_phase = v->panning;
-                            v->pw_phase = v->pulse_width;
-
-                            v->hp_l = 0.0f;
-                            v->bp_l = 0.0f;
-                            v->lp_l = 0.0f;
-                            v->hp_r = 0.0f;
-                            v->bp_r = 0.0f;
-                            v->lp_r = 0.0f;
-
-                            v->will_start_playing = false;
-                            v->start_playing = true;
-                        }
-
-                        // Get any changes in my mailbox
-                        if (v->frame_counter >= v->frames_per_tick && v->start_playing)
-                        {
-                            v->frame_counter -= v->frames_per_tick;
                             live_change_sample change;
-                            // Get next in queue
-                            if (v->live_changes.pop(change) && v->start_playing)
-                            {
-                                // Get any changes
-                                if (change.freq != -9999)
-                                    v->freq = change.freq;
-                                if (change.pan != -2)
-                                    v->panning = change.pan;
-                                if (change.pw != -1)
-                                    v->pulse_width = change.pw;
-                                if (change.vol != -1)
-                                    v->volume = change.vol;
-                            }
-                        }
-                        v->frame_counter++;
+                            if (!v->live_changes.pop(change))
+                                break;
 
-                        // Only add this to the frame if it's playing
-                        if (v->start_playing)
-                        {
-                            // The pitch of the sound is determined by sound wave cycles
-                            // per second. Thus, we take the number of samples in a second
-                            // And divide the pitch frequency across sample rate.
-                            // Every time we get an audio frame, we add the pitch/number of samples
-                            // to the phase to move forward at the proper rate to make that sound freq.
-                            // We make the range of this phase 0 to 1. The range of
-                            // a trig function input is 0 to 2PI. So we take the phase
-                            // and map it to the cycle of the trig function by multiplying
-                            // it by 2PI.
-                            // Basically, phase is the normalized position in the cycle. 
-                            // A cycle of a wave is 0 to 2PI.
-                            // The faster the phase moves, the faster the wave cycles, and the higher the pitch.
-                            // Phase is normalized because 2PI and 0 are the same position on a wave in trig.
-                            float one = v->phase * 2. * PI;
-
-                            // Set sample based on wave form
-                            float sample = 0.;
-                            if (v->waveform == SampleWaveForm::sample_sine)
-                                sample = sin(one);
-                            else if (v->waveform == SampleWaveForm::sample_square)
-                                sample = (sin(one) > 0 ? 1 : -1);
-                            else if (v->waveform == SampleWaveForm::sample_pulse)
-                                sample = (sin(one) > v->pulse_width ? 1 : -1);
-                            else if (v->waveform == SampleWaveForm::sample_sawtooth)
-                                sample = (v->phase * 2.f - 1.f);
-                            else if (v->waveform == SampleWaveForm::sample_triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
-                                sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                            else if (v->waveform == SampleWaveForm::sample_noise)
-                                sample = (distrib(gen) / 10000.);
-
-                            // Apply panning volume and global volume
-                            // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
-                            // That way, panning still effects the audio output in mono.
-                            // This is how the Gameboy does panning on its mono speaker.
-                            float this_pan = (v->panning - 0.5f) * 2.0f;
-                            float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
-                            float left_gain = std::cos(angle);
-                            float right_gain = std::sin(angle);
-                            float left_pan = spec->channels == 2 ?
-                                left_gain : 1 - abs(0.5 - v->panning);
-                            float right_pan = right_gain;
-                            auto left_sample = left_pan * (v->volume) * sample;
-                            auto right_sample = right_pan * (v->volume) * sample;
-
-                            // Process filtered out
-                            if (v->algorithm == SampleFilterAlgorithm::chamberlain)
-                            {
-                                ProcessChamberlainFilter(left_sample, v->cutoff, v->resonance, spec->freq, &v->lp_l, &v->bp_l, &v->hp_l);
-                                ProcessChamberlainFilter(right_sample, v->cutoff, v->resonance, spec->freq, &v->lp_r, &v->bp_r, &v->hp_r);
-                            }
-
-                            // Get filtered value based on the type of filter
-                            float filtered_left = (v->filter == SampleFilterType::lowpass ? v->lp_l : (v->filter == SampleFilterType::highpass ? v->hp_l : (v->filter == SampleFilterType::bandpass ? v->bp_l : left_sample)));
-
-                            // Get filtered value based on the type of filter
-                            float filtered_right = (v->filter == SampleFilterType::lowpass ? v->lp_r : (v->filter == SampleFilterType::highpass ? v->hp_r : (v->filter == SampleFilterType::bandpass ? v->bp_r : right_sample)));
-
-                            // Fill the buffer differently depending on channel
-                            if (spec->channels == 1)
-                                buffer[frame] += filtered_left;
-                            else
-                            {
-                                // Every frame is made up of a left sample and a right sample.
-                                // We place the left sample into the buffer.
-                                // Then the right sample.
-                                buffer[frame * 2 + 0] += filtered_left;
-                                buffer[frame * 2 + 1] += filtered_right;
-                            }
-
-                            // Step
-                            v->phase += v->freq / spec->freq;
-                            // Normalize phase
-                            if (v->phase > 1.)
-                            {
-                                v->phase -= 1.;
-                            }
+                            if (change.freq != -9999) v->freq = change.freq;
+                            if (change.pan != -2)     v->panning = change.pan;
+                            if (change.vol != -1)     v->volume = change.vol;
                         }
                     }
+
+                    // -= Volume and panning gains for this buffer =-
+                    const float vol = v->volume.load();
+                    const float pan = std::clamp<float>(v->panning.load(), 0.f, 1.f);
+
+                    float gains[2];
+                    if (channels == 2)
+                    {
+                        const float angle = pan * (PI / 2.0f);
+                        gains[0] = std::cos(angle) * vol;
+                        gains[1] = std::sin(angle) * vol;
+                    }
+                    else
+                    {
+                        gains[0] = (1.0f - std::abs(0.5f - pan)) * vol;
+                        gains[1] = gains[0];
+                    }
+
+                    // -= Region of the sample that can be played (in frames) =-
+                    const auto& audio = v->sound->converted_audio;
+                    const float* src = (const float*)audio.data();
+                    const int64_t total_frames = (int64_t)(audio.size() / frame_bytes);
+
+                    int64_t end_frame = total_frames;
+                    if (v->end_time_ms != -1)
+                        end_frame = std::min<int64_t>(total_frames, (int64_t)milliseconds_to_frames(v->end_time_ms, *spec));
+
+                    const int64_t loop_start = (int64_t)milliseconds_to_frames(v->mid_time_ms, *spec);
+                    // Only loop if the loop point is before the end
+                    const bool can_loop = v->looping && loop_start < end_frame;
+
+                    // -= Playback speed, ramped across the buffer to avoid pitch stepping =-
+                    const double rate_start = v->cur_rate;
+                    const double rate_end = PlaybackRate(v->freq.load(), v->base_freq.load());
+
+                    double pos = v->read_pos;
+
+                    // Filter settings and state for this buffer. State is copied into locals for
+                    // the loop and written back afterwards, so it carries over between buffers.
+                    const float cutoff = v->cutoff;
+                    const float resonance = v->resonance;
+                    const FilterType filter_type = v->filter;
+                    const bool use_filter = (filter_type != FilterType::none) &&
+                        (v->algorithm == FilterAlgorithm::chamberlain);
+
+                    float lp[2] = { v->lp_l, v->lp_r };
+                    float bp[2] = { v->bp_l, v->bp_r };
+                    float hp[2] = { v->hp_l, v->hp_r };
+
+                    for (int i = 0; i < buffer_frames; i++)
+                    {
+                        // Past the end of the playable region?
+                        if (pos >= (double)end_frame)
+                        {
+                            if (can_loop)
+                            {
+                                // fmod keeps the fractional part, so looping doesn't drift in pitch
+                                pos = loop_start + std::fmod(pos - loop_start, (double)(end_frame - loop_start));
+                            }
+                            else
+                            {
+                                v->start_playing = false;
+                                pos = 0.0;
+                                break;
+                            }
+                        }
+
+                        // Linear interpolation between the two neighbouring frames
+                        const int64_t i0 = (int64_t)pos;
+                        int64_t i1 = i0 + 1;
+                        if (i1 >= end_frame)
+                            i1 = can_loop ? loop_start : i0;
+                        const float frac = (float)(pos - (double)i0);
+
+                        for (int c = 0; c < channels; c++)
+                        {
+                            const float a = src[i0 * channels + c];
+                            const float b = src[i1 * channels + c];
+
+                            // Pitched sample with volume and pan applied (same as the synth's left_sample / right_sample)
+                            float s = (a + (b - a) * frac) * gains[c];
+
+                            // Filter
+                            if (use_filter)
+                            {
+                                SamplerProcessChamberlainFilter(s, cutoff, resonance, (float)spec->freq, &lp[c], &bp[c], &hp[c]);
+
+                                if (filter_type == FilterType::lowpass)       s = lp[c];
+                                else if (filter_type == FilterType::highpass) s = hp[c];
+                                else if (filter_type == FilterType::bandpass) s = bp[c];
+                            }
+
+                            ((float*)buffer.data())[i * channels + c] += s;
+                        }
+
+                        // Advance by the current rate
+                        const double rate = rate_start + (rate_end - rate_start) * ((double)i / buffer_frames);
+                        pos += rate;
+                    }
+
+                    // Save the filter state for the next buffer
+                    v->lp_l = lp[0]; v->bp_l = bp[0]; v->hp_l = hp[0];
+                    v->lp_r = lp[1]; v->bp_r = bp[1]; v->hp_r = hp[1];
+
+                    v->read_pos = pos;
+                    v->cur_rate = rate_end;
                 }
 
-                // Push buffer to stream
-                SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
+                // Clamp so overlapping voices can't exceed full scale
+                float* mix = (float*)buffer.data();
+                const int total_samples = buffer_size / (int)sizeof(float);
+                for (int i = 0; i < total_samples; i++)
+                    mix[i] = std::clamp(mix[i], -1.0f, 1.0f);
+
+                SDL_PutAudioStreamData(stream, buffer.data(), buffer_size);
             }
 
-            // Start the sampler playback but only if this is the first time starting
             if (first == true)
             {
-                // Attach the audio stream to the channel's audio device
                 SDL_BindAudioStream(dev, stream);
-                // Start playback
                 SDL_ResumeAudioDevice(dev);
-                // Audio is bound, don't do this again.
                 first = false;
             }
         }
-        // End sequence
-        SDL_free(buffer);
         (*sampler_playing) = false;
     }
 
     // Automate the sampler modulation variables (Effected by call rate)
-    void SampleAutomation(double* new_freq, double* new_pan, double* new_pw, double* new_vol, int voice_index)
+    void SampleAutomation(double* new_freq, double* new_pan, double* new_vol, int voice_index)
     {
         // Step panning
         if (voices[voice_index]->pan_freq > 0)
@@ -383,15 +442,6 @@ public:
                 voices[voice_index]->pan_phase -= 1.;
             voices[voice_index]->stg_panning = (*new_pan);
         }
-        // Step pulse width
-        if (voices[voice_index]->pulse_width_freq > 0)
-        {
-            voices[voice_index]->pw_phase += voices[voice_index]->pulse_width_freq / 100;
-            (*new_pw) = (sin(voices[voice_index]->pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
-            if (voices[voice_index]->pw_phase > 1.)
-                voices[voice_index]->pw_phase -= 1.;
-            voices[voice_index]->stg_pulse_width = (*new_pw);
-        }
         // Step note
         if (voices[voice_index]->pitch_freq != 0)
         {
@@ -399,7 +449,7 @@ public:
                 voices[voice_index]->stg_swpd_freq = voices[voice_index]->stg_swpd_freq * (voices[voice_index]->pitch_freq + 1); // Stage the new freq change
             if (voices[voice_index]->pitch_freq < 0)
                 voices[voice_index]->stg_swpd_freq = voices[voice_index]->stg_swpd_freq / (abs(voices[voice_index]->pitch_freq) + 1); // Stage the new freq change
-            auto freq_swp_ofst = voices[voice_index]->stg_swpd_freq - voices[voice_index]->stg_base_freq;
+            auto freq_swp_ofst = voices[voice_index]->stg_swpd_freq - voices[voice_index]->stg_step_freq;
             (*new_freq) += freq_swp_ofst;
         }
         // Step volumne

@@ -65,56 +65,6 @@ private:
     // Gravity Engine private classes
 private:
 
-    // Gravity Engine sound class
-    class GravityEngine_Sound
-    {
-    private:
-        // Copilot help on this one
-        // Convert the audio in the audio buffer to a different audio spec
-        // Uint8* audio_buf : The buffer for the audio data
-        // Uint32 audio_len : The length of the audio in the audio buffer
-        // SDL_AudioSpec wav_audio_spec : Audio specifications of the audio to be converted
-        // SDL_AudioSpec audio_spec : Audio specifications to convert the audio to
-        std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
-        {
-            // Convert audio to spec
-            auto sdl_audio_stream_conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
-            SDL_PutAudioStreamData(sdl_audio_stream_conv, audio_buf, audio_len);
-            SDL_FlushAudioStream(sdl_audio_stream_conv);
-            std::vector<Uint8> converted_data;
-            Uint8 temp[4096];
-            int bytesRead;
-            while ((bytesRead = SDL_GetAudioStreamData(sdl_audio_stream_conv, temp, sizeof(temp))) > 0) {
-                converted_data.insert(converted_data.end(), temp, temp + bytesRead);
-            }
-            SDL_DestroyAudioStream(sdl_audio_stream_conv);
-            return converted_data;
-        }
-
-    public:
-        // -= Attributes =-
-        std::vector<Uint8> converted_audio; // Buffer for the final converted audio data
-
-        // -= Methods =-
-
-        // Construct audio
-        // const char* path : File path of the audio
-        // SDL_AudioSpec audio_spec : Audio specification to convert the audio to (this should be the global audio spec in the engine)
-        GravityEngine_Sound(const char* path, SDL_AudioSpec audio_spec)
-        {
-            Uint8* audio_buf;
-            Uint32 audio_len;
-            SDL_AudioSpec wav_audio_spec;
-            // Load the wav file
-            SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
-            // Convert the audio
-            converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
-        };
-
-        // Destruct audio
-        ~GravityEngine_Sound() {};
-    };
-
     // GravityEngine audio channel class
     class GravityEngine_AudioChannel
     {
@@ -126,21 +76,6 @@ private:
         std::atomic<bool> playing = false; // Flag if audio is playing
         std::atomic<double> pitch_ratio = 1;
         std::atomic<float> channel_volume = 1.0f;
-
-        // -= Methods =-
-        // time : Milliseconds to convert to bytes
-        // audio_spec : Channel audio spec
-        size_t milliseconds_to_bytes(long time, SDL_AudioSpec audio_spec)
-        {
-            // Bytes in every sample
-            double bytes_per_sample = SDL_AUDIO_BITSIZE(audio_spec.format) / 8.0 * audio_spec.channels;
-            // Samples in ever second
-            double samples_per_second = audio_spec.freq;
-            // Bytes per second
-            double bytes_per_second = bytes_per_sample * samples_per_second;
-            // Bytes per millisecond
-            return (size_t)floor(time * (bytes_per_second / 1000.0));
-        }
 
     public:
 
@@ -1064,19 +999,22 @@ public:
             return false;
     }
 
+    // Get the sound at this index
+    // int index : Integer index to where the sound is stored
+    GravityEngine_Sound* GetSound(int index)
+    {
+        if (index >= 0 && index < sounds.size())
+            return sounds[index];
+        else
+            return nullptr;
+    }
+
     // Delete sound from the sound list
     // int index : Integer index to where the sound is stored
     void DeleteSound(int index)
     {
-        // Stop all channels
-        int i = 0;
-        for (auto c : audio_channels)
-        {
-            StopChannel(i);
-            i++;
-        }
         // Delete the sound objects
-        delete sounds[index];
+         delete sounds[index];
         // Set this index to a nullptr
         sounds[index] = nullptr;
     }
