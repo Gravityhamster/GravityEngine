@@ -3,7 +3,7 @@
 #include <vector>
 
 // Find string f in s
-bool str_contains(std::string s, std::string f);
+bool str_contains(const std::string& s, const std::string& f);
 
 // Remove char from string
 std::string str_remove(std::string s, char c);

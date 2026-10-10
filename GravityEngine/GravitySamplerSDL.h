@@ -45,17 +45,27 @@ private:
     // SDL_AudioSpec audio_spec : Audio specifications to convert the audio to
     std::vector<Uint8> ConvertAudio(Uint8* audio_buf, Uint32 audio_len, SDL_AudioSpec wav_audio_spec, SDL_AudioSpec audio_spec)
     {
-        // Convert audio to spec
-        auto sdl_audio_stream_conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
-        SDL_PutAudioStreamData(sdl_audio_stream_conv, audio_buf, audio_len);
-        SDL_FlushAudioStream(sdl_audio_stream_conv);
         std::vector<Uint8> converted_data;
-        Uint8 temp[4096];
-        int bytesRead;
-        while ((bytesRead = SDL_GetAudioStreamData(sdl_audio_stream_conv, temp, sizeof(temp))) > 0) {
-            converted_data.insert(converted_data.end(), temp, temp + bytesRead);
+
+        SDL_AudioStream* conv = SDL_CreateAudioStream(&wav_audio_spec, &audio_spec);
+        if (!conv)
+        {
+            SDL_Log("Sound conversion failed: %s", SDL_GetError());
+            return converted_data;
         }
-        SDL_DestroyAudioStream(sdl_audio_stream_conv);
+
+        if (SDL_PutAudioStreamData(conv, audio_buf, (int)audio_len) && SDL_FlushAudioStream(conv))
+        {
+            // Pull everything out in one go instead of growing a vector 4 KB at a time
+            const int available = SDL_GetAudioStreamAvailable(conv);
+            if (available > 0)
+            {
+                converted_data.resize((size_t)available);
+                const int got = SDL_GetAudioStreamData(conv, converted_data.data(), available);
+                converted_data.resize(got > 0 ? (size_t)got : 0);
+            }
+        }
+        SDL_DestroyAudioStream(conv);
         return converted_data;
     }
 
@@ -70,13 +80,22 @@ public:
     // SDL_AudioSpec audio_spec : Audio specification to convert the audio to (this should be the global audio spec in the engine)
     GravityEngine_Sound(const char* path, SDL_AudioSpec audio_spec)
     {
-        Uint8* audio_buf;
-        Uint32 audio_len;
+        Uint8* audio_buf = nullptr;
+        Uint32 audio_len = 0;
         SDL_AudioSpec wav_audio_spec;
-        // Load the wav file
-        SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len);
+
+        // Load the wav file (the result used to be ignored: a bad path left these uninitialised)
+        if (!SDL_LoadWAV(path, &wav_audio_spec, &audio_buf, &audio_len))
+        {
+            SDL_Log("Could not load '%s': %s", path, SDL_GetError());
+            return; // converted_audio stays empty, which the sampler plays as silence
+        }
+
         // Convert the audio
         converted_audio = ConvertAudio(audio_buf, audio_len, wav_audio_spec, audio_spec);
+
+        // SDL_LoadWAV allocates the original buffer. It was never freed: one leak per loaded sample.
+        SDL_free(audio_buf);
     };
 
     // Destruct audio
@@ -542,7 +561,11 @@ public:
                 // Clamp so overlapping voices can't exceed full scale
                 const int total_samples = buffer_size / (int)sizeof(float);
                 for (int i = 0; i < total_samples; i++)
-                    out[i] = std::clamp(out[i], -1.0f, 1.0f);
+                {
+                    // A runaway parameter (NaN/Inf) would otherwise be sent straight to the device
+                    const float x = out[i];
+                    out[i] = (x != x) ? 0.0f : std::clamp(x, -1.0f, 1.0f);
+                }
 
                 // -= Timing output (prints only when a buffer takes more than half its budget) =-
                 // Change the condition to `true` to see every buffer.

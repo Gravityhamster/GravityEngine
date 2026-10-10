@@ -71,7 +71,6 @@ extern int phrase_grid_w; // Width of the Phrase Editor UI
 extern int table_grid_h; // Height of the Table Editor UI
 extern int table_grid_w; // Width of the table Editor UI
 extern bool running; // Is the song currently playing?
-extern std::thread* timing_thread; // Thread to play ticks
 extern edit_mod leftrightcenter; // Editing state for which part of the number we are editing
 extern int copied_chain; // Clipboard for copying a chain
 extern int copied_phrase; // Clipboard for copying a phrase
@@ -393,11 +392,12 @@ public:
         step_ptr = 0;
         tick_ptr = 0;
         ticknumber = 0;
+        bool first = true;
 
         // Keep moving back til we get to a valid play point to play at
         do
         {
-            if (chain_ptr > 0 && cant_play)
+            if (chain_ptr > 0 && cant_play && !first)
                 chain_ptr--;
             // Report for now that we can play
             cant_play = false;
@@ -418,6 +418,7 @@ public:
                         cant_play = true;
                 }
             }
+            first = false;
         } while (chain_ptr > 0 && cant_play);
 
         // Report that this channel needs to sit out

@@ -334,7 +334,9 @@ public:
 
                     const float vol = v->volume.load();
                     const float pan = std::clamp<float>(v->panning.load(), 0.f, 1.f);
-                    const float step = v->freq.load() / (float)spec->freq;
+                    // Clamp to [0, Nyquist]: an unbounded pitch sweep reaches Inf, which turned the phase into NaN
+                    // and wrote NaN to the device. std::max/min also map a NaN freq to 0.
+                    const float step = std::min(0.5f, std::max(0.0f, v->freq.load() / (float)spec->freq));
 
                     float gain_l, gain_r;
                     if (channels == 2)
@@ -446,7 +448,10 @@ public:
 
                 // Clamp the buffer to -1.0 to 1.0 to prevent clipping and distortion
                 for (int i = 0; i < block_samples; i++)
-                    buffer[i] = std::clamp(buffer[i], -1.0f, 1.0f);
+                {
+                    const float x = buffer[i];
+                    buffer[i] = (x != x) ? 0.0f : std::clamp(x, -1.0f, 1.0f);
+                }
 
                 // -= Timing output (prints only when a block takes more than half its budget) =-
                 auto t1 = std::chrono::high_resolution_clock::now();

@@ -32,7 +32,6 @@ int phrase_grid_w;
 int table_grid_h;
 int table_grid_w;
 bool running = false;
-std::thread* timing_thread;
 edit_mod leftrightcenter = center;
 int copied_chain = -1;
 int copied_phrase = -1;

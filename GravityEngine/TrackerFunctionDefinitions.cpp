@@ -1,9 +1,15 @@
 #include "TrackerTypesAndVariables.h"
 #include "TrackerFunctionSignatures.h"
 #include <thread>
+#include <chrono>
+#include <mutex>
+#include <algorithm>
+#include <cstdio>
+#include <filesystem>
+#include <system_error>
 
 // Find string f in s
-bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
+bool str_contains(const std::string& s, const std::string& f) { return s.find(f) != std::string::npos; }
 
 // Remove char from string
 std::string str_remove(std::string s, char c)
@@ -44,33 +50,33 @@ double GetSampleRatioChange(int base_pitch, int new_pitch, double detune = 0)
 }
 
 // Insert at arbitrary location
+// Takes ownership of ptr. An invalid index used to run vector::insert at begin() - 1 (undefined behaviour)
+// and leak the object; now the object is freed instead.
 template <typename T> void
 InsertAt(std::vector<T*>* vec, int index, T* ptr)
 {
-    // Fill with nulls up to index
-    for (int i = 0; i < index; i++)
+    if (index < 0 || index > 0xFFFF)
     {
-        if (vec->size() <= i)
-            vec->insert(vec->begin() + i, nullptr);
+        delete ptr;
+        return;
     }
 
-    // Insert pointer at index
-    if (vec->size() <= index)
-        vec->insert(vec->begin() + index, ptr);
-    else
-        (*vec)[index] = ptr;
+    // Fill with nulls up to and including index
+    if (vec->size() <= (size_t)index)
+        vec->resize((size_t)index + 1, nullptr);
+
+    // NOTE: an existing non-null entry is overwritten, not deleted. Every call site checks for null
+    // first, so nothing is lost today, but deleting here could dangle pointers held elsewhere.
+    (*vec)[index] = ptr;
 }
 
 // Get at arbitrary location
 template <typename T> T*
 GetAt(std::vector<T*>* vec, int index)
 {
-    // Does this index exist yet in the vec
-    if (vec->size() <= index)
+    if (index < 0 || (size_t)index >= vec->size())
         return nullptr;
-    // Yes? Then return the value 
-    else
-        return (*vec)[index];
+    return (*vec)[index];
 }
 
 // Get next empty index
@@ -91,6 +97,67 @@ GetNextEmpty(std::vector<T*>* vec)
     return index;
 }
 
+// Ticks per second for the current bpm/tps.
+// Real division: the old integer division snapped the tempo to whole ticks-per-second, so with tps = 6
+// bpm 121 and 122 played at the same speed as 120. Clamped so a zero tempo can't divide by zero.
+static double TicksPerSecond(int b, int ticks_per_step)
+{
+    return std::max(1.0, ((double)b * ticks_per_step * 4.0) / 60.0);
+}
+
+// Audio frames per tracker tick at the current tempo
+static double FramesPerTick()
+{
+    return (double)geptr->global_audio_spec.freq / TicksPerSecond(bpm, tps);
+}
+
+// Wrap a note number into [min_note, max_note] in O(1).
+// Same result as the old while-loops, which never terminated if min_note > max_note.
+static void WrapNote(int* f)
+{
+    const int range = max_note - min_note + 1;
+    if (range <= 0)
+        return;
+    int off = ((*f) - min_note) % range;
+    if (off < 0)
+        off += range;
+    (*f) = min_note + off;
+}
+
+// Ask the audio thread to stop a voice and wait for it to confirm.
+// The wait is bounded: if the audio thread isn't running (shutdown, device error) the old unbounded
+// spin hung the tracker thread forever.
+static void StopVoiceAndWait(std::atomic<bool>& will_stop)
+{
+    will_stop = true;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+    while (will_stop)
+    {
+        if (std::chrono::steady_clock::now() > deadline)
+            return; // give up; the flag is consumed whenever the audio thread resumes
+        std::this_thread::yield();
+    }
+}
+
+// Free a loaded sound safely. The old code freed it while the audio thread could still be reading it
+// (use-after-free), and left voices pointing at the freed object.
+static void ReleaseSound(int sound_index)
+{
+    auto* snd = geptr->GetSound(sound_index);
+    {
+        std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
+        for (auto* v : audiosampler->voices)
+        {
+            if (snd != nullptr && v->sound == snd)
+            {
+                StopVoiceAndWait(v->will_stop_playing); // audio thread confirms it's done with the voice
+                v->sound = nullptr;
+            }
+        }
+    }
+    geptr->DeleteSound(sound_index);
+}
+
 // Preview sample audio
 // channelnumber : The particular channel to play the sample on
 // sample_index : Index of the sample to play
@@ -100,11 +167,15 @@ void PreviewSample(int channel_index, int sample_index)
 
     channellist[channel_index].type = ChannelType::file;
 
+    // The sample (and its loaded sound) must exist
+    auto* preview_sample = GetAt(&samplelist, sample_index);
+    auto* preview_sound = preview_sample != nullptr ? geptr->GetSound(preview_sample->sound_index) : nullptr;
+    if (preview_sound == nullptr)
+        return;
+
     // Reset sampler state and action queue
     auto v = audiosampler->voices[channel_index];
-    v->will_stop_playing = true;
-    while (v->will_stop_playing)
-        std::this_thread::yield();
+    StopVoiceAndWait(v->will_stop_playing);
 
     geptr->SetChannelVolume(1, 1);
     geptr->SetChannelPitchRatio(1, 1);
@@ -126,11 +197,10 @@ void PreviewSample(int channel_index, int sample_index)
     v->end_time_ms = 0xFFFFFF;
     v->mid_time_ms = 0x000000;
     v->looping = false;
-    v->sound = geptr->GetSound(samplelist[sample_index]->sound_index);
+    v->sound = preview_sound;
 
     // Prepare synth queueing variables
-    double ticks_per_second = (bpm * tps * 4) / 60;
-    double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
+    double frames_per_tick = FramesPerTick();
     v->frame_counter = frames_per_tick;
     v->frames_per_tick = frames_per_tick;
 
@@ -145,9 +215,12 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 {
     std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
 
-    // Get frequency to play
-    auto f = phraselist[playing_phrase]->arr[step_ptr][0];
-    auto i = phraselist[playing_phrase]->arr[step_ptr][1];
+    // Get frequency to play (the phrase may have been removed or the pointers may be out of range)
+    auto* cur_phrase = GetAt(&phraselist, playing_phrase);
+    if (cur_phrase == nullptr || step_ptr < 0 || step_ptr >= phrase::len_y)
+        return;
+    auto f = cur_phrase->arr[step_ptr][0];
+    auto i = cur_phrase->arr[step_ptr][1];
     // If no note is present, no need to play
     if (f != -9999 && GetAt(&instrumentlist, i) != nullptr)
     {
@@ -166,15 +239,11 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 
         // Reset synth state and action queue
         auto synth_voice = audiosynth->voices[channel_index];
-        synth_voice->will_stop_playing = true;
-        while (synth_voice->will_stop_playing)
-            std::this_thread::yield();
+        StopVoiceAndWait(synth_voice->will_stop_playing);
 
         // Reset sampler state and action queue
         auto sampler_voice = audiosampler->voices[channel_index];
-        sampler_voice->will_stop_playing = true;
-        while (sampler_voice->will_stop_playing)
-            std::this_thread::yield();
+        StopVoiceAndWait(sampler_voice->will_stop_playing);
 
         // Play step on channel
         if (instrumentlist[i]->type == ChannelType::synth)
@@ -202,12 +271,11 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             v->filter = instrumentlist[i]->filter;
 
             // Prepare synth queueing variables
-            double ticks_per_second = (bpm * tps * 4) / 60;
-            double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
+            double frames_per_tick = FramesPerTick();
             v->frame_counter = frames_per_tick;
             v->frames_per_tick = frames_per_tick;
 
-			v->will_start_playing = true;
+            v->will_start_playing = true;
         }
         else if (instrumentlist[i]->type == ChannelType::file && instrumentlist[i]->sample_index != -1)
         {
@@ -219,7 +287,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 
             v->stg_step_freq = NoteFreq(f) + instrumentlist[i]->detune;
             v->stg_swpd_freq = v->stg_step_freq.load();
-			v->base_freq = NoteFreq(instrumentlist[i]->base_pitch);
+            v->base_freq = NoteFreq(instrumentlist[i]->base_pitch);
             v->stg_volume = instrumentlist[i]->volume;
             v->volume_freq = instrumentlist[i]->volume_freq;
             v->stg_panning = instrumentlist[i]->panning;
@@ -228,19 +296,23 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             v->pitch_freq = instrumentlist[i]->pitch_freq;
             v->cutoff = instrumentlist[i]->cutoff;
             v->resonance = instrumentlist[i]->resonance;
-			v->start_time_ms = instrumentlist[i]->start_time_ms;
-			v->end_time_ms = instrumentlist[i]->end_time_ms;
-			v->mid_time_ms = instrumentlist[i]->mid_time_ms;
-			v->looping = instrumentlist[i]->loop;
-			v->sound = geptr->GetSound(samplelist[instrumentlist[i]->sample_index]->sound_index);
+            v->start_time_ms = instrumentlist[i]->start_time_ms;
+            v->end_time_ms = instrumentlist[i]->end_time_ms;
+            v->mid_time_ms = instrumentlist[i]->mid_time_ms;
+            v->looping = instrumentlist[i]->loop;
+            // The sample slot may be empty or not loaded yet: nothing to play then
+            auto* smp = GetAt(&samplelist, instrumentlist[i]->sample_index);
+            auto* snd = smp != nullptr ? geptr->GetSound(smp->sound_index) : nullptr;
+            if (snd == nullptr)
+                return;
+            v->sound = snd;
 
             v->cutoff = instrumentlist[i]->cutoff;
             v->resonance = instrumentlist[i]->resonance;
             v->filter = instrumentlist[i]->filter;
 
             // Prepare synth queueing variables
-            double ticks_per_second = (bpm * tps * 4) / 60;
-            double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
+            double frames_per_tick = FramesPerTick();
             v->frame_counter = frames_per_tick;
             v->frames_per_tick = frames_per_tick;
 
@@ -308,9 +380,13 @@ void ApplyChainTransposition(int channel_index, int* f)
     // If the context is not within a playing channel, then break
     if (playing_chain_index == -1)
         return;
-    
+
     // Get transposition from the chain
-    int transpose = chainlist[playing_chain_index]->arr_transpose[channellist[channel_index].phrase_ptr];
+    auto* playing_chain_ptr = GetAt(&chainlist, playing_chain_index);
+    const int chain_step = channellist[channel_index].phrase_ptr;
+    if (playing_chain_ptr == nullptr || chain_step < 0 || chain_step >= chain::length)
+        return;
+    int transpose = playing_chain_ptr->arr_transpose[chain_step];
 
     // Mirror transpose along 0 such that FFFF becomes -1, FFFE becomes -2, etc. until 8001 is -32767, and 8000 is 32768, and 7FFF is 32767, 
     // and 0000 is 0, and 0001 is 1, and 0002 is 2, etc.
@@ -318,13 +394,7 @@ void ApplyChainTransposition(int channel_index, int* f)
         transpose = -((0x8000 - transpose) + 0x8000);
     (*f) += transpose;
     // Wrap f into the note range
-    while ((*f) < min_note || (*f) > max_note)
-    {
-        if ((*f) > max_note)
-            (*f) = min_note + ((*f) - max_note) - 1;
-        else if ((*f) < min_note)
-            (*f) = max_note - (min_note - (*f)) + 1;
-    }
+    WrapNote(f);
 }
 
 // Apply playing table transposition - Implementation
@@ -341,13 +411,7 @@ void ApplyTableTransposition(int channel_index, int* f, int tt)
         transpose = -((0x8000 - transpose) + 0x8000);
     (*f) += transpose;
     // Wrap f into the note range
-    while ((*f) < min_note || (*f) > max_note)
-    {
-        if ((*f) > max_note)
-            (*f) = min_note + ((*f) - max_note) - 1;
-        else if ((*f) < min_note)
-            (*f) = max_note - (min_note - (*f)) + 1;
-    }
+    WrapNote(f);
 }
 
 // Deep Copy Phrase
@@ -443,7 +507,7 @@ double BpmToTicklength(int b)
     // 7080 ticks per minute / 60 seconds = 118 ticks per second
     // = 1 tick every 1/118th of a second
     // TickLength = 1000000000 / 118 nano seconds
-    return 1000000000 / ((b * tps * 4) / 60);
+    return 1000000000.0 / TicksPerSecond(b, tps);
 }
 
 // Execute tick
@@ -454,7 +518,7 @@ void DoTick()
 {
     std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
 
-    if (ticknumber % tps == 0)
+    if (ticknumber % std::max(1, tps) == 0)
     {
         // Step the channel sequencers
         for (int i = 0; i < channelcount; i++)
@@ -462,8 +526,6 @@ void DoTick()
     }
 
     // Do Sub-step Code --
-
-    auto test = 0;
 
     // Tick the channel sequencers
     for (int i = 0; i < channelcount; i++)
@@ -473,12 +535,22 @@ void DoTick()
         if ((play_context == pt_song || play_context == pt_phrase_all || play_context == pt_chain_all) && channellist[i].cant_play)
             continue;
 
-        double new_freq;
-        double new_pan;
-        double new_vol;
-        double new_pw;
+        // Idle voices need no automation and no queue pushes. They used to be pushed to on every tick
+        // forever (filling their 1024-entry queues, and sweeping stg_swpd_freq off to Inf/0).
+        if (channellist[i].type == ChannelType::synth)
+        {
+            if (!audiosynth->voices[i]->start_playing && !audiosynth->voices[i]->will_start_playing)
+                continue;
+        }
+        else if (!audiosampler->voices[i]->start_playing && !audiosampler->voices[i]->will_start_playing)
+            continue;
 
-		// Staging variables for the changes that will be written to the synths and samples
+        double new_freq = 0.0;
+        double new_pan = 0.5;
+        double new_vol = 1.0;
+        double new_pw = 0.5;
+
+        // Staging variables for the changes that will be written to the synths and samples
         if (channellist[i].type == ChannelType::synth)
         {
             new_freq = audiosynth->voices[i]->stg_base_freq;
@@ -505,9 +577,9 @@ void DoTick()
             live_change_synth s =
             {
                 new_freq // Frequency changes,
-				, new_pan // Panning changes,
-				, new_vol // Volume changes,
-				, new_pw // Pulse width changes
+                , new_pan // Panning changes,
+                , new_vol // Volume changes,
+                , new_pw // Pulse width changes
             };
             audiosynth->voices[i]->live_changes.push(s);
         }
@@ -531,21 +603,10 @@ void DoTick()
 // int i : Number to convert
 std::string IntToHexString(int i)
 {
-    // Write the int to a stream as hex
-    std::ostringstream hexs;
-    hexs << std::hex << i;
-
-    // Get the string from the stream
-    std::string tempstr = hexs.str();
-    std::string upperstr = "";
-
-    // https://www.geeksforgeeks.org/cpp/toupper-in-cpp/
-    // To upper
-    for (auto x : tempstr)
-        upperstr += (char)toupper(x);
-
-    // Return
-    return upperstr;
+    // Uppercase hex of the two's-complement value, same output as the old ostringstream + toupper loop
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%X", (unsigned)i);
+    return buf;
 }
 
 // Draw Song Editor UI
@@ -1521,79 +1582,83 @@ void DrawWaveUI()
 
         // Draw current directory -
 
-        // Create sample library if it does not exist
-        if (!std::filesystem::exists(current_dir))
-            std::filesystem::create_directory(current_dir);
+        // -= Directory listing (cached) =-
+        // This used to scan the folder, sort it (with a stat() per comparison) and rebuild the strings
+        // on EVERY frame. Now it is rebuilt when the folder changes or once per second, and it uses the
+        // non-throwing filesystem overloads so a folder deleted behind our back can't crash the UI.
+        struct FileEntry { std::string path; std::string upper; bool is_dir; bool is_file; };
+        static std::vector<FileEntry> listing;
+        static std::string listing_dir;
+        static std::chrono::steady_clock::time_point listing_time;
 
-        // Loop through contents and draw them
-        int i = 0;
-        std::list<std::filesystem::directory_entry> files;
-
-        // Get all the objects in the archive
-        for (const auto& entry : std::filesystem::directory_iterator(current_dir))
+        const auto now = std::chrono::steady_clock::now();
+        if (listing_dir != current_dir || now - listing_time > std::chrono::seconds(1))
         {
-            files.push_front(entry);
+            std::error_code ec;
+
+            // Create sample library if it does not exist
+            if (!std::filesystem::exists(current_dir, ec))
+                std::filesystem::create_directory(current_dir, ec);
+
+            listing.clear();
+            ec.clear();
+            for (std::filesystem::directory_iterator it(current_dir, ec), end; !ec && it != end; it.increment(ec))
+            {
+                std::error_code entry_ec;
+                FileEntry e;
+                e.path = it->path().string();
+                e.is_dir = it->is_directory(entry_ec);
+                e.is_file = it->is_regular_file(entry_ec);
+                e.upper = e.path;
+                for (auto& c : e.upper)
+                    c = (char)toupper((unsigned char)c);
+                listing.push_back(std::move(e));
+            }
+
+            // Folders first, then alphabetical. (The old comparator wasn't a valid ordering for a
+            // folder compared against a file.)
+            std::sort(listing.begin(), listing.end(), [](const FileEntry& a, const FileEntry& b)
+                {
+                    if (a.is_dir != b.is_dir)
+                        return a.is_dir;
+                    return a.upper < b.upper;
+                });
+
+            listing_dir = current_dir;
+            listing_time = now;
         }
 
         // Get length of the directory
-        current_dir_length = files.size();
-
-        // Sort the folder and file list
-        files.sort([](const std::filesystem::directory_entry& a, const std::filesystem::directory_entry& b)
-            {
-                auto patha = a.path().string();
-                auto pathb = b.path().string();
-                int at = 0;
-                for (auto c : patha)
-                    patha[at++] = (char)toupper(c);
-                at = 0;
-                for (auto c : pathb)
-                    pathb[at++] = (char)toupper(c);
-                return !(a.is_regular_file() && b.is_directory()) && patha < pathb;
-            }
-        );
+        current_dir_length = (int)listing.size();
 
         // Draw them
-        for (auto entry : files)
+        const int first_row = std::max(0, sample_offset_y);
+        for (int i = first_row; i < (int)listing.size() && i < file_display_count + first_row; i++)
         {
-            // Skip until we get to the offset
-            if (i < sample_offset_y)
-            {
-                i++;
-                continue;
-            }
+            const FileEntry& entry = listing[i];
 
             // Get the highlighted path
-            if (i - sample_offset_y == cursor_y)
+            if (i - first_row == cursor_y)
             {
-                selected_path = entry.path().string();
-                selected_path_isdir = entry.is_directory();
+                selected_path = entry.path;
+                selected_path_isdir = entry.is_dir;
                 if (selected_path_isdir)
                     selected_path += "\\";
             }
 
-            // Draw the entry
-            auto path = entry.path().string();
-            int at = 0;
-            int l = current_dir.length();
-            int r = path.length() - current_dir.length();
-            path = path.substr(l, r);
-            for (auto c : path)
-                path[at++] = (char)toupper(c);
-            if (entry.is_regular_file())
-                geptr->DrawTextString(1, 3 + i - sample_offset_y, geptr->entity, path, i - sample_offset_y == cursor_y ? primary_text_b : primary_text_a);
+            // Draw the entry, relative to the current folder
+            const size_t skip = std::min(entry.upper.size(), current_dir.size());
+            const std::string name = entry.upper.substr(skip);
+            if (entry.is_file)
+                geptr->DrawTextString(1, 3 + i - first_row, geptr->entity, name, i - first_row == cursor_y ? primary_text_b : primary_text_a);
             else
-                geptr->DrawTextString(1, 3 + i - sample_offset_y, geptr->entity, path, i - sample_offset_y == cursor_y ? header_text_b : header_text_a);
-            i++;
-
-            // Have we displayed the max
-            if (i >= file_display_count + sample_offset_y)
-                break;
+                geptr->DrawTextString(1, 3 + i - first_row, geptr->entity, name, i - first_row == cursor_y ? header_text_b : header_text_a);
         }
 
         // Draw loaded header and current file text
         geptr->DrawTextString(1, 3 + file_display_count + 1, geptr->entity, "LOADED:", header_text_a);
-        geptr->DrawTextString(1, 3 + file_display_count + 2, geptr->entity, samplelist[open_sample]->path, primary_text_a);
+        if (GetAt(&samplelist, open_sample) != nullptr)
+            geptr->DrawTextString(1, 3 + file_display_count + 2, geptr->entity, samplelist[open_sample]->path, primary_text_a);
     }
 }
 
@@ -1632,8 +1697,15 @@ void TrackTicks()
         DoTick();
 
         // Sync timing
-        next += std::chrono::nanoseconds((int64_t)ticklength);
-        while (true)
+        const auto tick_ns = std::chrono::nanoseconds((int64_t)std::max(1000.0, ticklength));
+        next += tick_ns;
+
+        // If we fell far behind (a stalled DoTick, the PC sleeping, ...) resync instead of firing a
+        // burst of catch-up ticks that would all push their changes at once
+        if (std::chrono::steady_clock::now() - next > tick_ns * 4)
+            next = std::chrono::steady_clock::now();
+
+        while (running == true)
         {
             // Get the sleep time remaining
             auto rem = next - std::chrono::steady_clock::now();
@@ -1642,13 +1714,12 @@ void TrackTicks()
             if (rem <= std::chrono::nanoseconds(0))
                 break;
 
-             // Should we sleep or nah?
-             if (rem > std::chrono::milliseconds(5))
-                 SDL_Delay(1); // Sleep the thread to relieve the CPU
-             else
-             {
-                 /* Spin in place until the clock hits the next frame */
-             }
+            // Sleep while there is plenty of time, then yield-spin for the last few ms.
+            // (The old spin was an empty loop that held a whole core at 100%.)
+            if (rem > std::chrono::milliseconds(5))
+                SDL_Delay(1);
+            else
+                std::this_thread::yield();
         }
     }
 
@@ -1659,24 +1730,26 @@ void TrackTicks()
 // Handle repeating movements
 void HandleMovementRepeaters()
 {
+    // Look the input object up once per call instead of once per check
+    auto* inp = dynamic_cast<input*>(geptr->GetObjectReference(inputgetter));
     // Reset movement repeaters
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed())
+    if (inp->is_right_pressed())
         inputholdtimer = 0;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed())
+    else if (inp->is_left_pressed())
         inputholdtimer = 0;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed())
+    else if (inp->is_up_pressed())
         inputholdtimer = 0;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed())
+    else if (inp->is_down_pressed())
         inputholdtimer = 0;
 
     // Increment hold timer
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_down())
+    if (inp->is_right_down())
         inputholdtimer++;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_down())
+    else if (inp->is_left_down())
         inputholdtimer++;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_down())
+    else if (inp->is_up_down())
         inputholdtimer++;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_down())
+    else if (inp->is_down_down())
         inputholdtimer++;
     else
         inputholdtimer = 0;
@@ -1707,11 +1780,15 @@ void StopAllChannels()
 // Start the sequence thread
 void StartSequenceThread()
 {
-    // Start tick tracker
+    // Don't start a second tick thread
+    if (play_thread)
+        return;
+
+    // Start tick tracker. play_thread is set before the thread exists so StopSequenceThread can't
+    // miss a thread that has been created but hasn't started running yet.
     running = true;
-    std::thread tt(TrackTicks);
-    tt.detach();
-    timing_thread = &tt;
+    play_thread = true;
+    std::thread(TrackTicks).detach();
 }
 
 // Stop the sequence thread
@@ -1719,34 +1796,37 @@ void StopSequenceThread()
 {
     // Stop playing
     running = false;
-    while (play_thread) {};
+    while (play_thread)
+        std::this_thread::yield();
 }
 
 // Handle deep copy inputs
 void GetDeepCopyInputs()
 {
+    // Look the input object up once per call instead of once per check
+    auto* inp = dynamic_cast<input*>(geptr->GetObjectReference(inputgetter));
     // Handle copy
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+    if (inp->is_select_down())
     {
         // If a is pressed after b, then increase
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() && do_deep_copy == 1)
+        if (inp->is_a_pressed() && do_deep_copy == 1)
         {
             do_deep_copy = 2;
         }
         // If b is pressed again, reset
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed() && do_deep_copy == 1)
+        if (inp->is_b_pressed() && do_deep_copy == 1)
         {
             do_deep_copy = 0;
         }
         // If b is pressed start checking for deep copy
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed() && do_deep_copy == 0)
+        if (inp->is_b_pressed() && do_deep_copy == 0)
         {
             do_deep_copy = 1;
         }
         // If anything else is pressed, reset
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->presscode != "000000000" &&
-            dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->presscode != "000010000" &&
-            dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->presscode != "000001000")
+        if (inp->presscode != "000000000" &&
+            inp->presscode != "000010000" &&
+            inp->presscode != "000001000")
             do_deep_copy = 0;
     }
     else
@@ -1759,6 +1839,8 @@ void GetDeepCopyInputs()
 // Handle movement
 void EditorControl()
 {
+    // Look the input object up once per call instead of once per check
+    auto* inp = dynamic_cast<input*>(geptr->GetObjectReference(inputgetter));
     // Set checker variables
     bool breakend = false;
     int goright = 0;
@@ -1768,7 +1850,7 @@ void EditorControl()
     bool willpause = false;
 
     // Handle play button
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == false)
+    if (inp->is_start_pressed() && pause_song == false)
     {
         // Pause the song playback
         willpause = true;
@@ -1777,28 +1859,28 @@ void EditorControl()
     }
 
     // Move the cursor
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_pressed() ||
-        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_right_down() &&
+    if (inp->is_right_pressed() ||
+        (inp->is_right_down() &&
             (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
         goright = 1;
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_pressed() ||
-        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_left_down() &&
+    if (inp->is_left_pressed() ||
+        (inp->is_left_down() &&
             (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
         goleft = 1;
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_pressed() ||
-        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_up_down() &&
+    if (inp->is_up_pressed() ||
+        (inp->is_up_down() &&
             (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
         goup = 1;
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_pressed() ||
-        (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_down_down() &&
+    if (inp->is_down_pressed() ||
+        (inp->is_down_down() &&
             (inputholdtimer > inputholdthreshold && inputholdtimer % inputholddelay == 0)))
         godown = 1;
 
     // Edit part
-    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down() &&
-        dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+    if (inp->is_a_down() &&
+        inp->is_shift_down())
         leftrightcenter = right;
-    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+    else if (inp->is_a_down())
         leftrightcenter = left;
     else
         leftrightcenter = center;
@@ -1818,7 +1900,7 @@ void EditorControl()
         else
         {
             // Handle play button
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+            if (inp->is_start_pressed() && pause_song == true)
             {
                 StopAllChannels();
                 // Should play flag
@@ -1839,7 +1921,7 @@ void EditorControl()
             }
 
             // Modify value
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            if (inp->is_a_pressed())
             {
                 // If the songgrid value is unfilled, insert 0
                 if (songgrid[cursor_y + offset_y][cursor_x + offset_x] == -1)
@@ -1859,7 +1941,7 @@ void EditorControl()
                     }
                 }
                 // If double click, add a new chain
-                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                else if (inp->doubleclick)
                 {
                     // Set UI reference to the next empty
                     songgrid[cursor_y + offset_y][cursor_x + offset_x] = GetNextEmpty(&chainlist);
@@ -1878,13 +1960,13 @@ void EditorControl()
             // Do actions given the context --
 
             // Editing
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            if (inp->is_a_down())
             {
                 // Movement keys
                 if (goup || godown || goright || goleft)
                 {
                     // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    if (inp->is_shift_down())
                     {
                         if (goup) songgrid[cursor_y + offset_y][cursor_x + offset_x] += 0x1000;
                         if (godown) songgrid[cursor_y + offset_y][cursor_x + offset_x] -= 0x1000;
@@ -1911,11 +1993,11 @@ void EditorControl()
                 }
 
                 // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                if (inp->is_b_pressed())
                     songgrid[cursor_y + offset_y][cursor_x + offset_x] = -1;
             }
             // Goto page
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            else if (inp->is_select_down())
             {
                 // Go to the next page over
                 if (goright)
@@ -1992,7 +2074,7 @@ void EditorControl()
         else
         {
             // Handle play button
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+            if (inp->is_start_pressed() && pause_song == true)
             {
                 StopAllChannels();
                 // Set the song ptr position for only this channel
@@ -2013,7 +2095,7 @@ void EditorControl()
             }
 
             // Modify value
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            if (inp->is_a_pressed())
             {
                 // Edit actual phrase
                 if (cursor_x == 0)
@@ -2036,7 +2118,7 @@ void EditorControl()
                         }
                     }
                     // If double click, add a new chain
-                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                    else if (inp->doubleclick)
                     {
                         // Set UI reference to the next empty
                         chainlist[open_chain]->arr[cursor_y + chain_offset_y] = GetNextEmpty(&phraselist);
@@ -2056,7 +2138,7 @@ void EditorControl()
             // Do actions given the context --
 
             // Editing
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            if (inp->is_a_down())
             {
                 // Edit actual chain
                 if (cursor_x == 0)
@@ -2065,7 +2147,7 @@ void EditorControl()
                     if (goup || godown || goright || goleft)
                     {
                         // Mod the left two digits
-                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        if (inp->is_shift_down())
                         {
                             if (goup) chainlist[open_chain]->arr[cursor_y + chain_offset_y] += 0x1000;
                             if (godown) chainlist[open_chain]->arr[cursor_y + chain_offset_y] -= 0x1000;
@@ -2092,7 +2174,7 @@ void EditorControl()
                     }
 
                     // Handle deletes
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    if (inp->is_b_pressed())
                         chainlist[open_chain]->arr[cursor_y + chain_offset_y] = -1;
                 }
                 // Edit transpose
@@ -2102,7 +2184,7 @@ void EditorControl()
                     if (goup || godown || goright || goleft)
                     {
                         // Mod the left two digits
-                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        if (inp->is_shift_down())
                         {
                             if (goup) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] += 0x0C00;
                             if (godown) chainlist[open_chain]->arr_transpose[cursor_y + chain_offset_y] -= 0x0C00;
@@ -2127,7 +2209,7 @@ void EditorControl()
                 }
             }
             // Goto page
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            else if (inp->is_select_down())
             {
                 // Go to the left page over
                 if (goleft)
@@ -2223,7 +2305,7 @@ void EditorControl()
         else
         {
             // Handle play button
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_start_pressed() && pause_song == true)
+            if (inp->is_start_pressed() && pause_song == true)
             {
                 StopAllChannels();
                 // Set the song ptr position for only this channel
@@ -2244,7 +2326,7 @@ void EditorControl()
             }
 
             // Modify value
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            if (inp->is_a_pressed())
             {
                 // Edit instr
                 if (cursor_x == 1)
@@ -2267,7 +2349,7 @@ void EditorControl()
                         }
                     }
                     // If double click, add a new instrument
-                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                    else if (inp->doubleclick)
                     {
                         // Set UI reference to the next empty
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = GetNextEmpty(&instrumentlist);
@@ -2287,13 +2369,13 @@ void EditorControl()
             // Do actions given the context --
 
             // Editing
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            if (inp->is_a_down())
             {
                 // Edit note
                 if (cursor_x == 0)
                 {
                     // If the phraselist instrument value is unfilled, insert 0
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] == -1 && inp->is_a_pressed())
                     {
                         if (copied_instr == -1)
                         {
@@ -2311,7 +2393,7 @@ void EditorControl()
                     }
 
                     // Set to C-4 if it isn't set
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] == -9999 && inp->is_a_pressed())
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = copied_note != -9999 ? copied_note : 39;
 
                     // Movement keys
@@ -2335,7 +2417,7 @@ void EditorControl()
                     copied_instr = phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1];
 
                     // Preview note
-                    if (pause_song && (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed() || goup || godown || goright || goleft))
+                    if (pause_song && (inp->is_a_pressed() || goup || godown || goright || goleft))
                     {
                         // Stop the playing thread
                         StopSequenceThread();
@@ -2351,7 +2433,7 @@ void EditorControl()
                     }
 
                     // Handle deletes
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    if (inp->is_b_pressed())
                     {
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][1] = -1;
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][0] = -9999;
@@ -2365,7 +2447,7 @@ void EditorControl()
                     if (goup || godown || goright || goleft)
                     {
                         // Mod the left two digits
-                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        if (inp->is_shift_down())
                         {
                             if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
                             if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
@@ -2392,7 +2474,7 @@ void EditorControl()
                     }
 
                     // Handle deletes
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    if (inp->is_b_pressed())
                         phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
                 }
 
@@ -2400,7 +2482,7 @@ void EditorControl()
                 if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
                 {
                     // Set to 0 if it isn't set
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && inp->is_a_pressed())
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
 
                     // Movement keys
@@ -2423,7 +2505,7 @@ void EditorControl()
                     copied_effect = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                     // Handle deletes
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    if (inp->is_b_pressed())
                         phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
                 }
 
@@ -2431,14 +2513,14 @@ void EditorControl()
                 if (cursor_x == 3 || cursor_x == 5 || cursor_x == 7)
                 {
                     // Set to 0 if it isn't set
-                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    if (phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] == -1 && inp->is_a_pressed())
                         phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
 
                     // Movement keys
                     if (goup || godown || goright || goleft)
                     {
                         // Mod the left two digits
-                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                        if (inp->is_shift_down())
                         {
                             if (goup) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] += 0x1000;
                             if (godown) phraselist[open_phrase]->arr[cursor_y + phrase_offset_y][cursor_x] -= 0x1000;
@@ -2465,12 +2547,12 @@ void EditorControl()
                     copied_effect_param = phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                     // Handle deletes
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    if (inp->is_b_pressed())
                         phraselist[open_phrase]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
                 }
             }
             // Goto page
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            else if (inp->is_select_down())
             {
                 // Go to the left page over
                 if (goleft)
@@ -2522,7 +2604,7 @@ void EditorControl()
             }
 
             // Stop previewing
-            if (pause_song && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
+            if (pause_song && inp->is_a_released())
             {
                 // Reset play context because if you don't, play_context will keep going
                 play_context = pt_song;
@@ -2597,7 +2679,7 @@ void EditorControl()
             else
             {
                 // Modify value
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                if (inp->is_a_pressed())
                 {
                     // Edit table
                     if (cursor_y == 10 && cursor_x == 0)
@@ -2605,13 +2687,13 @@ void EditorControl()
                         // If the sample value is unfilled, insert 0
                         if (instrumentlist[open_instrument]->table_index == -1)
                         {
-                            if (copied_smple == -1)
+                            if (copied_tble == -1)
                             {
                                 // Set UI reference to Hex0
                                 instrumentlist[open_instrument]->table_index = 0x0000;
-                                // If this sample doesn't exist yet, insert it
-                                if (GetAt(&samplelist, instrumentlist[open_instrument]->table_index) == nullptr)
-                                    InsertAt(&samplelist, instrumentlist[open_instrument]->table_index, new sample());
+                                // If this table doesn't exist yet, insert it
+                                if (GetAt(&tablelist, instrumentlist[open_instrument]->table_index) == nullptr)
+                                    InsertAt(&tablelist, instrumentlist[open_instrument]->table_index, new table());
                             }
                             else
                             {
@@ -2620,7 +2702,7 @@ void EditorControl()
                             }
                         }
                         // If double click, add a new sample
-                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                        else if (inp->doubleclick)
                         {
                             // Set UI reference to the next empty
                             instrumentlist[open_instrument]->table_index = GetNextEmpty(&tablelist);
@@ -2639,11 +2721,11 @@ void EditorControl()
             }
 
             // Editing
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            if (inp->is_a_down())
             {
                 // Delete table index
                 if (cursor_y == 10 && cursor_x == 0 &&
-                    dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    inp->is_b_pressed())
                 {
                     instrumentlist[open_instrument]->table_index = -1;
                 }
@@ -2696,7 +2778,7 @@ void EditorControl()
                 if (goup || godown || goright || goleft)
                 {
                     // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                    if (inp->is_shift_down() && instrument_edit_digit_count == 2)
                     {
                         if (goup) (*edit) += 0x1000;
                         if (godown) (*edit) -= 0x1000;
@@ -2779,7 +2861,7 @@ void EditorControl()
                 }
             }
             // Goto page
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            else if (inp->is_select_down())
             {
                 // Go to the left page over
                 if (goleft)
@@ -2864,7 +2946,7 @@ void EditorControl()
             else
             {
                 // Modify value
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                if (inp->is_a_pressed())
                 {
                     // Edit sample
                     if (cursor_y == 1 && cursor_x == 0)
@@ -2887,7 +2969,7 @@ void EditorControl()
                             }
                         }
                         // If double click, add a new sample
-                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                        else if (inp->doubleclick)
                         {
                             // Set UI reference to the next empty
                             instrumentlist[open_instrument]->sample_index = GetNextEmpty(&samplelist);
@@ -2909,7 +2991,7 @@ void EditorControl()
                         // If the table value is unfilled, insert 0
                         if (instrumentlist[open_instrument]->table_index == -1)
                         {
-                            if (copied_smple == -1)
+                            if (copied_tble == -1)
                             {
                                 // Set UI reference to Hex0
                                 instrumentlist[open_instrument]->table_index = 0x0000;
@@ -2924,7 +3006,7 @@ void EditorControl()
                             }
                         }
                         // If double click, add a new table
-                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                        else if (inp->doubleclick)
                         {
                             // Set UI reference to the next empty
                             instrumentlist[open_instrument]->table_index = GetNextEmpty(&tablelist);
@@ -2943,15 +3025,15 @@ void EditorControl()
             }
 
             // Toggle alt mode
-            if ((instrument_edit_y == 12 || instrument_edit_y == 11 || instrument_edit_y == 10) && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_pressed())
+            if ((instrument_edit_y == 12 || instrument_edit_y == 11 || instrument_edit_y == 10) && inp->is_select_pressed())
                 alt_mode = !alt_mode;
 
             // Editing
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            if (inp->is_a_down())
             {
                 // Delete table index
                 if (cursor_y == 14 && cursor_x == 0 &&
-                    dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                    inp->is_b_pressed())
                 {
                     instrumentlist[open_instrument]->table_index = -1;
                 }
@@ -3016,7 +3098,7 @@ void EditorControl()
                 if (goup || godown || goright || goleft)
                 {
                     // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 3)
+                    if (inp->is_shift_down() && instrument_edit_digit_count == 3)
                     {
                         if (alt_mode)
                         {
@@ -3037,7 +3119,7 @@ void EditorControl()
                     {
                         (*edit) = (*edit) == 0 ? 1 : 0;
                     }
-                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                    else if (inp->is_shift_down() && instrument_edit_digit_count == 2)
                     {
                         if (goup) (*edit) += 0x1000;
                         if (godown) (*edit) -= 0x1000;
@@ -3151,7 +3233,7 @@ void EditorControl()
                 }
             }
             // Goto page
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            else if (inp->is_select_down())
             {
                 // Go to the left page over
                 if (goleft)
@@ -3259,7 +3341,7 @@ void EditorControl()
         // Do actions given the context --
 
         // Editing
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+        if (inp->is_a_down())
         {
             // Edit transposition pitch
             if (cursor_x == 0)
@@ -3268,7 +3350,7 @@ void EditorControl()
                 if (goup || godown || goright || goleft)
                 {
                     // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    if (inp->is_shift_down())
                     {
                         if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x0C00;
                         if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x0C00;
@@ -3296,7 +3378,7 @@ void EditorControl()
             if (cursor_x == 1 || cursor_x == 3 || cursor_x == 5)
             {
                 // Set to 0 if it isn't set
-                if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] == -1 && inp->is_a_pressed())
                     tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = copied_effect != -1 ? copied_effect : 0;
 
                 // Movement keys
@@ -3319,7 +3401,7 @@ void EditorControl()
                 copied_effect = tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                 // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                if (inp->is_b_pressed())
                     tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
             }
 
@@ -3327,14 +3409,14 @@ void EditorControl()
             if (cursor_x == 2 || cursor_x == 4 || cursor_x == 6)
             {
                 // Set to 0 if it isn't set
-                if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] == -1 && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                if (tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] == -1 && inp->is_a_pressed())
                     tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] = copied_effect_param != -1 ? copied_effect_param : 0x0000;
 
                 // Movement keys
                 if (goup || godown || goright || goleft)
                 {
                     // Mod the left two digits
-                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down())
+                    if (inp->is_shift_down())
                     {
                         if (goup) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] += 0x1000;
                         if (godown) tablelist[open_table]->arr[cursor_y + table_offset_y][cursor_x] -= 0x1000;
@@ -3361,12 +3443,12 @@ void EditorControl()
                 copied_effect_param = tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x];
 
                 // Handle deletes
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                if (inp->is_b_pressed())
                     tablelist[open_table]->arr[cursor_y + offset_y][cursor_x + offset_x] = -1;
             }
         }
         // Goto page
-        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+        else if (inp->is_select_down())
         {
             // Go to the above page
             if (goup)
@@ -3431,7 +3513,7 @@ void EditorControl()
             // TODO: Implement safety for missing files or directories (Like if the user deletes the directory or file)
 
             // Modify value or open dir
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+            if (inp->is_a_pressed())
             {
                 // Open directory
                 if (selected_path_isdir)
@@ -3453,12 +3535,12 @@ void EditorControl()
                     if (samplelist[open_sample]->sound_index != -1 && geptr->CheckSound(samplelist[open_sample]->sound_index) == true)
                     {
                         StopAllChannels();
-                        geptr->DeleteSound(samplelist[open_sample]->sound_index);
+                        ReleaseSound(samplelist[open_sample]->sound_index); // waits until no voice is reading it
                     }
                     samplelist[open_sample]->sound_index = geptr->AddSound(samplelist[open_sample]->path.c_str());
 
                     // Preview the audio
-                    if (pause_song && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    if (pause_song && inp->is_a_pressed())
                     {
                         // Play the note
                         PreviewSample(open_channel, open_sample);
@@ -3466,7 +3548,7 @@ void EditorControl()
                 }
             }
             // Go up a directory
-            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+            if (inp->is_b_pressed())
             {
                 if (current_dir != main_dir)
                 {
@@ -3481,7 +3563,7 @@ void EditorControl()
                 }
             }
             // Goto page
-            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            else if (inp->is_select_down())
             {
                 // Go to the down page over
                 if (godown)
@@ -3535,7 +3617,7 @@ void EditorControl()
         }
 
         // Stop previewing the audio
-        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_released())
+        if (inp->is_a_released())
         {
             StopChannel(open_channel);
         }
