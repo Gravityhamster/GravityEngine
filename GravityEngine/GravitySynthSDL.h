@@ -12,10 +12,25 @@
 #include <unordered_map>
 #include <random>
 #include <map>
+#include <algorithm>
+#include <atomic>
+#include <mutex>
+#include <cstdint>
 #include "SPSC_Queue.h"
 #include "GravityEngineTypes.h"
 
+// For flushing denormal floats to zero (x86/x64 only)
+#if defined(__SSE__) || defined(_M_X64) || defined(_M_IX86)
+#include <xmmintrin.h>
+#define GRAVITY_HAS_SSE_CSR 1
+#endif
+
 #define PI 3.14159265358979323846f
+
+// Set to 0 to silence the synth's once-every-2-seconds timing diagnostics
+#ifndef SYNTH_DIAG
+#define SYNTH_DIAG 1
+#endif
 
 // TODO: Any effects related directly to instrument automation should be implemented directly into the synth (i.e. vibrato, pitchsweep, fadein, fadeout, etc.)
 // TODO: Acquire personal understanding of COPILOT marked code and rewrite it myself
@@ -117,12 +132,11 @@ public:
     float resonance = 0.5f; // 0.0 - 1.0 -- TODO: Determine usable range
 
     // Filter state
-    float lp_l = 0.0f;
-    float bp_l = 0.0f;
-    float hp_l = 0.0f;
-    float lp_r = 0.0f;
-    float bp_r = 0.0f;
-    float hp_r = 0.0f;
+    // (the filter now runs once per voice on the mono signal, so only the "_l" state is used.
+    //  The "_r" fields are kept so nothing else that references them breaks.)
+    float lp = 0.0f;
+    float bp = 0.0f;
+    float hp = 0.0f;
 
     SynthWaveForm waveform = SynthWaveForm::sine;
     FilterType filter = FilterType::none;
@@ -138,6 +152,9 @@ public:
 
     float phase = 0.;
     float last_freq = 0;
+
+    // Audio-thread-only tick clock (fractional frames)
+    double tick_acc = 0.0;
 };
 
 // Template for synth objects
@@ -150,8 +167,22 @@ public:
     std::vector<GravityEngine_SynthVoice*> voices;
     int sample_frames;
 
+    // How many device buffers to keep queued in the stream (1 = lowest latency, 2 = more slack)
+    static constexpr int kBuffersAhead = 2;
+
+    // Row/tick gate. The tracker holds this while it writes ALL voice changes for one tick, e.g. at
+    // the top of DoTick():
+    //     std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
+    // Recursive so entry points can nest. The audio thread only try_locks it.
+    // will_stop_playing is deliberately NOT gated: the tracker blocks until the audio thread clears it.
+    std::recursive_mutex batch_mutex;
+
+    // Total frames pushed to the stream so far (usable as an audio-driven clock)
+    std::atomic<int64_t> frames_rendered = 0;
+
     // Conceptually this comes from a prompt I gave to Copilot, but then I rewrote it from scratch based on my understanding of the concepts.
     // It simply generates a waveform. Never call this indepentently please. Use BindSynthToChannel in the engine instead.
+    // Now it's been further optimized by claude.
     // GravityEngine_Synth* synth : Synth object reference
     // SDL_AudioStream* stream : Audio stream that the synth audio plays on
     // SDL_AudioSpec* spec : Audio spec to format the audio with
@@ -160,26 +191,42 @@ public:
     // bool* synth_playing : Flag to indicate the thread has successfully finished
     static void GenerateAudio(GravityEngine_Synth* synth, SDL_AudioStream* stream, SDL_AudioSpec* spec, SDL_AudioDeviceID dev, std::atomic<ChannelStates>* state, std::atomic<bool>* synth_playing)
     {
+#ifdef GRAVITY_HAS_SSE_CSR
+        // Flush denormals to zero on this thread (decaying filters can otherwise get very slow)
+        _mm_setcsr(_mm_getcsr() | 0x8040);
+#endif
+        SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+
         // Get sample frames
         SDL_GetAudioDeviceFormat(dev, spec, &synth->sample_frames);
         if (spec->channels > 2)
             spec->channels = 2;
-        // Initialize a random number generator
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distrib(-10000, 10000);
-        // Get buffer size
-        int buffer_frames = synth->sample_frames;
-        int buffer_samples = buffer_frames * spec->channels;
-        int buffer_bytes = buffer_samples * sizeof(float);
-        float* buffer = (float*)SDL_malloc(buffer_bytes);
+
+        const int channels = spec->channels;
+        const int buffer_frames = synth->sample_frames;
+
+        // Render in small blocks (a quarter of a device buffer). Tracker updates (note starts, queued
+        // changes) are applied once per block, so onset jitter is ~2.5 ms instead of ~10 ms.
+        const int block_frames = std::max(1, buffer_frames / 4);
+        const int block_samples = block_frames * channels;
+        const int block_bytes = block_samples * sizeof(float);
+        float* buffer = (float*)SDL_malloc(block_bytes);
         bool first = true;
+
+        // Cheap noise generator (xorshift32) instead of mt19937 + distribution
+        uint32_t noise_state = std::random_device{}() | 1u;
+
+        // Diagnostics (printed every ~2 s when SYNTH_DIAG is on)
+        uint64_t diag_blocks = 0, diag_gate_skips = 0, diag_empty_pops = 0, diag_underruns = 0;
+        double diag_max_ms = 0.0;
+        auto diag_last = std::chrono::steady_clock::now();
 
         SDL_SetAudioStreamGain(stream, 1.0f);
 
         // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
 
+            // Stops are handled every iteration, outside the gate: the tracker busy-waits on this flag
             for (auto v : synth->voices)
             {
                 if (v->will_stop_playing)
@@ -198,157 +245,240 @@ public:
             }
 
             // Get the available stream in frames
-            // ----------------------------------
-            // A sample is one decimal. For mono that would be 1 sample per frame. 
-            // However in Stereo, it's 1 sample per speaker per frame. 
-            // So that would be 2 samples per frame.
-            // This is why we are looping frame-by-frame. 
-            // We are calculating all samples per frame in one loop cycle.
-            int threshold_frames = synth->sample_frames;
-            int get_frames = synth->sample_frames;
-            //printf("%d\n", synth->sample_frames);
-            int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * spec->channels);
+            int available_frames = SDL_GetAudioStreamAvailable(stream) / (sizeof(float) * channels);
+
+            // Stream completely drained after playback began = the device ran dry (audible gap)
+            if (!first && available_frames == 0)
+                ++diag_underruns;
 
             // Check available data
-            if (available_frames < threshold_frames)
+            if (available_frames < buffer_frames * kBuffersAhead)
             {
-                // Fill in audio data
-				SDL_memset(buffer, 0, buffer_bytes);
-                for (int frame = 0; frame < get_frames; frame++)
+                // -= Timing: how long does it take to render one block? =-
+                auto t0 = std::chrono::high_resolution_clock::now();
+
+                SDL_memset(buffer, 0, block_bytes);
+
+                // -= Phase 1: apply tracker updates (starts, queued changes) =-
+                // The tracker holds batch_mutex while it writes a whole tick for all voices.
+                // try_lock never blocks the audio thread: if the tracker is mid-write we apply nothing
+                // this block and pick the whole tick up together on the next one, so a row can never
+                // be split across two blocks.
                 {
+                    std::unique_lock<std::recursive_mutex> batch_lock(synth->batch_mutex, std::try_to_lock);
+                    const bool can_apply = batch_lock.owns_lock();
+                    if (!can_apply) ++diag_gate_skips;
+
                     for (auto v : synth->voices)
                     {
-                        if (v->will_start_playing)
+                        // Voice was just triggered: initialise its state
+                        if (can_apply && v->will_start_playing)
                         {
                             v->freq = v->stg_base_freq.load();
                             v->volume = v->stg_volume.load();
-                            v->panning = v->stg_panning.load();
+                            v->panning = std::clamp<float>(v->stg_panning.load(), 0.f, 1.f);
                             v->pulse_width = v->stg_pulse_width.load();
 
-                            // Crop panning
-                            v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
+                            v->hp = v->bp = v->lp = 0.0f;
 
-                            v->hp_l = 0.0f;
-                            v->bp_l = 0.0f;
-                            v->lp_l = 0.0f;
-                            v->hp_r = 0.0f;
-                            v->bp_r = 0.0f;
-                            v->lp_r = 0.0f;
+                            // The tracker primes frame_counter to one full tick before starting a note
+                            // so the first queued change is applied straight away. Keep that.
+                            v->tick_acc = (double)v->frame_counter.load();
 
-							v->will_start_playing = false;
-							v->start_playing = true;
+                            v->will_start_playing = false;
+                            v->start_playing = true;
                         }
 
-                        // Get any changes in my mailbox
-                        if (v->frame_counter >= v->frames_per_tick && v->start_playing)
+                        if (!v->start_playing)
+                            continue;
+
+                        // -= Apply queued parameter changes (one per tick) =-
+                        const double fpt = v->frames_per_tick.load();
+                        if (fpt > 0.0)
                         {
-                            v->frame_counter -= v->frames_per_tick;
-                            live_change_synth change;
-                            // Get next in queue
-                            if (v->live_changes.pop(change) && v->start_playing)
+                            const double tick_len = std::max(fpt, 1.0);
+                            v->tick_acc += block_frames;
+
+                            while (can_apply && v->tick_acc >= tick_len)
                             {
-                                // Get any changes
-                                if (change.freq != -9999)
-                                    v->freq = change.freq;
-                                if (change.pan != -2)
-                                    v->panning = change.pan;
-                                if (change.pw != -1)
-                                    v->pulse_width = change.pw;
-                                if (change.vol != -1)
-                                    v->volume = change.vol;
-                            }
-                        }
-                        v->frame_counter++;
+                                live_change_synth change;
+                                if (!v->live_changes.pop(change))
+                                {
+                                    // The tracker hasn't delivered this tick's change yet. Keep the tick
+                                    // pending so it's applied the moment it arrives, instead of leaving
+                                    // this voice one tick behind for the rest of the note.
+                                    ++diag_empty_pops;
+                                    v->tick_acc = std::min(v->tick_acc, tick_len * 2.0);
+                                    break;
+                                }
+                                v->tick_acc -= tick_len;
 
-                        // Only add this to the frame if it's playing
-                        if (v->start_playing)
-                        {
-                            // The pitch of the sound is determined by sound wave cycles
-                            // per second. Thus, we take the number of samples in a second
-                            // And divide the pitch frequency across sample rate.
-                            // Every time we get an audio frame, we add the pitch/number of samples
-                            // to the phase to move forward at the proper rate to make that sound freq.
-                            // We make the range of this phase 0 to 1. The range of
-                            // a trig function input is 0 to 2PI. So we take the phase
-                            // and map it to the cycle of the trig function by multiplying
-                            // it by 2PI.
-                            // Basically, phase is the normalized position in the cycle. 
-                            // A cycle of a wave is 0 to 2PI.
-                            // The faster the phase moves, the faster the wave cycles, and the higher the pitch.
-                            // Phase is normalized because 2PI and 0 are the same position on a wave in trig.
-                            float one = v->phase * 2. * PI;
-
-                            // Set sample based on wave form
-                            float sample = 0.;
-                            if (v->waveform == SynthWaveForm::sine)
-                                sample = sin(one);
-                            else if (v->waveform == SynthWaveForm::square)
-                                sample = (sin(one) > 0 ? 1 : -1);
-                            else if (v->waveform == SynthWaveForm::pulse)
-                                sample = (sin(one) > v->pulse_width ? 1 : -1);
-                            else if (v->waveform == SynthWaveForm::sawtooth)
-                                sample = (v->phase * 2.f - 1.f);
-                            else if (v->waveform == SynthWaveForm::triangle) // Source: https://en.wikipedia.org/wiki/Triangle_wave
-                                sample = (((acos(cos(one + PI / 2)) * 2) / PI) - 1);
-                            else if (v->waveform == SynthWaveForm::noise)
-                                sample = (distrib(gen) / 10000.);
-
-                            // Apply panning volume and global volume
-                            // In mono 0.5 = 1, 0 = 0.5, 1 = 0.5. 
-                            // That way, panning still effects the audio output in mono.
-                            // This is how the Gameboy does panning on its mono speaker.
-                            float this_pan = (v->panning - 0.5f) * 2.0f;
-                            float angle = (this_pan + 1.0f) * 0.5f * static_cast<float>(PI / 2);
-                            float left_gain = std::cos(angle);
-                            float right_gain = std::sin(angle);
-                            float left_pan = spec->channels == 2 ?
-                                left_gain : 1 - abs(0.5 - v->panning);
-                            float right_pan = right_gain;
-                            auto left_sample = left_pan * (v->volume) * sample;
-                            auto right_sample = right_pan * (v->volume) * sample;
-
-                            // Process filtered out
-                            if (v->algorithm == FilterAlgorithm::chamberlain)
-                            {
-                                ProcessChamberlainFilter(left_sample, v->cutoff, v->resonance, spec->freq, &v->lp_l, &v->bp_l, &v->hp_l);
-                                ProcessChamberlainFilter(right_sample, v->cutoff, v->resonance, spec->freq, &v->lp_r, &v->bp_r, &v->hp_r);
-                            }
-
-                            // Get filtered value based on the type of filter
-                            float filtered_left = (v->filter == FilterType::lowpass ? v->lp_l : (v->filter == FilterType::highpass ? v->hp_l : (v->filter == FilterType::bandpass ? v->bp_l : left_sample)));
-
-                            // Get filtered value based on the type of filter
-                            float filtered_right = (v->filter == FilterType::lowpass ? v->lp_r : (v->filter == FilterType::highpass ? v->hp_r : (v->filter == FilterType::bandpass ? v->bp_r : right_sample)));
-
-                            // Fill the buffer differently depending on channel
-                            if (spec->channels == 1)
-                                buffer[frame] += filtered_left;
-                            else
-                            {
-                                // Every frame is made up of a left sample and a right sample.
-                                // We place the left sample into the buffer.
-                                // Then the right sample.
-                                buffer[frame * 2 + 0] += filtered_left;
-                                buffer[frame * 2 + 1] += filtered_right;
-                            }
-
-                            // Step
-                            v->phase += v->freq / spec->freq;
-                            // Normalize phase
-                            if (v->phase > 1.)
-                            {
-                                v->phase -= 1.;
+                                if (change.freq != -9999) v->freq = change.freq;
+                                if (change.pan != -2)     v->panning = change.pan;
+                                if (change.pw != -1)      v->pulse_width = change.pw;
+                                if (change.vol != -1)     v->volume = change.vol;
                             }
                         }
                     }
                 }
 
-				// Clamp the buffer to -1.0 to 1.0 to prevent clipping and distortion
-                for (int i = 0; i < buffer_samples; i++)
+                // -= Phase 2: render every playing voice =-
+                for (auto v : synth->voices)
+                {
+                    if (!v->start_playing)
+                        continue;
+
+                    // Parameters are constant across the block, so compute everything once
+                    const SynthWaveForm waveform = v->waveform;
+                    float phase = v->phase;
+
+                    const float vol = v->volume.load();
+                    const float pan = std::clamp<float>(v->panning.load(), 0.f, 1.f);
+                    const float step = v->freq.load() / (float)spec->freq;
+
+                    float gain_l, gain_r;
+                    if (channels == 2)
+                    {
+                        // Equal-power pan
+                        const float angle = pan * (PI / 2.0f);
+                        gain_l = std::cos(angle) * vol;
+                        gain_r = std::sin(angle) * vol;
+                    }
+                    else
+                    {
+                        gain_l = (1.0f - std::abs(0.5f - pan)) * vol;
+                        gain_r = gain_l;
+                    }
+
+                    // Pulse: sin(2*pi*p) > pw  <=>  p0 < p < 0.5 - p0
+                    float pulse_lo = 0.f, pulse_hi = 0.5f;
+                    if (waveform == SynthWaveForm::pulse)
+                    {
+                        const float pw = std::clamp<float>(v->pulse_width.load(), 0.f, 0.999f);
+                        pulse_lo = std::asin(pw) / (2.0f * PI);
+                        pulse_hi = 0.5f - pulse_lo;
+                    }
+
+                    // Filter (runs once on the mono signal, then pan/volume are applied)
+                    const bool use_filter = (v->filter != FilterType::none) &&
+                        (v->algorithm == FilterAlgorithm::chamberlain);
+                    const FilterType filter_type = v->filter;
+                    float lp = v->lp, bp = v->bp, hp = v->hp;
+                    float f_coef = 0.f, q_coef = 0.f;
+                    if (use_filter)
+                    {
+                        const float warped = v->cutoff * v->cutoff * v->cutoff;
+                        const float cutoff_hz = warped * ((float)spec->freq * 0.5f);
+                        f_coef = std::clamp(2.0f * sinf(PI * cutoff_hz / (float)spec->freq), 0.f, 0.999f);
+                        q_coef = std::clamp(1.0f - v->resonance, 0.05f, 1.f);
+                    }
+
+                    float* out = buffer;
+
+                    for (int i = 0; i < block_frames; i++)
+                    {
+                        // -= Raw waveform from the phase (0..1) =-
+                        float s;
+                        switch (waveform)
+                        {
+                        case SynthWaveForm::sine:
+                            s = sinf(phase * 2.0f * PI);
+                            break;
+                        case SynthWaveForm::square:
+                            s = (phase < 0.5f) ? 1.f : -1.f;
+                            break;
+                        case SynthWaveForm::pulse:
+                            s = (phase > pulse_lo && phase < pulse_hi) ? 1.f : -1.f;
+                            break;
+                        case SynthWaveForm::sawtooth:
+                            s = phase * 2.f - 1.f;
+                            break;
+                        case SynthWaveForm::triangle:
+                            // Closed form of the old acos(cos()) triangle
+                            s = (phase < 0.25f) ? 4.f * phase
+                                : (phase < 0.75f) ? 2.f - 4.f * phase
+                                : 4.f * phase - 4.f;
+                            break;
+                        default: // noise
+                            noise_state ^= noise_state << 13;
+                            noise_state ^= noise_state >> 17;
+                            noise_state ^= noise_state << 5;
+                            s = (float)(int32_t)noise_state * (1.0f / 2147483648.0f);
+                            break;
+                        }
+
+                        if (use_filter)
+                        {
+                            hp = s - lp - q_coef * bp;
+                            bp = bp + f_coef * hp;
+                            lp = lp + f_coef * bp;
+
+                            // Dampen output to prevent feedback looping
+                            hp *= 0.999f;
+                            bp *= 0.999f;
+                            lp *= 0.999f;
+
+                            if (filter_type == FilterType::lowpass)       s = lp;
+                            else if (filter_type == FilterType::highpass) s = hp;
+                            else                                          s = bp;
+                        }
+
+                        if (channels == 1)
+                            out[i] += s * gain_l;
+                        else
+                        {
+                            out[i * 2 + 0] += s * gain_l;
+                            out[i * 2 + 1] += s * gain_r;
+                        }
+
+                        // Step and wrap the phase
+                        phase += step;
+                        if (phase >= 1.f)
+                        {
+                            phase -= 1.f;
+                            if (phase >= 1.f) phase -= std::floor(phase); // very high freq safety
+                        }
+                    }
+
+                    v->phase = phase;
+                    v->lp = lp; v->bp = bp; v->hp = hp;
+                }
+
+                // Clamp the buffer to -1.0 to 1.0 to prevent clipping and distortion
+                for (int i = 0; i < block_samples; i++)
                     buffer[i] = std::clamp(buffer[i], -1.0f, 1.0f);
 
-                // Push buffer to stream
-                SDL_PutAudioStreamData(stream, buffer, buffer_bytes);
+                // -= Timing output (prints only when a block takes more than half its budget) =-
+                auto t1 = std::chrono::high_resolution_clock::now();
+                double render_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                double budget_ms = 1000.0 * block_frames / spec->freq;
+                if (render_ms > budget_ms * 0.5)
+                    printf("synth render %.2f ms of %.2f ms budget\n", render_ms, budget_ms);
+
+                ++diag_blocks;
+                diag_max_ms = std::max(diag_max_ms, render_ms);
+#if SYNTH_DIAG
+                if (t1 - diag_last > std::chrono::seconds(2))
+                {
+                    if (diag_gate_skips || diag_empty_pops || diag_underruns)
+                        printf("[synth] blocks %llu | gate skips %llu | empty pops %llu | underruns %llu | max render %.2f ms\n",
+                            (unsigned long long)diag_blocks, (unsigned long long)diag_gate_skips,
+                            (unsigned long long)diag_empty_pops, (unsigned long long)diag_underruns, diag_max_ms);
+                    diag_blocks = diag_gate_skips = diag_empty_pops = diag_underruns = 0;
+                    diag_max_ms = 0.0;
+                    diag_last = t1;
+                }
+#endif
+
+                // Push block to stream
+                SDL_PutAudioStreamData(stream, buffer, block_bytes);
+                synth->frames_rendered += block_frames;
+            }
+            else
+            {
+                // Stream is full. Yield (don't sleep): the tracker busy-waits on will_stop_playing,
+                // so a sleeping audio thread would stall it.
+                std::this_thread::yield();
             }
 
             // Start the synth playback but only if this is the first time starting

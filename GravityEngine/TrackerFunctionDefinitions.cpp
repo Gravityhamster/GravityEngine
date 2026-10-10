@@ -96,6 +96,8 @@ GetNextEmpty(std::vector<T*>* vec)
 // sample_index : Index of the sample to play
 void PreviewSample(int channel_index, int sample_index)
 {
+    std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
+
     channellist[channel_index].type = ChannelType::file;
 
     // Reset sampler state and action queue
@@ -141,6 +143,8 @@ void PreviewSample(int channel_index, int sample_index)
 // step_ptr : Phrase progress index
 void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
 {
+    std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
+
     // Get frequency to play
     auto f = phraselist[playing_phrase]->arr[step_ptr][0];
     auto i = phraselist[playing_phrase]->arr[step_ptr][1];
@@ -448,6 +452,8 @@ double BpmToTicklength(int b)
 // Table>Phrase>Chain>Song <- Per channel
 void DoTick()
 {
+    std::scoped_lock lock(audiosampler->batch_mutex, audiosynth->batch_mutex);
+
     if (ticknumber % tps == 0)
     {
         // Step the channel sequencers
