@@ -76,7 +76,6 @@ struct live_change_sample
     double freq = -9999.0;
     double pan = -2.0;
     double vol = -1.0;
-    double pw = -1.0;
 };
 
 // Chamerblain filter processing - COPILOT function implemented into a sequestored function
@@ -155,6 +154,7 @@ public:
     float pan_phase = 0.f;
 
     std::atomic<bool> will_start_playing = false;
+    std::atomic<bool> will_stop_playing = false;
     std::atomic<bool> start_playing = false;
 
     long start_time_ms = 0;
@@ -241,6 +241,16 @@ public:
 
         while ((*state) == playing || (*state) == paused) {
 
+            for (auto v : sampler->voices)
+            {
+                if (v->will_stop_playing)
+                {
+                    while (v->live_changes.pop()) {}
+                    v->start_playing = false;
+                    v->will_stop_playing = false;
+                }
+            }
+
             if ((*state) == paused)
             {
                 std::this_thread::yield();
@@ -262,7 +272,6 @@ public:
                         v->freq = v->stg_step_freq.load();
                         v->volume = v->stg_volume.load();
                         v->panning = v->stg_panning.load();
-                        v->stg_swpd_freq = v->stg_step_freq.load();
 
                         v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
 

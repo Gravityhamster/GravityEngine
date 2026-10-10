@@ -133,6 +133,7 @@ public:
     float pw_phase = 0.f;
 
     std::atomic<bool> will_start_playing = false;
+    std::atomic<bool> will_stop_playing = false;
     std::atomic<bool> start_playing = false;
 
     float phase = 0.;
@@ -179,6 +180,16 @@ public:
         // Keep supplying data
         while ((*state) == playing || (*state) == paused) {
 
+            for (auto v : synth->voices)
+            {
+                if (v->will_stop_playing)
+                {
+                    while (v->live_changes.pop()) {}
+                    v->start_playing = false;
+                    v->will_stop_playing = false;
+                }
+            }
+
             // If the synth is paused, do not play the synth
             if ((*state) == paused)
             {
@@ -213,7 +224,6 @@ public:
                             v->volume = v->stg_volume.load();
                             v->panning = v->stg_panning.load();
                             v->pulse_width = v->stg_pulse_width.load();
-                            v->stg_swpd_freq = v->stg_base_freq.load();
 
                             // Crop panning
                             v->panning = std::clamp<float>(v->panning, 0.f, 1.f);

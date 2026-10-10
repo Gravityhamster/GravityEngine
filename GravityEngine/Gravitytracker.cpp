@@ -79,7 +79,6 @@ std::vector<phrase*> phraselist;
 std::vector<table*> tablelist;
 GravityEngine_Synth* audiosynth;
 GravityEngine_Sampler* audiosampler;
-ChannelType* channellisttypeptr[channelcount];
 channelsequencer channellist[channelcount];
 
 // Tracker colors
@@ -112,7 +111,6 @@ void GameInit()
     for (int i = 0; i < channelcount; i++)
     {
         channellist[i].channelnumber = i;
-        channellisttypeptr[i] = &(channellist[i].type);
 		audiosynth->voices.insert(audiosynth->voices.end(), new GravityEngine_SynthVoice());
 		audiosampler->voices.insert(audiosampler->voices.end(), new GravityEngine_SamplerVoice());
     }

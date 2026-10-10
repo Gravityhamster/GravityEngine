@@ -161,20 +161,6 @@ class sample
 public:
     std::string path;
     int sound_index = -1;
-
-    // Methods
-    sample* DeepCopySample()
-    {
-        // New sample
-        auto i = new sample();
-
-        // Apply parameters
-        i->path = path;
-        i->sound_index = sound_index;
-
-        // Return copy
-        return i;
-    }
 };
 
 // Instruments - Note audio definitions
@@ -697,7 +683,6 @@ public:
 // Data structures --
 extern GravityEngine_Synth* audiosynth;
 extern GravityEngine_Sampler* audiosampler;
-extern ChannelType* channellisttypeptr[channelcount];
 extern channelsequencer channellist[channelcount];
 
 // Tracker colors --

@@ -1,5 +1,6 @@
 #include "TrackerTypesAndVariables.h"
 #include "TrackerFunctionSignatures.h"
+#include <thread>
 
 // Find string f in s
 bool str_contains(std::string s, std::string f) { return s.find(f) != std::string::npos; }
@@ -90,6 +91,50 @@ GetNextEmpty(std::vector<T*>* vec)
     return index;
 }
 
+// Preview sample audio
+// channelnumber : The particular channel to play the sample on
+// sample_index : Index of the sample to play
+void PreviewSample(int channel_index, int sample_index)
+{
+    channellist[channel_index].type = ChannelType::file;
+
+    // Reset sampler state and action queue
+    auto v = audiosampler->voices[channel_index];
+    v->will_stop_playing = true;
+    while (v->will_stop_playing)
+        std::this_thread::yield();
+
+    geptr->SetChannelVolume(1, 1);
+    geptr->SetChannelPitchRatio(1, 1);
+
+    // Init voice
+    v->stg_step_freq = NoteFreq(39);
+    v->stg_swpd_freq = v->stg_step_freq.load();
+    v->base_freq = NoteFreq(39);
+    v->stg_volume = 1.f;
+    v->volume_freq = 0.f;
+    v->stg_panning = 0.5f;
+    v->pan_phase = 0.0f;
+    v->pan_freq = 0.0f;
+    v->pitch_freq = 0.0f;
+    v->cutoff = 0.0f;
+    v->resonance = 0.0f;
+    v->filter = FilterType::none;
+    v->start_time_ms = 0x000000;
+    v->end_time_ms = 0xFFFFFF;
+    v->mid_time_ms = 0x000000;
+    v->looping = false;
+    v->sound = geptr->GetSound(samplelist[sample_index]->sound_index);
+
+    // Prepare synth queueing variables
+    double ticks_per_second = (bpm * tps * 4) / 60;
+    double frames_per_tick = geptr->global_audio_spec.freq * (1 / ticks_per_second);
+    v->frame_counter = frames_per_tick;
+    v->frames_per_tick = frames_per_tick;
+
+    v->will_start_playing = true;
+}
+
 // Play step phrase
 // channelnumber : The particular channel to play the step on
 // playing_phrase : Phrase to play
@@ -102,11 +147,8 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
     // If no note is present, no need to play
     if (f != -9999 && GetAt(&instrumentlist, i) != nullptr)
     {
-        // TODO: Implement instrument parameters
-        // TODO: Sub-step on preview so that we can preview the table commands as well
-        // TODO: This shouldn't be necessary after the restructure. 
-        //       That is the ptr. Should be able to direct access.
-        (*channellisttypeptr[channel_index]) = instrumentlist[i]->type;
+        // Set the type of audio playing on the channel
+        channellist[channel_index].type = instrumentlist[i]->type;
         // Copy the settings that the channels needs to know to keep doing the transposition beyond the start
         channellist[channel_index].playing_table = instrumentlist[i]->table_index;
         channellist[channel_index].playing_freq = f;
@@ -119,12 +161,16 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             ApplyChainTransposition(channel_index, &f);
 
         // Reset synth state and action queue
-        audiosynth->voices[channel_index]->start_playing = false;
-        while (audiosynth->voices[channel_index]->live_changes.pop()) {}
+        auto synth_voice = audiosynth->voices[channel_index];
+        synth_voice->will_stop_playing = true;
+        while (synth_voice->will_stop_playing)
+            std::this_thread::yield();
 
         // Reset sampler state and action queue
-        audiosampler->voices[channel_index]->start_playing = false;
-        while (audiosampler->voices[channel_index]->live_changes.pop()) {}
+        auto sampler_voice = audiosampler->voices[channel_index];
+        sampler_voice->will_stop_playing = true;
+        while (sampler_voice->will_stop_playing)
+            std::this_thread::yield();
 
         // Play step on channel
         if (instrumentlist[i]->type == ChannelType::synth)
@@ -136,6 +182,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             auto v = audiosynth->voices[channel_index];
 
             v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
+            v->stg_swpd_freq = v->stg_base_freq.load();
             v->stg_volume = instrumentlist[i]->volume;
             v->volume_freq = instrumentlist[i]->volume_freq;
             v->stg_panning = instrumentlist[i]->panning;
@@ -167,6 +214,7 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             auto v = audiosampler->voices[channel_index];
 
             v->stg_step_freq = NoteFreq(f) + instrumentlist[i]->detune;
+            v->stg_swpd_freq = v->stg_step_freq.load();
 			v->base_freq = NoteFreq(instrumentlist[i]->base_pitch);
             v->stg_volume = instrumentlist[i]->volume;
             v->volume_freq = instrumentlist[i]->volume_freq;
@@ -1631,7 +1679,7 @@ void HandleMovementRepeaters()
 // Stop a specific channel
 void StopChannel(int channel)
 {
-    if (*channellisttypeptr[channel] == ChannelType::synth)
+    if (channellist[channel].type == ChannelType::synth)
     {
         // Stop synth voice
         audiosynth->voices[channel]->start_playing = false;
@@ -2801,64 +2849,11 @@ void EditorControl()
             // If we have a successful deep copy, do it
             if (do_deep_copy == 2 && cursor_y == 14 && cursor_x == 0 && GetAt(&tablelist, instrumentlist[open_instrument]->table_index) != nullptr)
             {
-                // Deep copy the sample
+                // Deep copy the table
                 auto i = GetAt(&tablelist, instrumentlist[open_instrument]->table_index)->DeepCopyTable();
                 auto index = GetNextEmpty(&tablelist);
                 InsertAt(&tablelist, index, i);
                 instrumentlist[open_instrument]->table_index = index;
-            }
-            else
-            {
-                // Modify value
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
-                {
-                    // Edit table
-                    if (cursor_y == 14 && cursor_x == 0)
-                    {
-                        // If the sample value is unfilled, insert 0
-                        if (instrumentlist[open_instrument]->table_index == -1)
-                        {
-                            if (copied_smple == -1)
-                            {
-                                // Set UI reference to Hex0
-                                instrumentlist[open_instrument]->table_index = 0x0000;
-                                // If this sample doesn't exist yet, insert it
-                                if (GetAt(&samplelist, instrumentlist[open_instrument]->table_index) == nullptr)
-                                    InsertAt(&samplelist, instrumentlist[open_instrument]->table_index, new sample());
-                            }
-                            else
-                            {
-                                // Set UI reference to copied sample
-                                instrumentlist[open_instrument]->table_index = copied_tble;
-                            }
-                        }
-                        // If double click, add a new sample
-                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
-                        {
-                            // Set UI reference to the next empty
-                            instrumentlist[open_instrument]->table_index = GetNextEmpty(&tablelist);
-                            // Add the new sample
-                            InsertAt(&tablelist, instrumentlist[open_instrument]->table_index, new table());
-                            // Copy to clipboard
-                            copied_tble = instrumentlist[open_instrument]->table_index;
-                        }
-                        else
-                        {
-                            // Copy to clipboard
-                            copied_tble = instrumentlist[open_instrument]->table_index;
-                        }
-                    }
-                }
-            }
-
-            // If we have a successful deep copy, do it
-            if (do_deep_copy == 2 && cursor_y == 1 && cursor_x == 0 && GetAt(&samplelist, instrumentlist[open_instrument]->sample_index) != nullptr)
-            {
-                // Deep copy the sample
-                auto i = GetAt(&samplelist, instrumentlist[open_instrument]->sample_index)->DeepCopySample();
-                auto index = GetNextEmpty(&samplelist);
-                InsertAt(&samplelist, index, i);
-                instrumentlist[open_instrument]->sample_index = index;
             }
             else
             {
@@ -2901,315 +2896,352 @@ void EditorControl()
                             copied_smple = instrumentlist[open_instrument]->sample_index;
                         }
                     }
+
+                    // Edit table
+                    if (cursor_y == 14 && cursor_x == 0)
+                    {
+                        // If the table value is unfilled, insert 0
+                        if (instrumentlist[open_instrument]->table_index == -1)
+                        {
+                            if (copied_smple == -1)
+                            {
+                                // Set UI reference to Hex0
+                                instrumentlist[open_instrument]->table_index = 0x0000;
+                                // If this table doesn't exist yet, insert it
+                                if (GetAt(&tablelist, instrumentlist[open_instrument]->table_index) == nullptr)
+                                    InsertAt(&tablelist, instrumentlist[open_instrument]->table_index, new table());
+                            }
+                            else
+                            {
+                                // Set UI reference to copied table
+                                instrumentlist[open_instrument]->table_index = copied_tble;
+                            }
+                        }
+                        // If double click, add a new table
+                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->doubleclick)
+                        {
+                            // Set UI reference to the next empty
+                            instrumentlist[open_instrument]->table_index = GetNextEmpty(&tablelist);
+                            // Add the new table
+                            InsertAt(&tablelist, instrumentlist[open_instrument]->table_index, new table());
+                            // Copy to clipboard
+                            copied_tble = instrumentlist[open_instrument]->table_index;
+                        }
+                        else
+                        {
+                            // Copy to clipboard
+                            copied_tble = instrumentlist[open_instrument]->table_index;
+                        }
+                    }
+                }
+            }
+
+            // Toggle alt mode
+            if ((instrument_edit_y == 12 || instrument_edit_y == 11 || instrument_edit_y == 10) && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_pressed())
+                alt_mode = !alt_mode;
+
+            // Editing
+            if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+            {
+                // Delete table index
+                if (cursor_y == 14 && cursor_x == 0 &&
+                    dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                {
+                    instrumentlist[open_instrument]->table_index = -1;
                 }
 
-                // Toggle alt mode
-                if ((instrument_edit_y == 12 || instrument_edit_y == 11 || instrument_edit_y == 10) && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_pressed())
-                    alt_mode = !alt_mode;
+                // Get edit ptr
+                int* edit;
 
-                // Editing
-                if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_down())
+                // Default
+                edit = &(instrumentlist[open_instrument]->volume_edit);
+
+                // Get instrument edit pointer
+                switch (instrument_edit_y)
                 {
-                    // Delete table index
-                    if (cursor_y == 14 && cursor_x == 0 &&
-                        dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_b_pressed())
+                case 3: // Channel Type
+                    edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->type);
+                    break;
+                case 4: // Sample Index
+                    edit = &instrumentlist[open_instrument]->sample_index;
+                    break;
+                case 5: // Volume
+                    edit = &(instrumentlist[open_instrument]->volume_edit);
+                    break;
+                case 6: // Panning
+                    edit = &(instrumentlist[open_instrument]->pan_edit);
+                    break;
+                case 7: // Tuning
+                    edit = &(instrumentlist[open_instrument]->detune_edit);
+                    break;
+                case 8: // Pitch Sweep
+                    edit = &(instrumentlist[open_instrument]->pitch_freq_edit);
+                    break;
+                case 9: // Base Pitch
+                    edit = &(instrumentlist[open_instrument]->base_pitch);
+                    break;
+                case 10: // Start Time
+                    edit = &(instrumentlist[open_instrument]->start_time_ms);
+                    break;
+                case 11: // Mid Time
+                    edit = &(instrumentlist[open_instrument]->mid_time_ms);
+                    break;
+                case 12: // End Time
+                    edit = &(instrumentlist[open_instrument]->end_time_ms);
+                    break;
+                case 13: // Loop
+                    edit = &(instrumentlist[open_instrument]->loop);
+                    break;
+                case 15: // Filter Type
+                    edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->filter);
+                    break;
+                case 16: // Filter Cutoff
+                    edit = &(instrumentlist[open_instrument]->cutoff_edit);
+                    break;
+                case 17: // Filter Resonance
+                    edit = &(instrumentlist[open_instrument]->resonance_edit);
+                    break;
+                case 19: // Table Index
+                    edit = &instrumentlist[open_instrument]->table_index;
+                    break;
+                }
+
+                // Movement keys
+                if (goup || godown || goright || goleft)
+                {
+                    // Mod the left two digits
+                    if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 3)
                     {
-                        instrumentlist[open_instrument]->table_index = -1;
+                        if (alt_mode)
+                        {
+                            if (goup) (*edit) += 0x100000;
+                            if (godown) (*edit) -= 0x100000;
+                            if (goright) (*edit) += 0x010000;
+                            if (goleft) (*edit) -= 0x010000;
+                        }
+                        else
+                        {
+                            if (goup) (*edit) += 0x001000;
+                            if (godown) (*edit) -= 0x001000;
+                            if (goright) (*edit) += 0x000100;
+                            if (goleft) (*edit) -= 0x000100;
+                        }
+                    }
+                    else if (instrument_edit_digit_count == 4)
+                    {
+                        (*edit) = (*edit) == 0 ? 1 : 0;
+                    }
+                    else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
+                    {
+                        if (goup) (*edit) += 0x1000;
+                        if (godown) (*edit) -= 0x1000;
+                        if (goright) (*edit) += 0x0100;
+                        if (goleft) (*edit) -= 0x0100;
+                    }
+                    // Mod a note
+                    else if (instrument_edit_digit_count == 1.5)
+                    {
+                        // Edit note pitch
+                        if (goup) (*edit) += 12;
+                        if (godown) (*edit) -= 12;
+                        if (goright) (*edit) += 1;
+                        if (goleft) (*edit) -= 1;
+                    }
+                    // Mod the right two digits
+                    else if (instrument_edit_digit_count == 3)
+                    {
+                        if (alt_mode)
+                        {
+                            if (goup) (*edit) += 0x001000;
+                            if (godown) (*edit) -= 0x001000;
+                            if (goright) (*edit) += 0x000100;
+                            if (goleft) (*edit) -= 0x000100;
+                        }
+                        else
+                        {
+                            if (goup) (*edit) += 0x000010;
+                            if (godown) (*edit) -= 0x000010;
+                            if (goright) (*edit) += 0x000001;
+                            if (goleft) (*edit) -= 0x000001;
+                        }
+                    }
+                    else
+                    {
+                        if (goup && instrument_edit_digit_count != 0) (*edit) += 0x0010;
+                        if (godown && instrument_edit_digit_count != 0)  (*edit) -= 0x0010;
+                        if (goright) (*edit) += 0x0001;
+                        if (goleft) (*edit) -= 0x0001;
                     }
 
-                    // Get edit ptr
-                    int* edit;
-
-                    // Default
-                    edit = &(instrumentlist[open_instrument]->volume_edit);
-
-                    // Get instrument edit pointer
+                    // Correct number ranges
                     switch (instrument_edit_y)
                     {
                     case 3: // Channel Type
-                        edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->type);
-                        break;
-                    case 4: // Sample Index
-                        edit = &instrumentlist[open_instrument]->sample_index;
-                        break;
-                    case 5: // Volume
-                        edit = &(instrumentlist[open_instrument]->volume_edit);
-                        break;
-                    case 6: // Panning
-                        edit = &(instrumentlist[open_instrument]->pan_edit);
-                        break;
-                    case 7: // Tuning
-                        edit = &(instrumentlist[open_instrument]->detune_edit);
-                        break;
-                    case 8: // Pitch Sweep
-                        edit = &(instrumentlist[open_instrument]->pitch_freq_edit);
-                        break;
-                    case 9: // Base Pitch
-                        edit = &(instrumentlist[open_instrument]->base_pitch);
-                        break;
-                    case 10: // Start Time
-                        edit = &(instrumentlist[open_instrument]->start_time_ms);
-                        break;
-                    case 11: // Mid Time
-                        edit = &(instrumentlist[open_instrument]->mid_time_ms);
-                        break;
-                    case 12: // End Time
-                        edit = &(instrumentlist[open_instrument]->end_time_ms);
-                        break;
-                    case 13: // Loop
-                        edit = &(instrumentlist[open_instrument]->loop);
+                        if ((*edit) < static_cast<int>(ChannelType::min))
+                            (*edit) = static_cast<int>(ChannelType::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(ChannelType::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
                         break;
                     case 15: // Filter Type
-                        edit = reinterpret_cast<int*>(&instrumentlist[open_instrument]->filter);
+                        if ((*edit) < static_cast<int>(FilterType::min))
+                            (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
+                        if ((*edit) > static_cast<int>(FilterType::max))
+                            (*edit) = ((*edit) - 1) - static_cast<int>(FilterType::max);
                         break;
+                    case 9: // Base pitch
+                        if ((*edit) < min_note)
+                            (*edit) = max_note + (((*edit) - min_note) + 1);
+                        if ((*edit) > max_note)
+                            (*edit) = min_note + ((*edit) - 1) - max_note;
+                        break;
+                    case 10: // Start Time
+                    case 11: // Mid Time
+                    case 12: // End Time
+                        // Wrap the cell between 0x000000 and 0xFFFFFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFFFFFF + ((*edit) + 1);
+                        if ((*edit) > 0xFFFFFF)
+                            (*edit) = ((*edit) - 1) - 0xFFFFFF;
+                        break;
+                    case 4: // Sample index
+                    case 5: // Volume
+                    case 6: // Panning
+                    case 8: // Pitch Sweep
                     case 16: // Filter Cutoff
-                        edit = &(instrumentlist[open_instrument]->cutoff_edit);
-                        break;
                     case 17: // Filter Resonance
-                        edit = &(instrumentlist[open_instrument]->resonance_edit);
+                    case 19: // Table index
+                        // Wrap the cell between 0x0000 and 0xFFFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFFFF + ((*edit) + 1);
+                        if ((*edit) > 0xFFFF)
+                            (*edit) = ((*edit) - 1) - 0xFFFF;
                         break;
-                    case 19: // Table Index
-                        edit = &instrumentlist[open_instrument]->table_index;
+                    case 7: // Tuning
+                        // Wrap the cell between 0x00 and 0xFF
+                        if ((*edit) < 0)
+                            (*edit) = 0xFF + ((*edit) + 1);
+                        if ((*edit) > 0xFF)
+                            (*edit) = ((*edit) - 1) - 0xFF;
                         break;
                     }
 
-                    // Movement keys
-                    if (goup || godown || goright || goleft)
-                    {
-                        // Mod the left two digits
-                        if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 3)
-                        {
-                            if (alt_mode)
-                            {
-                                if (goup) (*edit) += 0x100000;
-                                if (godown) (*edit) -= 0x100000;
-                                if (goright) (*edit) += 0x010000;
-                                if (goleft) (*edit) -= 0x010000;
-                            }
-                            else
-                            {
-                                if (goup) (*edit) += 0x001000;
-                                if (godown) (*edit) -= 0x001000;
-                                if (goright) (*edit) += 0x000100;
-                                if (goleft) (*edit) -= 0x000100;
-                            }
-                        }
-                        else if (instrument_edit_digit_count == 4)
-                        {
-                            (*edit) = (*edit) == 0 ? 1 : 0;
-                        }
-                        else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_shift_down() && instrument_edit_digit_count == 2)
-                        {
-                            if (goup) (*edit) += 0x1000;
-                            if (godown) (*edit) -= 0x1000;
-                            if (goright) (*edit) += 0x0100;
-                            if (goleft) (*edit) -= 0x0100;
-                        }
-                        // Mod a note
-                        else if (instrument_edit_digit_count == 1.5)
-                        {
-                            // Edit note pitch
-                            if (goup) (*edit) += 12;
-                            if (godown) (*edit) -= 12;
-                            if (goright) (*edit) += 1;
-                            if (goleft) (*edit) -= 1;
-                        }
-                        // Mod the right two digits
-                        else if (instrument_edit_digit_count == 3)
-                        {
-                            if (alt_mode)
-                            {
-                                if (goup) (*edit) += 0x001000;
-                                if (godown) (*edit) -= 0x001000;
-                                if (goright) (*edit) += 0x000100;
-                                if (goleft) (*edit) -= 0x000100;
-                            }
-                            else
-                            {
-                                if (goup) (*edit) += 0x000010;
-                                if (godown) (*edit) -= 0x000010;
-                                if (goright) (*edit) += 0x000001;
-                                if (goleft) (*edit) -= 0x000001;
-                            }
-                        }
-                        else
-                        {
-                            if (goup && instrument_edit_digit_count != 0) (*edit) += 0x0010;
-                            if (godown && instrument_edit_digit_count != 0)  (*edit) -= 0x0010;
-                            if (goright) (*edit) += 0x0001;
-                            if (goleft) (*edit) -= 0x0001;
-                        }
-
-                        // Correct number ranges
-                        switch (instrument_edit_y)
-                        {
-                        case 3: // Channel Type
-                            if ((*edit) < static_cast<int>(ChannelType::min))
-                                (*edit) = static_cast<int>(ChannelType::max) + ((*edit) + 1);
-                            if ((*edit) > static_cast<int>(ChannelType::max))
-                                (*edit) = ((*edit) - 1) - static_cast<int>(ChannelType::max);
-                            break;
-                        case 15: // Filter Type
-                            if ((*edit) < static_cast<int>(FilterType::min))
-                                (*edit) = static_cast<int>(FilterType::max) + ((*edit) + 1);
-                            if ((*edit) > static_cast<int>(FilterType::max))
-                                (*edit) = ((*edit) - 1) - static_cast<int>(FilterType::max);
-                            break;
-                        case 9: // Base pitch
-                            if ((*edit) < min_note)
-                                (*edit) = max_note + (((*edit) - min_note) + 1);
-                            if ((*edit) > max_note)
-                                (*edit) = min_note + ((*edit) - 1) - max_note;
-                            break;
-                        case 10: // Start Time
-                        case 11: // Mid Time
-                        case 12: // End Time
-                            // Wrap the cell between 0x000000 and 0xFFFFFF
-                            if ((*edit) < 0)
-                                (*edit) = 0xFFFFFF + ((*edit) + 1);
-                            if ((*edit) > 0xFFFFFF)
-                                (*edit) = ((*edit) - 1) - 0xFFFFFF;
-                            break;
-                        case 4: // Sample index
-                        case 5: // Volume
-                        case 6: // Panning
-                        case 8: // Pitch Sweep
-                        case 16: // Filter Cutoff
-                        case 17: // Filter Resonance
-                        case 19: // Table index
-                            // Wrap the cell between 0x0000 and 0xFFFF
-                            if ((*edit) < 0)
-                                (*edit) = 0xFFFF + ((*edit) + 1);
-                            if ((*edit) > 0xFFFF)
-                                (*edit) = ((*edit) - 1) - 0xFFFF;
-                            break;
-                        case 7: // Tuning
-                            // Wrap the cell between 0x00 and 0xFF
-                            if ((*edit) < 0)
-                                (*edit) = 0xFF + ((*edit) + 1);
-                            if ((*edit) > 0xFF)
-                                (*edit) = ((*edit) - 1) - 0xFF;
-                            break;
-                        }
-
-                        // Convert edits to actual values
-                        instrumentlist[open_instrument]->detune = (instrumentlist[open_instrument]->detune_edit - 128) / 2.f;
-                        std::string outstr;
-                        outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
-                        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                        instrumentlist[open_instrument]->volume = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
-                        instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
-                        outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
-                        outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
-                        if (outstr.substr(0, 2) == "80")
-                            instrumentlist[open_instrument]->panning = 0.5f;
-                        else
-                            instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
-                        instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
-                        instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
-                        instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
-                        instrumentlist[open_instrument]->resonance = instrumentlist[open_instrument]->resonance_edit / 65535.f;
-                    }
+                    // Convert edits to actual values
+                    instrumentlist[open_instrument]->detune = (instrumentlist[open_instrument]->detune_edit - 128) / 2.f;
+                    std::string outstr;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->volume_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->volume = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->volume_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->pan_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    if (outstr.substr(0, 2) == "80")
+                        instrumentlist[open_instrument]->panning = 0.5f;
+                    else
+                        instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
+                    instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
+                    instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
+                    instrumentlist[open_instrument]->resonance = instrumentlist[open_instrument]->resonance_edit / 65535.f;
                 }
-                // Goto page
-                else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
-                {
-                    // Go to the left page over
-                    if (goleft)
-                    {
-                        // Reset alt mode
-                        alt_mode = false;
-                        // If the open_chain is valid
-                        if (open_phrase != -1)
-                        {
-                            // Check if the phrase does not exist
-                            if (GetAt(&phraselist, open_phrase) == nullptr)
-                            {
-                                InsertAt(&phraselist, open_phrase, new phrase());
-                            }
-                            // Chain
-                            state = m_phrase;
-                            cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
-                            cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
-                            breakend = true;
-                        }
-                    }
-                    // Go to the above page over
-                    else if (goup)
-                    {
-                        // Reset alt mode
-                        alt_mode = false;
-                        // Set open sample
-                        if (cursor_y == 1 && cursor_x == 0 && instrumentlist[open_instrument]->sample_index != -1)
-                        {
-                            open_sample = instrumentlist[open_instrument]->sample_index;
-                        }
-                        // If the open_sample is valid
-                        if (open_sample != -1)
-                        {
-                            // Check if the sample does not exist
-                            if (GetAt(&samplelist, open_sample) == nullptr)
-                            {
-                                InsertAt(&samplelist, open_sample, new sample());
-                            }
-                            // Sample
-                            state = m_wave;
-                            sample_offset_y = 0;
-                            cursor_x = 0;
-                            cursor_y = 0;
-                            breakend = true;
-                        }
-                    }
-                    // Go to the below page
-                    else if (godown)
-                    {
-                        // Set open sample
-                        if (cursor_y == 14 && cursor_x == 0 && instrumentlist[open_instrument]->table_index != -1)
-                        {
-                            open_table = instrumentlist[open_instrument]->table_index;
-                        }
-                        // If the open_sample is valid
-                        if (open_table != -1)
-                        {
-                            // Check if the sample does not exist
-                            if (GetAt(&tablelist, open_table) == nullptr)
-                            {
-                                InsertAt(&tablelist, open_table, new table());
-                            }
-                            // Table
-                            state = m_table;
-                            //sample_offset_y = 0;
-                            cursor_x = SDL_clamp(cursor_x, 0, table_grid_w - 1);
-                            cursor_y = SDL_clamp(cursor_y, 0, table_grid_h - 1);
-                            breakend = true;
-                        }
-                    }
-                }
-                // Moving
-                else
+            }
+            // Goto page
+            else if (dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_select_down())
+            {
+                // Go to the left page over
+                if (goleft)
                 {
                     // Reset alt mode
-                    if (goright || goleft || godown || goup)
-                        alt_mode = false;
-                    cursor_x += goright - goleft;
-                    cursor_y += godown - goup;
+                    alt_mode = false;
+                    // If the open_chain is valid
+                    if (open_phrase != -1)
+                    {
+                        // Check if the phrase does not exist
+                        if (GetAt(&phraselist, open_phrase) == nullptr)
+                        {
+                            InsertAt(&phraselist, open_phrase, new phrase());
+                        }
+                        // Chain
+                        state = m_phrase;
+                        cursor_x = SDL_clamp(cursor_x, 0, phrase_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, phrase_grid_h - 1);
+                        breakend = true;
+                    }
                 }
-
-                // wrap the cursor and clamp offsets
-                if (cursor_x > instrument::sample_menu_width - 1)
-                    cursor_x = 0;
-                if (cursor_x < 0)
-                    cursor_x = instrument::sample_menu_width - 1;
-                if (cursor_y > instrument::sample_menu_height - 1)
-                    cursor_y = 0;
-                if (cursor_y < 0)
-                    cursor_y = instrument::sample_menu_height - 1;
+                // Go to the above page over
+                else if (goup)
+                {
+                    // Reset alt mode
+                    alt_mode = false;
+                    // Set open sample
+                    if (cursor_y == 1 && cursor_x == 0 && instrumentlist[open_instrument]->sample_index != -1)
+                    {
+                        open_sample = instrumentlist[open_instrument]->sample_index;
+                    }
+                    // If the open_sample is valid
+                    if (open_sample != -1)
+                    {
+                        // Check if the sample does not exist
+                        if (GetAt(&samplelist, open_sample) == nullptr)
+                        {
+                            InsertAt(&samplelist, open_sample, new sample());
+                        }
+                        // Sample
+                        state = m_wave;
+                        sample_offset_y = 0;
+                        cursor_x = 0;
+                        cursor_y = 0;
+                        breakend = true;
+                    }
+                }
+                // Go to the below page
+                else if (godown)
+                {
+                    // Set open sample
+                    if (cursor_y == 14 && cursor_x == 0 && instrumentlist[open_instrument]->table_index != -1)
+                    {
+                        open_table = instrumentlist[open_instrument]->table_index;
+                    }
+                    // If the open_sample is valid
+                    if (open_table != -1)
+                    {
+                        // Check if the sample does not exist
+                        if (GetAt(&tablelist, open_table) == nullptr)
+                        {
+                            InsertAt(&tablelist, open_table, new table());
+                        }
+                        // Table
+                        state = m_table;
+                        //sample_offset_y = 0;
+                        cursor_x = SDL_clamp(cursor_x, 0, table_grid_w - 1);
+                        cursor_y = SDL_clamp(cursor_y, 0, table_grid_h - 1);
+                        breakend = true;
+                    }
+                }
+            }
+            // Moving
+            else
+            {
+                // Reset alt mode
+                if (goright || goleft || godown || goup)
+                    alt_mode = false;
+                cursor_x += goright - goleft;
+                cursor_y += godown - goup;
             }
 
-            // Reset deep copy action flag
-            if (do_deep_copy == 2)
-                do_deep_copy = 0;
+            // wrap the cursor and clamp offsets
+            if (cursor_x > instrument::sample_menu_width - 1)
+                cursor_x = 0;
+            if (cursor_x < 0)
+                cursor_x = instrument::sample_menu_width - 1;
+            if (cursor_y > instrument::sample_menu_height - 1)
+                cursor_y = 0;
+            if (cursor_y < 0)
+                cursor_y = instrument::sample_menu_height - 1;
         }
+
+        // Reset deep copy action flag
+        if (do_deep_copy == 2)
+            do_deep_copy = 0;
 
         // Update UI
         DrawInstrumentUI();
@@ -3420,8 +3452,11 @@ void EditorControl()
                     samplelist[open_sample]->sound_index = geptr->AddSound(samplelist[open_sample]->path.c_str());
 
                     // Preview the audio
-                    geptr->SetChannelPitchRatio(open_channel, 1);
-                    geptr->SetChannelVolume(open_channel, 1);
+                    if (pause_song && dynamic_cast<input*>(geptr->GetObjectReference(inputgetter))->is_a_pressed())
+                    {
+                        // Play the note
+                        PreviewSample(open_channel, open_sample);
+                    }
                 }
             }
             // Go up a directory
