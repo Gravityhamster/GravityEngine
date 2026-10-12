@@ -185,7 +185,11 @@ void PreviewSample(int channel_index, int sample_index)
     v->stg_swpd_freq = v->stg_step_freq.load();
     v->base_freq = NoteFreq(39);
     v->stg_volume = 1.f;
+    v->stg_cutoff = 1.f;
+    v->stg_resonance = 1.f;
     v->volume_freq = 0.f;
+    v->cutoff_freq = 0.f;
+    v->resonance_freq = 0.f;
     v->stg_panning = 0.5f;
     v->pan_phase = 0.0f;
     v->pan_freq = 0.0f;
@@ -257,7 +261,11 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             v->stg_base_freq = NoteFreq(f) + instrumentlist[i]->detune;
             v->stg_swpd_freq = v->stg_base_freq.load();
             v->stg_volume = instrumentlist[i]->volume;
+            v->stg_cutoff = instrumentlist[i]->cutoff;
+            v->stg_resonance = instrumentlist[i]->resonance;
             v->volume_freq = instrumentlist[i]->volume_freq;
+            v->cutoff_freq = instrumentlist[i]->cutoff_freq;
+            v->resonance_freq = instrumentlist[i]->resonance_freq;
             v->stg_panning = instrumentlist[i]->panning;
             v->pan_phase = 0.5f - asinf(std::clamp((instrumentlist[i]->panning - 0.5f) * 2.0f, -1.0f, 1.0f)) / (2.0f * PI);
             v->pw_phase = 0.5f - asinf(std::clamp((instrumentlist[i]->pulse_width - 0.5f) / 0.495f, -1.0f, 1.0f)) / (2.0f * PI);
@@ -289,7 +297,11 @@ void PlayStepPhrase(int channel_index, int playing_phrase, int step_ptr)
             v->stg_swpd_freq = v->stg_step_freq.load();
             v->base_freq = NoteFreq(instrumentlist[i]->base_pitch);
             v->stg_volume = instrumentlist[i]->volume;
+            v->stg_cutoff = instrumentlist[i]->cutoff;
+            v->stg_resonance = instrumentlist[i]->resonance;
             v->volume_freq = instrumentlist[i]->volume_freq;
+            v->cutoff_freq = instrumentlist[i]->cutoff_freq;
+            v->resonance_freq = instrumentlist[i]->resonance_freq;
             v->stg_panning = instrumentlist[i]->panning;
             v->pan_phase = 0.5f - asinf(std::clamp((instrumentlist[i]->panning - 0.5f) * 2.0f, -1.0f, 1.0f)) / (2.0f * PI);
             v->pan_freq = instrumentlist[i]->pan_freq;
@@ -548,6 +560,8 @@ void DoTick()
         double new_freq = 0.0;
         double new_pan = 0.5;
         double new_vol = 1.0;
+        double new_ctf = 1.0;
+        double new_res = 0.5;
         double new_pw = 0.5;
 
         // Staging variables for the changes that will be written to the synths and samples
@@ -556,6 +570,8 @@ void DoTick()
             new_freq = audiosynth->voices[i]->stg_base_freq;
             new_pan = audiosynth->voices[i]->stg_panning;
             new_vol = audiosynth->voices[i]->stg_volume;
+            new_ctf = audiosynth->voices[i]->stg_cutoff;
+            new_res = audiosynth->voices[i]->stg_resonance;
             new_pw = audiosynth->voices[i]->stg_pulse_width;
         }
         else
@@ -563,13 +579,15 @@ void DoTick()
             new_freq = audiosampler->voices[i]->stg_step_freq;
             new_pan = audiosampler->voices[i]->stg_panning;
             new_vol = audiosampler->voices[i]->stg_volume;
+            new_ctf = audiosampler->voices[i]->stg_cutoff;
+            new_res = audiosampler->voices[i]->stg_resonance;
         }
 
         // Get all changes to the sound
         if (!pause_song || play_context == pt_preview)
             channellist[i].sub_step(&new_freq);
-        if (channellist[i].type == ChannelType::synth) audiosynth->SynthAutomation(&new_freq, &new_pan, &new_pw, &new_vol, i); // Run synth automation on animated variables
-        if (channellist[i].type == ChannelType::file) audiosampler->SampleAutomation(&new_freq, &new_pan, &new_vol, i); // Run sample automation on animated variables
+        if (channellist[i].type == ChannelType::synth) audiosynth->SynthAutomation(&new_freq, &new_pan, &new_pw, &new_vol, &new_ctf, &new_res, i); // Run synth automation on animated variables
+        if (channellist[i].type == ChannelType::file) audiosampler->SampleAutomation(&new_freq, &new_pan, &new_vol, &new_ctf, &new_res, i); // Run sample automation on animated variables
 
         // Submit changes throughout the substep
         if (channellist[i].type == ChannelType::synth)
@@ -579,7 +597,9 @@ void DoTick()
                 new_freq // Frequency changes,
                 , new_pan // Panning changes,
                 , new_vol // Volume changes,
-                , new_pw // Pulse width changes
+                , new_pw // Pulse width changes,
+                , new_ctf// Cutoff changes,
+                , new_res // Resonance changes
             };
             audiosynth->voices[i]->live_changes.push(s);
         }
@@ -590,6 +610,8 @@ void DoTick()
                 new_freq // Frequency changes,
                 , new_pan // Panning changes,
                 , new_vol // Volume changes,
+                , new_ctf // Cutoff changes,
+                , new_res // Resonance changes
             };
             audiosampler->voices[i]->live_changes.push(s);
         }
@@ -2856,8 +2878,14 @@ void EditorControl()
                     instrumentlist[open_instrument]->pulse_width = (std::stoi(outstr.substr(0, 2), 0, 16) / 255.f) - 0.5f;
                     instrumentlist[open_instrument]->pulse_width_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
                     instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
-                    instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->cutoff = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->cutoff_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
                     instrumentlist[open_instrument]->resonance = instrumentlist[open_instrument]->resonance_edit / 65535.f;
+                    instrumentlist[open_instrument]->resonance_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
                 }
             }
             // Goto page

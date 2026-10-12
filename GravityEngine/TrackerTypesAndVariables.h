@@ -188,10 +188,12 @@ public:
     float pan_freq = 0.0; // Ping-pong pan frequency
     int pitch_freq_edit = 0x8000; // 0x8000 = 0, 0x0000 = -32768, 0xFFFF = 32767
     float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
-    int cutoff_edit = 0x8000; // 0x0000 = 0, 0xFFFF = 1
+    int cutoff_edit = 0x8080; // 0xFF = 1 | 0x80 = 0
     float cutoff = 0.0f; // Filter cutoff
-    int resonance_edit = 0x6554; // 0x0000 = 0, 0xFFFF = 1
+    float cutoff_freq = 0.0; // Linear cutoff sweep (positive up, negative down)
+    int resonance_edit = 0x8080; // 0xFF = 1 | 0x80 = 0
     float resonance = 0.0f; // Filter resonance
+    float resonance_freq = 0.0; // Linear resonance sweep (positive up, negative down)
     SynthWaveForm waveform = SynthWaveForm::sine; // Synth wave type
     FilterType filter = FilterType::none; // Lowpass, bandpass, or highpass filter
 

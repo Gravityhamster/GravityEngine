@@ -110,6 +110,8 @@ struct live_change_sample
     double freq = -9999.0;
     double pan = -2.0;
     double vol = -1.0;
+    double ctf = -1.0;
+    double res = -1.0;
 };
 
 // Chamerblain filter processing - COPILOT function implemented into a sequestored function
@@ -162,10 +164,14 @@ public:
     std::atomic<float> stg_step_freq = 50.0;
     std::atomic<float> stg_swpd_freq = 0.0;
     std::atomic<float> stg_volume = 1;
+    std::atomic<float> stg_cutoff = 1;
+    std::atomic<float> stg_resonance = 1;
     std::atomic<float> stg_panning = 0.5;
 
     std::atomic<float> pitch_freq = 0;
     std::atomic<float> volume_freq = 0;
+    std::atomic<float> cutoff_freq = 0;
+    std::atomic<float> resonance_freq = 0;
     std::atomic<float> pan_freq = 0.0;
 
     // float vibrato_freq = 0; -- Not yet implemented
@@ -366,6 +372,8 @@ public:
                             {
                                 v->freq = v->stg_step_freq.load();
                                 v->volume = v->stg_volume.load();
+                                v->cutoff = v->stg_cutoff.load();
+                                v->resonance = v->stg_resonance.load();
                                 v->panning = v->stg_panning.load();
 
                                 v->panning = std::clamp<float>(v->panning, 0.f, 1.f);
@@ -420,6 +428,8 @@ public:
                                 if (change.freq != -9999) v->freq = change.freq;
                                 if (change.pan != -2)     v->panning = change.pan;
                                 if (change.vol != -1)     v->volume = change.vol;
+                                if (change.ctf != -1)     v->cutoff = change.ctf;
+                                if (change.res != -1)     v->resonance = change.res;
                             }
                         }
                     }
@@ -611,7 +621,8 @@ public:
     }
 
     // Automate the sampler modulation variables (Effected by call rate)
-    void SampleAutomation(double* new_freq, double* new_pan, double* new_vol, int voice_index)
+    // TODO: Implement filter automation
+    void SampleAutomation(double* new_freq, double* new_pan, double* new_vol, double* new_cutoff, double* new_resonance, int voice_index)
     {
         // Step panning
         if (voices[voice_index]->pan_freq > 0)
@@ -632,13 +643,29 @@ public:
             auto freq_swp_ofst = voices[voice_index]->stg_swpd_freq - voices[voice_index]->stg_step_freq;
             (*new_freq) += freq_swp_ofst;
         }
-        // Step volumne
+        // Step volume
         if (voices[voice_index]->volume_freq != 0)
         {
             (*new_vol) = voices[voice_index]->stg_volume + voices[voice_index]->volume_freq / 100;
             if ((*new_vol) < 0)
                 (*new_vol) = 0;
             voices[voice_index]->stg_volume = (*new_vol);
+        }
+        // Step cutoff
+        if (voices[voice_index]->cutoff_freq != 0)
+        {
+            (*new_cutoff) = voices[voice_index]->stg_cutoff + voices[voice_index]->cutoff_freq / 100;
+            if ((*new_cutoff) < 0)
+                (*new_cutoff) = 0;
+            voices[voice_index]->stg_cutoff = (*new_cutoff);
+        }
+        // Step resonance
+        if (voices[voice_index]->resonance_freq != 0)
+        {
+            (*new_resonance) = voices[voice_index]->stg_resonance + voices[voice_index]->resonance_freq / 100;
+            if ((*new_resonance) < 0)
+                (*new_resonance) = 0;
+            voices[voice_index]->stg_resonance = (*new_resonance);
         }
     }
 };
