@@ -388,7 +388,7 @@ void PlayStepSong(int channel_index, int chain_ptr, int phrase_ptr, int step_ptr
 // f : The original frequency
 void ApplyChainTransposition(int channel_index, int* f)
 {
-    int playing_chain_index = channellist[channel_index].playing_chain;
+    int playing_chain_index = play_context == pt_song ? songgrid[channellist[channel_index].chain_ptr.load()][channel_index] : channellist[channel_index].playing_chain.load();
     // If the context is not within a playing channel, then break
     if (playing_chain_index == -1)
         return;
@@ -495,15 +495,30 @@ int DeepCopyChain(int chain_index)
     // Check return value
     if (r != -1)
     {
+        std::vector<int> copied_phrases_key;
+        std::vector<int> copied_phrases_value;
         // Clone the phrases within the chain
         for (int i = 0; i < chain::length; i++)
         {
+            // Has this phrase already been copied?
+            if (std::find(copied_phrases_key.begin(), copied_phrases_key.end(), chainlist[r]->arr[i]) != copied_phrases_key.end())
+                chainlist[r]->arr[i] = copied_phrases_value[std::find(copied_phrases_key.begin(), copied_phrases_key.end(), chainlist[r]->arr[i]) - copied_phrases_key.begin()];
             // Only clone if the index exists
-            if (GetAt(&phraselist, chainlist[r]->arr[i]) != nullptr)
-                chainlist[r]->arr[i] = DeepCopyPhrase(chainlist[r]->arr[i]);
+            else if (GetAt(&phraselist, chainlist[r]->arr[i]) != nullptr)
+            {
+				int to_copy = chainlist[r]->arr[i];
+                chainlist[r]->arr[i] = DeepCopyPhrase(to_copy);
+                copied_phrases_key.push_back(to_copy);
+                copied_phrases_value.push_back(chainlist[r]->arr[i]);
+            }
             // Insert new if not empty but not exist
             else if (chainlist[r]->arr[i] != -1)
+            {
+                int to_copy = chainlist[r]->arr[i];
                 chainlist[r]->arr[i] = GetNextEmpty(&phraselist);
+                copied_phrases_key.push_back(to_copy);
+                copied_phrases_value.push_back(chainlist[r]->arr[i]);
+            }
         }
     }
 
@@ -2872,7 +2887,7 @@ void EditorControl()
                         instrumentlist[open_instrument]->panning = 0.5f;
                     else
                         instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
-                    instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
+                    instrumentlist[open_instrument]->pan_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f; // std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
                     outstr = IntToHexString(instrumentlist[open_instrument]->pw_edit);
                     outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
                     instrumentlist[open_instrument]->pulse_width = (std::stoi(outstr.substr(0, 2), 0, 16) / 255.f) - 0.5f;
@@ -3254,10 +3269,16 @@ void EditorControl()
                         instrumentlist[open_instrument]->panning = 0.5f;
                     else
                         instrumentlist[open_instrument]->panning = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
-                    instrumentlist[open_instrument]->pan_freq = std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
+                    instrumentlist[open_instrument]->pan_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f; // std::stoi(outstr.substr(2, 2), 0, 16) / 16.f;
                     instrumentlist[open_instrument]->pitch_freq = (instrumentlist[open_instrument]->pitch_freq_edit - 32768) / (65535.f / 2.f);
-                    instrumentlist[open_instrument]->cutoff = instrumentlist[open_instrument]->cutoff_edit / 65535.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->cutoff_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
+                    instrumentlist[open_instrument]->cutoff = std::stoi(outstr.substr(0, 2), 0, 16) / 255.f;
+                    instrumentlist[open_instrument]->cutoff_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
+                    outstr = IntToHexString(instrumentlist[open_instrument]->resonance_edit);
+                    outstr.insert(outstr.begin(), 4 - outstr.size(), '0');
                     instrumentlist[open_instrument]->resonance = instrumentlist[open_instrument]->resonance_edit / 65535.f;
+                    instrumentlist[open_instrument]->resonance_freq = (std::stoi(outstr.substr(2, 2), 0, 16) - 128) / 8.f;
                 }
             }
             // Goto page

@@ -517,21 +517,25 @@ public:
     void SynthAutomation(double* new_freq, double* new_pan, double* new_pw, double* new_vol, double* new_cutoff, double* new_resonance, int voice_index)
     {
         // Step panning
-        if (voices[voice_index]->pan_freq > 0)
+        if (voices[voice_index]->pan_freq != 0)
         {
             voices[voice_index]->pan_phase += voices[voice_index]->pan_freq / 100;
             (*new_pan) = (sin(voices[voice_index]->pan_phase * 2. * PI) / 2) + 0.5;
             if (voices[voice_index]->pan_phase > 1.)
                 voices[voice_index]->pan_phase -= 1.;
+            if (voices[voice_index]->pan_phase < 0.)
+                voices[voice_index]->pan_phase += 1.;
             voices[voice_index]->stg_panning = (*new_pan);
         }
         // Step pulse width
-        if (voices[voice_index]->pulse_width_freq > 0)
+        if (voices[voice_index]->pulse_width_freq != 0)
         {
             voices[voice_index]->pw_phase += voices[voice_index]->pulse_width_freq / 100;
             (*new_pw) = (sin(voices[voice_index]->pw_phase * 2. * PI) / 2) * 0.99 + 0.5;
             if (voices[voice_index]->pw_phase > 1.)
                 voices[voice_index]->pw_phase -= 1.;
+            if (voices[voice_index]->pw_phase < 0.)
+                voices[voice_index]->pw_phase += 1.;
             voices[voice_index]->stg_pulse_width = (*new_pw);
         }
         // Step note
@@ -547,7 +551,7 @@ public:
         // Step volume
         if (voices[voice_index]->volume_freq != 0)
         {
-            (*new_vol) = voices[voice_index]->stg_volume + voices[voice_index]->volume_freq / 100;
+            (*new_vol) = voices[voice_index]->stg_volume + voices[voice_index]->volume_freq / 200;
             if ((*new_vol) < 0)
                 (*new_vol) = 0;
             voices[voice_index]->stg_volume = (*new_vol);
@@ -555,7 +559,7 @@ public:
         // Step cutoff
         if (voices[voice_index]->cutoff_freq != 0)
         {
-            (*new_cutoff) = voices[voice_index]->stg_cutoff + voices[voice_index]->cutoff_freq / 100;
+            (*new_cutoff) = voices[voice_index]->stg_cutoff + voices[voice_index]->cutoff_freq / 200;
             if ((*new_cutoff) < 0)
                 (*new_cutoff) = 0;
             if ((*new_cutoff) > 1)
@@ -565,7 +569,7 @@ public:
         // Step resonance
         if (voices[voice_index]->resonance_freq != 0)
         {
-            (*new_resonance) = voices[voice_index]->stg_resonance + voices[voice_index]->resonance_freq / 100;
+            (*new_resonance) = voices[voice_index]->stg_resonance + voices[voice_index]->resonance_freq / 200;
             if ((*new_resonance) < 0)
                 (*new_resonance) = 0;
             if ((*new_resonance) > 1)

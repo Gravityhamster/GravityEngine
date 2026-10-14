@@ -183,15 +183,15 @@ public:
     int volume_edit = 0xFF80; // 0xFF = 1 | 0x80 = 0
     float volume = 1.f; // Volume
     float volume_freq = 0.0; // Linear volume sweep (positive up, negative down)
-    int pan_edit = 0x8000; // 0x80 = 0.5, 0x00 = 0;
+    int pan_edit = 0x8080; // 0x80 = 0.5 | 0x80 = 0
     float panning = 0.5f; // Panning amount (0.0 = L, 0.5 = C, 1.0 = R)
     float pan_freq = 0.0; // Ping-pong pan frequency
     int pitch_freq_edit = 0x8000; // 0x8000 = 0, 0x0000 = -32768, 0xFFFF = 32767
     float pitch_freq = 0.0; // Linear pitch sweep speed (positive up, negative down)
-    int cutoff_edit = 0x8080; // 0xFF = 1 | 0x80 = 0
+    int cutoff_edit = 0x8080; // 0x80 = 0.5 | 0x80 = 0
     float cutoff = 0.0f; // Filter cutoff
     float cutoff_freq = 0.0; // Linear cutoff sweep (positive up, negative down)
-    int resonance_edit = 0x8080; // 0xFF = 1 | 0x80 = 0
+    int resonance_edit = 0x8080; // 0x80 = 0.5 | 0x80 = 0
     float resonance = 0.0f; // Filter resonance
     float resonance_freq = 0.0; // Linear resonance sweep (positive up, negative down)
     SynthWaveForm waveform = SynthWaveForm::sine; // Synth wave type
